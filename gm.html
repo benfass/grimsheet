@@ -4,8 +4,8 @@
 <script src="shared.js"></script>
 <style>
 /* Compact panel shown inside Owlbear's right-click menu for the GM. */
-:root { --bg: #FAFCFB; --ink: #17201E; --muted: #596764; --line: #D0DAD6; --accent: #1C6D61; --on: #fff; --danger: #A63232; --ok: #2A7849; --soft: #EEF3F1; color-scheme: light }
-:root[data-theme="dark"] { --bg: #152024; --ink: #E3EBE9; --muted: #93A39F; --line: #26353A; --accent: #55B8A6; --on: #05201B; --danger: #E27979; --ok: #71C493; --soft: #10191C; color-scheme: dark }
+:root { --bg: #FAFCFB; --ink: #17201E; --muted: #596764; --line: #D0DAD6; --accent: #1C6D61; --on: #fff; --danger: #A63232; --ok: #2A7849; --soft: #EEF3F1; --gold: #956A10; color-scheme: light }
+:root[data-theme="dark"] { --bg: #152024; --ink: #E3EBE9; --muted: #93A39F; --line: #26353A; --accent: #55B8A6; --on: #05201B; --danger: #E27979; --ok: #71C493; --soft: #10191C; --gold: #E1B04B; color-scheme: dark }
 * { box-sizing: border-box }
 html, body { margin: 0; background: transparent; color: var(--ink); font: 13px/1.35 "Segoe UI", system-ui, sans-serif }
 .wrap { padding: 8px 10px; display: flex; flex-direction: column; gap: 7px }
@@ -18,96 +18,172 @@ button.dmg { color: var(--danger); border-color: var(--danger) }
 button.heal { color: var(--ok); border-color: var(--ok) }
 button.pri { background: var(--accent); border-color: var(--accent); color: var(--on) }
 button:disabled { opacity: .45; cursor: default }
-input { font: inherit; color: inherit; width: 64px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); padding: 4px 6px; font-variant-numeric: tabular-nums }
-.list { display: flex; flex-direction: column; gap: 4px; max-height: 150px; overflow: auto }
+input { font: inherit; color: inherit; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); padding: 4px 6px; font-variant-numeric: tabular-nums }
+input.amt { width: 64px }
+input.q { width: 100% }
+.list { display: flex; flex-direction: column; gap: 4px; max-height: 140px; overflow: auto }
 .list button { text-align: left; display: flex; justify-content: space-between; gap: 8px }
+.who { display: flex; flex-direction: column; gap: 2px; max-height: 92px; overflow: auto }
+.who div { display: flex; justify-content: space-between; gap: 8px }
+.hpn { font-variant-numeric: tabular-nums; font-weight: 600 }
 .bar { height: 5px; border-radius: 3px; background: var(--soft); overflow: hidden; border: 1px solid var(--line) }
 .bar i { display: block; height: 100% }
 .note { font-size: 12px; color: var(--accent) }
 .warn { font-size: 12px; color: var(--danger) }
+.sep { border-top: 1px solid var(--line); margin: 2px 0 }
 </style></head>
 <body><div class="wrap" id="app"><div class="m">Loading…</div></div>
 <script>
 (function () {
   const S = GS, $ = s => document.querySelector(s), esc = S.esc;
-  let OBR, item = null, players = [], note = '', warnText = '';
-  const link = () => item && item.metadata && item.metadata[S.LINK];
+  const MONLINK = 'com.grimsheet/monster', ENCKEY = 'grimsheet.encounter.v1', CATKEY = 'grimsheet.moncat.v1';
+  let OBR, room = 'room', items = [], players = [], note = '', warnText = '', q = '';
+  const settings = () => S.read('grimsheet.settings.v1') || {};
+  const pcLink = it => it.metadata && it.metadata[S.LINK];
+  const monLink = it => { const l = it.metadata && it.metadata[MONLINK]; return l && l.room === room ? l : null; };
+  const loadEnc = () => { const all = S.read(ENCKEY) || {}; return { all, e: all[room] || { tpls: {}, mons: [], pcs: [], groupInit: {}, seq: {}, combat: { active: false, round: 1, turn: null } } }; };
+  const saveEnc = (all, e) => { all[room] = e; S.write(ENCKEY, all); };
+  const bubbles = m => ({ health: m.hp, 'max health': m.max, 'temporary health': m.temp || 0, 'armor class': m.ac, hide: (settings().monHp || 'hidden') !== 'exact' });
 
   function render() {
     const app = $('#app');
-    if (!item) { app.innerHTML = '<div class="m">Select one character token.</div>'; return; }
-    const L = link();
-    if (!L) {
-      const opts = players.filter(p => p.s && p.s.charId);
-      app.innerHTML = `<div class="t">${esc(item.name || 'Token')}</div>
-        <div class="m">Link this token to a player's Grimsheet character:</div>
-        ${opts.length ? `<div class="list">${opts.map(p => `<button data-link="${esc(p.id)}"><span><b>${esc(p.s.char)}</b> · ${esc(p.name)}</span><span class="m">${esc(p.s.hp)}/${esc(p.s.max)} HP</span></button>`).join('')}</div>`
-          : '<div class="m">Nobody has Grimsheet open in this room right now. Players need to open it once, then their character appears here.</div>'}`;
-      return;
-    }
-    const owner = players.find(p => p.id === L.player);
-    const st = owner && owner.s && owner.s.charId === L.char ? owner.s : null;
-    const b = item.metadata[S.BUBBLES] || {};
+    if (!items.length) { app.innerHTML = '<div class="m">Select one or more character tokens.</div>'; return; }
+    const pcs = items.filter(pcLink), mons = items.filter(monLink), free = items.filter(it => !pcLink(it) && !monLink(it));
+    if (items.length === 1 && pcs.length === 1) return renderPc(app, items[0]);
+    if (!pcs.length && !mons.length) return renderFree(app, free);
+    // one or more linked tokens: show who, and damage or heal them all
+    const { e } = loadEnc();
+    const lines = [];
+    for (const it of mons) { const l = monLink(it), m = e.mons.find(x => x.id === l.inst); lines.push(`<div><span>${esc(m ? m.name : l.name)}</span><span class="hpn">${m ? m.hp + '/' + m.max : '?'}</span></div>`); }
+    for (const it of pcs) { const l = pcLink(it), p = players.find(x => x.id === l.player), s = p && p.s && p.s.charId === l.char ? p.s : null; lines.push(`<div><span>${esc(l.name)} <span class="m">${esc(p ? p.name : 'not in room')}</span></span><span class="hpn">${s ? s.hp + '/' + s.max : '?'}</span></div>`); }
+    const single = mons.length === 1 && items.length === 1 ? monLink(mons[0]) : null;
+    app.innerHTML = `<div class="t">${items.length === 1 ? esc(lines.length ? (single ? single.name : '') : '') : items.length + ' tokens selected'}</div>
+      <div class="who">${lines.join('')}</div>${free.length ? `<div class="m">${free.length} unlinked token${free.length > 1 ? 's' : ''} ignored.</div>` : ''}
+      <div class="row"><input class="amt" id="amt" type="number" min="1" inputmode="numeric" placeholder="12" aria-label="Amount">
+        <button class="dmg" data-hp="-1">Damage${items.length > 1 ? ' all' : ''}</button><button class="heal" data-hp="1">Heal${items.length > 1 ? ' all' : ''}</button></div>
+      <div class="row">${single ? '<button class="pri" data-focus>Open in Encounter</button>' : ''}<button data-unlink>Unlink${items.length > 1 ? ' all' : ''}</button></div>
+      ${note ? `<div class="note">${esc(note)}</div>` : ''}${warnText ? `<div class="warn">${esc(warnText)}</div>` : ''}`;
+    focusAmt();
+  }
+  function renderPc(app, it) {
+    const L = pcLink(it), owner = players.find(p => p.id === L.player);
+    const st = owner && owner.s && owner.s.charId === L.char ? owner.s : null, b = it.metadata[S.BUBBLES] || {};
     const hp = st ? st.hp : b.health, max = st ? st.max : b['max health'], temp = st ? st.temp : b['temporary health'];
-    const pct = max ? Math.max(0, Math.min(100, hp / max * 100)) : 0;
-    const online = !!owner;
+    const pct = max ? Math.max(0, Math.min(100, hp / max * 100)) : 0, online = !!owner;
     app.innerHTML = `<div class="t">${esc(L.name || 'Character')} <span class="m">${esc(owner ? owner.name : L.owner || 'player')}${online ? '' : ' · not in the room'}</span></div>
-      <div class="row"><b style="font-variant-numeric:tabular-nums">${esc(hp ?? '?')}/${esc(max ?? '?')} HP</b>${temp ? `<span class="m">+${esc(temp)} temp</span>` : ''}${b['armor class'] ? `<span class="m">AC ${esc(b['armor class'])}</span>` : ''}</div>
-      <div class="bar"><i style="width:${pct}%;background:${pct < 25 ? 'var(--danger)' : pct < 55 ? '#C9962B' : 'var(--ok)'}"></i></div>
-      <div class="row"><input id="amt" type="number" min="1" inputmode="numeric" placeholder="12" aria-label="Amount" ${online ? '' : 'disabled'}>
+      <div class="row"><b class="hpn">${esc(hp ?? '?')}/${esc(max ?? '?')} HP</b>${temp ? `<span class="m">+${esc(temp)} temp</span>` : ''}${b['armor class'] ? `<span class="m">AC ${esc(b['armor class'])}</span>` : ''}</div>
+      <div class="bar"><i style="width:${pct}%;background:${pct < 25 ? 'var(--danger)' : pct < 55 ? 'var(--gold)' : 'var(--ok)'}"></i></div>
+      <div class="row"><input class="amt" id="amt" type="number" min="1" inputmode="numeric" placeholder="12" aria-label="Amount" ${online ? '' : 'disabled'}>
         <button class="dmg" data-hp="-1" ${online ? '' : 'disabled'}>Damage</button><button class="heal" data-hp="1" ${online ? '' : 'disabled'}>Heal</button></div>
       <div class="row"><button class="pri" data-view ${online ? '' : 'disabled'}>Open sheet</button><button data-unlink>Unlink</button></div>
       ${note ? `<div class="note">${esc(note)}</div>` : ''}${warnText ? `<div class="warn">${esc(warnText)}</div>` : ''}
       ${online ? '' : '<div class="m">Damage and the sheet reach the player only while they are in the room.</div>'}`;
-    const a = $('#amt'); if (a) { a.focus(); a.addEventListener('keydown', e => { if (e.key === 'Enter') hpChange(-1); }); }
+    focusAmt();
   }
+  function renderFree(app, free) {
+    const cat = S.read(CATKEY) || [];
+    const ql = q.toLowerCase();
+    const matches = cat.filter(t => !ql || t.name.toLowerCase().includes(ql)).sort((a, b) => a.name.localeCompare(b.name)).slice(0, 12);
+    const opts = free.length === 1 ? players.filter(p => p.s && p.s.charId) : [];
+    app.innerHTML = `<div class="t">${free.length === 1 ? esc(free[0].name || 'Token') : free.length + ' tokens'}</div>
+      ${opts.length ? `<div class="m">Link to a player's character:</div><div class="list">${opts.map(p => `<button data-link="${esc(p.id)}"><span><b>${esc(p.s.char)}</b> · ${esc(p.name)}</span><span class="m">${esc(p.s.hp)}/${esc(p.s.max)} HP</span></button>`).join('')}</div><div class="sep"></div>` : ''}
+      <div class="m">Make ${free.length === 1 ? 'it a monster' : 'them monsters'}:</div>
+      ${cat.length ? `<input class="q" id="q" value="${esc(q)}" placeholder="Search: goblin, ogre…" aria-label="Search monsters">
+        <div class="list">${matches.map(t => `<button data-mon="${esc(t.id)}"><span><b>${esc(t.name)}</b>${t.srd ? '' : ' <span class="m">mine</span>'}</span><span class="m">CR ${esc(t.cr || '?')} · HP ${t.hp}</span></button>`).join('') || '<div class="m">No match.</div>'}</div>`
+        : '<div class="m">Open the Grimsheet panel once to load the monster list.</div>'}
+      ${note ? `<div class="note">${esc(note)}</div>` : ''}`;
+    const qi = $('#q'); if (qi) { qi.focus(); qi.setSelectionRange(q.length, q.length); qi.addEventListener('input', () => { q = qi.value; render(); }); }
+  }
+  function focusAmt() { const a = $('#amt'); if (a && !a.disabled) { a.focus(); a.addEventListener('keydown', ev => { if (ev.key === 'Enter') hpChange(-1); }); } }
 
   async function refresh() {
     const sel = await OBR.player.getSelection();
-    const items = sel && sel.length === 1 ? await OBR.scene.items.getItems(sel) : [];
-    item = items[0] || null;
+    items = sel && sel.length ? (await OBR.scene.items.getItems(sel)).filter(it => it.layer === 'CHARACTER' || it.layer === 'MOUNT') : [];
     players = (await OBR.party.getPlayers()).map(p => ({ id: p.id, name: p.name, role: p.role, s: p.metadata && p.metadata[S.META] }));
-    // include the GM's own character too, if the GM uses Grimsheet
     const mine = await OBR.player.getMetadata(); const s = mine && mine[S.META];
     if (s && !players.some(p => p.id === OBR.player.id)) players.push({ id: OBR.player.id, name: await OBR.player.getName(), role: 'GM', s });
     render();
   }
 
   async function hpChange(sign) {
-    const L = link(); const n = Math.abs(parseInt(($('#amt') || {}).value, 10));
-    if (!L || !n) { warnText = 'Type an amount first.'; render(); return; }
+    const n = Math.abs(parseInt(($('#amt') || {}).value, 10));
+    if (!n) { warnText = 'Type an amount first.'; render(); return; }
     warnText = '';
-    await OBR.broadcast.sendMessage(S.CH_GM, { type: 'hp', id: S.uid(), to: L.player, char: L.char, amount: sign * n, from: await OBR.player.getName() }, { destination: L.player === OBR.player.id ? 'LOCAL' : 'REMOTE' });
-    note = `Sent ${n} ${sign < 0 ? 'damage' : 'healing'} to ${L.name}.`;
+    const amount = sign * n, from = await OBR.player.getName();
+    // characters: send to their player
+    for (const it of items.filter(pcLink)) {
+      const L = pcLink(it);
+      await OBR.broadcast.sendMessage(S.CH_GM, { type: 'hp', id: S.uid(), to: L.player, char: L.char, amount, from }, { destination: L.player === OBR.player.id ? 'LOCAL' : 'REMOTE' });
+    }
+    // monsters: change them here and update their tokens
+    const mons = items.filter(monLink);
+    if (mons.length) {
+      const { all, e } = loadEnc(); const upd = {};
+      for (const it of mons) {
+        const m = e.mons.find(x => x.id === monLink(it).inst); if (!m) continue;
+        if (amount < 0) { let d = -amount; const t = Math.min(m.temp || 0, d); m.temp = (m.temp || 0) - t; d -= t; m.hp = Math.max(0, m.hp - d); }
+        else m.hp = Math.min(m.max, m.hp + amount);
+        upd[it.id] = bubbles(m);
+      }
+      saveEnc(all, e);
+      await OBR.scene.items.updateItems(Object.keys(upd), drafts => { for (const d of drafts) d.metadata[S.BUBBLES] = Object.assign({}, d.metadata[S.BUBBLES] || {}, upd[d.id]); });
+    }
+    note = `${n} ${sign < 0 ? 'damage' : 'healing'} to ${items.length > 1 ? items.filter(it => pcLink(it) || monLink(it)).length + ' tokens' : (pcLink(items[0]) || monLink(items[0]) || {}).name}.`;
     render(); setTimeout(refresh, 900);
+  }
+
+  async function makeMonsters(tid) {
+    const cat = S.read(CATKEY) || []; const t = cat.find(x => x.id === tid); if (!t) return;
+    const free = items.filter(it => !pcLink(it) && !monLink(it)); if (!free.length) return;
+    const { all, e } = loadEnc(); const solo = settings().groupInit === false;
+    const same = e.mons.filter(x => x.tpl === t.id);
+    if (same.length === 1 && same[0].name === t.name) same[0].name = t.name + ' 1';
+    const numbered = same.length + free.length > 1; const made = {};
+    for (const it of free) {
+      e.seq[t.id] = Math.max(e.seq[t.id] || 0, e.mons.filter(x => x.tpl === t.id).length) + 1;
+      const m = { id: S.uid(), tpl: t.id, name: numbered ? t.name + ' ' + e.seq[t.id] : t.name, hp: t.hp, max: t.hp, temp: 0, ac: t.ac, cond: [], rech: {}, uses: {}, leg: 0, init: null, solo };
+      e.mons.push(m); made[it.id] = m;
+    }
+    saveEnc(all, e);
+    await OBR.scene.items.updateItems(Object.keys(made), drafts => {
+      for (const d of drafts) { const m = made[d.id]; d.metadata[MONLINK] = { room, inst: m.id, name: m.name }; d.metadata[S.BUBBLES] = Object.assign({}, d.metadata[S.BUBBLES] || {}, bubbles(m)); d.name = m.name; }
+    });
+    note = `Made ${free.length} ${t.name}${free.length > 1 ? 's' : ''}. They're in your Encounter.`; q = '';
+    refresh();
   }
 
   document.addEventListener('click', async ev => {
     const t = ev.target.closest('button'); if (!t || t.disabled) return;
     if (t.dataset.hp) return hpChange(+t.dataset.hp);
+    if (t.dataset.mon) return makeMonsters(t.dataset.mon);
     if (t.hasAttribute('data-link')) {
       const p = players.find(x => x.id === t.dataset.link); if (!p) return;
-      await OBR.scene.items.updateItems([item.id], drafts => {
+      await OBR.scene.items.updateItems([items[0].id], drafts => {
         for (const it of drafts) {
           it.metadata[S.LINK] = { player: p.id, char: p.s.charId, name: p.s.char, owner: p.name };
-          it.metadata[S.BUBBLES] = Object.assign({}, it.metadata[S.BUBBLES] || {}, { health: p.s.hp, 'max health': p.s.max, 'temporary health': p.s.temp || 0, 'armor class': typeof p.s.ac === 'number' ? p.s.ac : 0 });
+          it.metadata[S.BUBBLES] = Object.assign({}, it.metadata[S.BUBBLES] || {}, { health: p.s.hp, 'max health': p.s.max, 'temporary health': p.s.temp || 0, 'armor class': typeof p.s.ac === 'number' ? p.s.ac : 0, hide: false });
         }
       });
       note = `Linked to ${p.s.char}.`; refresh();
     }
     if (t.hasAttribute('data-unlink')) {
-      await OBR.scene.items.updateItems([item.id], drafts => { for (const it of drafts) delete it.metadata[S.LINK]; });
+      await OBR.scene.items.updateItems(items.map(i => i.id), drafts => { for (const it of drafts) { delete it.metadata[S.LINK]; delete it.metadata[MONLINK]; } });
       note = 'Unlinked.'; refresh();
     }
     if (t.hasAttribute('data-view')) {
-      const L = link();
+      const L = pcLink(items[0]);
       await OBR.broadcast.sendMessage(S.CH_LOCAL, { type: 'view', player: L.player, char: L.char, name: L.name, owner: L.owner }, { destination: 'LOCAL' });
       try { await OBR.action.open(); } catch (e) { }
       note = `Opening ${L.name} in your Grimsheet panel…`; render();
     }
+    if (t.hasAttribute('data-focus')) {
+      await OBR.broadcast.sendMessage(S.CH_LOCAL, { type: 'focus', inst: monLink(items[0]).inst }, { destination: 'LOCAL' });
+      try { await OBR.action.open(); } catch (e) { }
+    }
   });
 
   S.sdk().then(o => { OBR = o; OBR.onReady(async () => {
+    room = OBR.room && OBR.room.id ? OBR.room.id : 'room';
     try { const th = await OBR.theme.getTheme(); document.documentElement.setAttribute('data-theme', th.mode === 'DARK' ? 'dark' : 'light'); } catch (e) { }
     await refresh();
     OBR.party.onChange(() => refresh());

@@ -64,6 +64,23 @@
       }
     });
 
+    /* ---- initiative: the GM asks for rolls; tell this player when it's their turn ---- */
+    OBR.broadcast.onMessage(S.CH_GM, ev => {
+      const d = ev.data;
+      if (d && d.type === 'askInit' && me.role !== 'GM') OBR.notification.show(`${d.from} asks for initiative. Open Grimsheet and tap INIT in your Combat module.`, 'INFO').catch(() => { });
+    });
+    let lastTurn = null;
+    const onInit = md => {
+      const I = md && md['com.grimsheet/initiative'];
+      if (!I || !I.active || !I.rows) { lastTurn = null; return; }
+      const key = I.round + '|' + I.turn; if (key === lastTurn) return; lastTurn = key;
+      const i = I.rows.findIndex(r => r.k === I.turn), cur = I.rows[i], next = I.rows[(i + 1) % I.rows.length];
+      if (me.role === 'GM') return;
+      if (cur && cur.pc === me.id) OBR.notification.show(`Your turn! Round ${I.round}.`, 'SUCCESS').catch(() => { });
+      else if (next && next.pc === me.id && I.rows.length > 2) OBR.notification.show(`You're up next, after ${cur ? cur.name : 'this turn'}.`, 'INFO').catch(() => { });
+    };
+    try { onInit(await OBR.room.getMetadata()); OBR.room.onMetadataChange(onInit); } catch (e) { }
+
     /* ---- token right-click menus ---- */
     await OBR.contextMenu.create({
       id: 'com.grimsheet/menu-link',
@@ -96,8 +113,8 @@
     // the GM's menu opens a small panel inside the right-click menu
     await OBR.contextMenu.create({
       id: 'com.grimsheet/menu-gm',
-      icons: [{ icon: ICON, label: 'Grimsheet', filter: { min: 1, max: 1, roles: ['GM'], every: [{ key: 'layer', value: 'CHARACTER' }] } }],
-      embed: { url: GM_URL, height: 230 },
+      icons: [{ icon: ICON, label: 'Grimsheet', filter: { min: 1, roles: ['GM'], some: [{ key: 'layer', value: 'CHARACTER', coordinator: '||' }, { key: 'layer', value: 'MOUNT' }] } }],
+      embed: { url: GM_URL, height: 260 },
     });
   })).catch(() => { });
 })();

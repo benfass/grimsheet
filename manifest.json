@@ -1,9 +1,9 @@
 {
   "name": "Grimsheet",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "manifest_version": 1,
   "author": "Ben",
-  "description": "Modular D&D 5e character sheet. Rolls, party HP, token Stat Bubbles and initiative stay in sync with your sheet.",
+  "description": "Modular D&D 5e sheet with monsters and initiative. Rolls, party HP, token Stat Bubbles and turn order stay in sync.",
   "homepage_url": "https://benfass.github.io/grimsheet/",
   "icon": "https://benfass.github.io/grimsheet/icon.svg",
   "action": {

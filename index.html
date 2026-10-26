@@ -255,6 +255,40 @@ select.ed-inline{width:auto}
 @keyframes tumble{0%{transform:translate(-40px,-140px) rotate(var(--r)) scale(.55);opacity:0}25%{opacity:1}70%{transform:translate(6px,6px) rotate(calc(var(--r) * -.06)) scale(1.04)}100%{transform:none}}
 @keyframes land{0%{transform:scale(1.18)}100%{transform:scale(1)}}
 @media (prefers-reduced-motion:reduce){.die,.die.landed{animation:none}}
+.encwrap{display:flex;flex-direction:column;gap:12px}
+.enc-head{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;justify-content:space-between;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:10px 12px;box-shadow:var(--shadow)}
+.enc-title{display:flex;gap:8px;align-items:center;font-family:var(--f-display);font-size:1.15rem}
+.enc-tools{display:flex;flex-wrap:wrap;gap:6px}
+.init-list{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.init-list.small{border-radius:8px}
+.irow{display:flex;align-items:center;gap:8px;padding:5px 10px;border-bottom:1px solid var(--line);min-width:0}
+.irow:last-child{border-bottom:0}
+.irow.cur{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}
+.irow.down{opacity:.5}
+.irow .ini{width:46px;text-align:center;font-family:var(--f-mono);font-weight:600}
+.irow .iname{flex:1;min-width:0;text-align:left;background:none;border:0;padding:2px 0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.irow .ihp{font-size:.8rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:45%}
+.mgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:12px;align-items:start}
+.mcard{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:10px 12px;min-width:0;display:flex;flex-direction:column;gap:6px}
+.mcard.cur{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft),var(--shadow)}
+.mcard.focus{outline:2px dashed var(--gold);outline-offset:2px}
+.mcard.down{opacity:.6}
+.mhead{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.mtitle{font-family:var(--f-display);font-size:1.05rem}
+.mhp{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.mhp .pool{font-size:1.3rem}
+.mab{display:grid;grid-template-columns:repeat(6,1fr);gap:4px;text-align:center;margin-top:2px}
+.mab>div{display:flex;flex-direction:column;align-items:center;background:var(--sunk);border:1px solid var(--line);border-radius:6px;padding:2px 0}
+.mab .k{font-size:.62rem;letter-spacing:.1em;color:var(--muted);font-weight:700}
+.mab .md{border:0;background:transparent;font-family:var(--f-mono);font-weight:600;padding:0 4px;border-radius:4px}
+.mab .md:hover,.mab .sv:hover{background:var(--accent-soft)}
+.mab .sv{border:0;background:transparent;font-size:.62rem;color:var(--muted);padding:0 2px;border-radius:4px}
+.mact-h{font-size:.68rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-top:4px}
+.mact{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+.mact .mname{background:none;border:0;padding:0;font-weight:700;text-align:left;margin-right:2px}
+.mdet{font-size:.86rem;display:flex;flex-direction:column;gap:4px;border-top:1px solid var(--line);padding-top:6px}
+.medit{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;font-size:.85rem;background:var(--sunk);border-radius:8px;padding:6px 8px}
+.medit input.ed-inline{width:58px}
 .setrow{display:flex;align-items:center;gap:12px;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line)}
 .setrow:last-child{border-bottom:0}
 .setrow .grow{flex:1;min-width:0}
@@ -1329,6 +1363,696 @@ if (typeof module !== 'undefined') module.exports = SRD;
 </script>
 
 <script>
+/* ============ MONSTERS ============
+   Reads monster stat blocks (2014 and 2024 layouts) into a plain template, and holds a starter set
+   of SRD 5.1 monsters written as stat blocks (CC-BY-4.0, attribution in the app footer). */
+const MONSTERS = (() => {
+  const ABS = ['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA'];
+  const ABFULL = { strength: 'STR', dexterity: 'DEX', constitution: 'CON', intelligence: 'INT', wisdom: 'WIS', charisma: 'CHA', str: 'STR', dex: 'DEX', con: 'CON', int: 'INT', wis: 'WIS', cha: 'CHA' };
+  const num = s => +String(s).replace(/[−–]/g, '-').replace('+', '');
+  const mod = sc => Math.floor((sc - 10) / 2);
+  function avgDice(expr) {
+    const m = String(expr || '').replace(/[−–]/g, '-').replace(/\s+/g, '').match(/^(\d+)d(\d+)([+-]\d+)?$/i);
+    if (!m) return null;
+    return Math.max(1, Math.floor(+m[1] * (+m[2] + 1) / 2 + (m[3] ? +m[3] : 0)));
+  }
+  const crXp = { '0': 10, '1/8': 25, '1/4': 50, '1/2': 100, '1': 200, '2': 450, '3': 700, '4': 1100, '5': 1800, '6': 2300, '7': 2900, '8': 3900, '9': 5000, '10': 5900, '11': 7200, '12': 8400, '13': 10000, '14': 11500, '15': 13000, '16': 15000, '17': 18000, '18': 20000, '19': 22000, '20': 25000, '21': 33000, '22': 41000, '23': 50000, '24': 62000, '30': 155000 };
+  const crPb = cr => { const v = cr.includes('/') ? 0 : +cr; return v >= 29 ? 9 : v >= 25 ? 8 : v >= 21 ? 7 : v >= 17 ? 6 : v >= 13 ? 5 : v >= 9 ? 4 : v >= 5 ? 3 : 2; };
+
+  // One action/trait from its text: attack bonus, damage parts, save, recharge, uses.
+  function readAction(name, text) {
+    const a = { name, text: text.trim() };
+    const low = text.toLowerCase().replace(/[−–]/g, '-');
+    let m;
+    if ((m = name.match(/\(recharge\s*(\d)(?:\s*[-–]\s*\d)?\)/i))) { a.recharge = +m[1]; a.name = name.replace(/\s*\(recharge[^)]*\)/i, '').trim(); }
+    else if (/\(recharges? after a (short or )?long rest\)/i.test(name)) { a.uses = 1; a.name = name.replace(/\s*\(recharges?[^)]*\)/i, '').trim(); }
+    if ((m = a.name.match(/\((\d+)\/day(?: each)?\)/i))) { a.uses = +m[1]; a.name = a.name.replace(/\s*\(\d+\/day[^)]*\)/i, '').trim(); }
+    if ((m = a.name.match(/\(costs (\d) actions\)/i))) { a.cost = +m[1]; a.name = a.name.replace(/\s*\(costs[^)]*\)/i, '').trim(); }
+    if ((m = low.match(/(?:weapon attack|spell attack|attack roll)\s*:\s*([+-]\d+)/)) || (m = low.match(/([+-]\d+)\s+to hit/))) a.attack = num(m[1]);
+    a.damage = [];
+    const reD = /\d+\s*\((\d+d\d+)(?:\s*([+-])\s*(\d+))?\)\s+([a-z]+)\s+damage/g;
+    let prevEnd = -1;
+    while ((m = reD.exec(low))) {
+      // skip alternatives ("… or 6 (1d10 + 1) slashing damage if used with two hands") and conditional extras ("plus 2 (1d4) … if …")
+      const between = prevEnd >= 0 ? low.slice(prevEnd, m.index) : '';
+      const after = low.slice(m.index + m[0].length).split(/[.,;]/)[0];
+      prevEnd = m.index + m[0].length;
+      if (prevEnd && /\bor\b/.test(between) || /\bif\b/.test(after)) continue;
+      a.damage.push({ dice: m[1], mod: m[3] ? (m[2] === '-' ? '-' : '') + m[3] : '', type: m[4] });
+    }
+    if (!a.damage.length && (m = low.match(/(?:hit|taking)[^.]*?\b(\d+)\s+([a-z]+)\s+damage/))) a.damage.push({ dice: '', mod: m[1], type: m[2] });
+    if ((m = low.match(/dc\s*(\d+)\s+(strength|dexterity|constitution|intelligence|wisdom|charisma)\s+saving throw/)) || (m = low.match(/(strength|dexterity|constitution|intelligence|wisdom|charisma)\s+saving throw\s*:\s*dc\s*(\d+)/))) {
+      const dc = /^\d+$/.test(m[1]) ? m[1] : m[2], ab = /^\d+$/.test(m[1]) ? m[2] : m[1];
+      a.save = { ability: ABFULL[ab], dc: +dc };
+    }
+    return a;
+  }
+
+  // Split a section into "Name. text" entries; a new entry starts with a capitalised name and a period at a line start.
+  function entries(block) {
+    const out = []; let cur = null;
+    for (const raw of block.split('\n')) {
+      const line = raw.trim(); if (!line) continue;
+      const m = line.match(/^([A-Z][A-Za-z0-9'’ ,/-]{0,48}?(?:\s*\([^)]{1,40}\))*)\.\s+(.*)$/);
+      if (m && !/^(Hit|Each|The|A|If|On|It|While)$/.test(m[1])) { cur = { name: m[1].trim(), text: m[2] }; out.push(cur); }
+      else if (cur) cur.text += ' ' + line;
+      else out.push(cur = { name: '', text: line });
+    }
+    return out;
+  }
+
+  const SECTIONS = ['traits', 'actions', 'bonus actions', 'reactions', 'legendary actions', 'mythic actions', 'lair actions'];
+  function parse(text) {
+    const src = String(text || '').replace(/\r/g, '').replace(/[ \t]+/g, ' ').replace(/[−–]/g, '-');
+    const lines = src.split('\n').map(s => s.trim()).filter(Boolean);
+    if (!lines.length) return null;
+    const t = { name: lines[0].replace(/\s+/g, ' '), meta: '', ac: 10, acNote: '', hp: 1, hpDice: '', speed: '30 ft.', abilities: { STR: 10, DEX: 10, CON: 10, INT: 10, WIS: 10, CHA: 10 }, saves: {}, init: null, cr: '', xp: 0, pb: 2, details: [], traits: [], actions: [], bonus: [], reactions: [], legendary: [], legendaryCount: 0 };
+    if (lines[1] && /^(tiny|small|medium|large|huge|gargantuan)\b/i.test(lines[1])) t.meta = lines[1];
+    const all = lines.join('\n');
+    let m;
+    if ((m = all.match(/(?:armor class|\bAC)\s+(\d+)(?:\s*\(([^)]*)\))?/i))) { t.ac = +m[1]; t.acNote = m[2] || ''; }
+    if ((m = all.match(/(?:hit points|\bHP)\s+(\d+)(?:\s*\(([^)]+)\))?/i))) { t.hp = +m[1]; t.hpDice = (m[2] || '').replace(/\s+/g, ''); }
+    if ((m = all.match(/\bspeed\s+([^\n]+)/i))) t.speed = m[1].trim();
+    if ((m = all.match(/\binitiative\s+([+-]\d+)/i))) t.init = num(m[1]);
+    // abilities: 2014 "STR DEX ..." then six "N (+M)"; 2024 "Str 8 -1 -1"
+    const a24 = [...all.matchAll(/\b(Str|Dex|Con|Int|Wis|Cha)\s+(\d{1,2})\s+([+-]\d+)\s+([+-]\d+)/gi)];
+    if (a24.length >= 6) for (const x of a24) { const k = x[1].toUpperCase(); t.abilities[k] = +x[2]; if (num(x[4]) !== num(x[3])) t.saves[k] = num(x[4]); }
+    else {
+      const i = all.search(/\bSTR\b/i);
+      const six = [...all.slice(i >= 0 ? i : 0).matchAll(/(\d{1,2})\s*\(([+-]\d+)\)/g)].slice(0, 6);
+      if (six.length === 6) six.forEach((x, k) => { t.abilities[ABS[k]] = +x[1]; });
+    }
+    if ((m = all.match(/saving throws?\s+([^\n]+)/i))) for (const x of m[1].matchAll(/(Str|Dex|Con|Int|Wis|Cha)\w*\s*([+-]\d+)/gi)) t.saves[x[1].toUpperCase()] = num(x[2]);
+    if ((m = all.match(/(?:challenge|\bCR)\s+([\d/]+)(?:\s*\((?:XP\s*)?([\d,]+)(?:\s*XP)?)?/i))) { t.cr = m[1]; t.xp = m[2] ? +m[2].replace(/,/g, '') : (crXp[m[1]] || 0); t.pb = crPb(m[1]); }
+    if ((m = all.match(/\bPB\s*\+(\d)/i))) t.pb = +m[1];
+    if (t.init == null) t.init = mod(t.abilities.DEX);
+    for (const k of ['Skills', 'Damage Vulnerabilities', 'Vulnerabilities', 'Damage Resistances', 'Resistances', 'Damage Immunities', 'Immunities', 'Condition Immunities', 'Gear', 'Senses', 'Languages']) {
+      const r = all.match(new RegExp('^' + k + '\\s+([^\\n]+)', 'im')); if (r) t.details.push({ k, v: r[1].trim() });
+    }
+    // sections
+    const idx = []; lines.forEach((l, i) => { const k = l.toLowerCase().replace(/:$/, ''); if (SECTIONS.includes(k)) idx.push({ i, k }); });
+    const after = lines.findIndex(l => /^(challenge|cr)\s/i.test(l) || /^languages\b/i.test(l) && !lines.some(x => /^(challenge|cr)\s/i.test(x)));
+    const traitStart = after >= 0 ? after + 1 : 2, traitEnd = idx.length ? idx[0].i : lines.length;
+    const pre = lines.slice(traitStart, traitEnd).filter(l => !/^(proficiency bonus|senses|languages|skills|saving throws|damage|condition|gear|immunities|resistances|vulnerabilities)\b/i.test(l));
+    t.traits = entries(pre.join('\n')).filter(e => e.name).map(e => readAction(e.name, e.text));
+    idx.forEach((s, n) => {
+      const body = lines.slice(s.i + 1, n + 1 < idx.length ? idx[n + 1].i : lines.length).join('\n');
+      const list = entries(body);
+      if (s.k === 'legendary actions') {
+        const intro = list.find(e => !e.name || /can take \d+ legendary actions|legendary action uses/i.test(e.text));
+        const c = (body.match(/can take (\d+) legendary actions/i) || body.match(/legendary action uses\s*:?\s*(\d+)/i) || [])[1];
+        t.legendaryCount = c ? +c : 3;
+        t.legendary = list.filter(e => e.name && e !== intro).map(e => readAction(e.name, e.text));
+      } else {
+        const key = { traits: 'traits', actions: 'actions', 'bonus actions': 'bonus', reactions: 'reactions' }[s.k];
+        if (key) t[key] = t[key].concat(list.filter(e => e.name).map(e => readAction(e.name, e.text)));
+      }
+    });
+    if (!t.hpDice && t.hp) t.hpDice = '';
+    t.hpAvg = t.hp;
+    return t;
+  }
+
+  /* ---- SRD 5.1 starter set ---- */
+  const BLOCKS = [
+`Kobold
+Small humanoid (kobold), lawful evil
+Armor Class 12
+Hit Points 5 (2d6 - 2)
+Speed 30 ft.
+STR DEX CON INT WIS CHA
+7 (-2) 15 (+2) 9 (-1) 8 (-1) 7 (-2) 8 (-1)
+Senses darkvision 60 ft., passive Perception 8
+Languages Common, Draconic
+Challenge 1/8 (25 XP)
+Sunlight Sensitivity. While in sunlight, the kobold has disadvantage on attack rolls, as well as on Wisdom (Perception) checks that rely on sight.
+Pack Tactics. The kobold has advantage on an attack roll against a creature if at least one of the kobold's allies is within 5 feet of the creature and the ally isn't incapacitated.
+Actions
+Dagger. Melee Weapon Attack: +4 to hit, reach 5 ft., one target. Hit: 4 (1d4 + 2) piercing damage.
+Sling. Ranged Weapon Attack: +4 to hit, range 30/120 ft., one target. Hit: 4 (1d4 + 2) bludgeoning damage.`,
+`Goblin
+Small humanoid (goblinoid), neutral evil
+Armor Class 15 (leather armor, shield)
+Hit Points 7 (2d6)
+Speed 30 ft.
+STR DEX CON INT WIS CHA
+8 (-1) 14 (+2) 10 (+0) 10 (+0) 8 (-1) 8 (-1)
+Skills Stealth +6
+Senses darkvision 60 ft., passive Perception 9
+Languages Common, Goblin
+Challenge 1/4 (50 XP)
+Nimble Escape. The goblin can take the Disengage or Hide action as a bonus action on each of its turns.
+Actions
+Scimitar. Melee Weapon Attack: +4 to hit, reach 5 ft., one target. Hit: 5 (1d6 + 2) slashing damage.
+Shortbow. Ranged Weapon Attack: +4 to hit, range 80/320 ft., one target. Hit: 5 (1d6 + 2) piercing damage.`,
+`Hobgoblin
+Medium humanoid (goblinoid), lawful evil
+Armor Class 18 (chain mail, shield)
+Hit Points 11 (2d8 + 2)
+Speed 30 ft.
+STR DEX CON INT WIS CHA
+13 (+1) 12 (+1) 12 (+1) 10 (+0) 10 (+0) 9 (-1)
+Senses darkvision 60 ft., passive Perception 10
+Languages Common, Goblin
+Challenge 1/2 (100 XP)
+Martial Advantage. Once per turn, the hobgoblin can deal an extra 7 (2d6) damage to a creature it hits with a weapon attack if that creature is within 5 feet of an ally of the hobgoblin that isn't incapacitated.
+Actions
+Longsword. Melee Weapon Attack: +3 to hit, reach 5 ft., one target. Hit: 5 (1d8 + 1) slashing damage, or 6 (1d10 + 1) slashing damage if used with two hands.
+Longbow. Ranged Weapon Attack: +3 to hit, range 150/600 ft., one target. Hit: 5 (1d8 + 1) piercing damage.`,
+`Bugbear
+Medium humanoid (goblinoid), chaotic evil
+Armor Class 16 (hide armor, shield)
+Hit Points 27 (5d8 + 5)
+Speed 30 ft.
+STR DEX CON INT WIS CHA
+15 (+2) 14 (+2) 13 (+1) 8 (-1) 11 (+0) 9 (-1)
+Skills Stealth +6, Survival +2
+Senses darkvision 60 ft., passive Perception 10
+Languages Common, Goblin
+Challenge 1 (200 XP)
+Brute. A melee weapon deals one extra die of its damage when the bugbear hits with it (included in the attack).
+Surprise Attack. If the bugbear surprises a creature and hits it with an attack during the first round of combat, the target takes an extra 7 (2d6) damage from the attack.
+Actions
+Morningstar. Melee Weapon Attack: +4 to hit, reach 5 ft., one target. Hit: 11 (2d8 + 2) piercing damage.
+Javelin. Melee or Ranged Weapon Attack: +4 to hit, reach 5 ft. or range 30/120 ft., one target. Hit: 9 (2d6 + 2) piercing damage in melee or 5 (1d6 + 2) piercing damage at range.`,
+`Orc
+Medium humanoid (orc), chaotic evil
+Armor Class 13 (hide armor)
+Hit Points 15 (2d8 + 6)
+Speed 30 ft.
+STR DEX CON INT WIS CHA
+16 (+3) 12 (+1) 16 (+3) 7 (-2) 11 (+0) 10 (+0)
+Skills Intimidation +2
+Senses darkvision 60 ft., passive Perception 10
+Languages Common, Orc
+Challenge 1/2 (100 XP)
+Aggressive. As a bonus action, the orc can move up to its speed toward a hostile creature that it can see.
+Actions
+Greataxe. Melee Weapon Attack: +5 to hit, reach 5 ft., one target. Hit: 9 (1d12 + 3) slashing damage.
+Javelin. Melee or Ranged Weapon Attack: +5 to hit, reach 5 ft. or range 30/120 ft., one target. Hit: 6 (1d6 + 3) piercing damage.`,
+`Gnoll
+Medium humanoid (gnoll), chaotic evil
+Armor Class 15 (hide armor, shield)
+Hit Points 22 (5d8)
+Speed 30 ft.
+STR DEX CON INT WIS CHA
+14 (+2) 12 (+1) 11 (+0) 6 (-2) 10 (+0) 7 (-2)
+Senses darkvision 60 ft., passive Perception 10
+Languages Gnoll
+Challenge 1/2 (100 XP)
+Rampage. When the gnoll reduces a creature to 0 hit points with a melee attack on its turn, the gnoll can take a bonus action to move up to half its speed and make a bite attack.
+Actions
+Bite. Melee Weapon Attack: +4 to hit, reach 5 ft., one creature. Hit: 4 (1d4 + 2) piercing damage.
+Spear. Melee or Ranged Weapon Attack: +4 to hit, reach 5 ft. or range 20/60 ft., one target. Hit: 5 (1d6 + 2) piercing damage, or 6 (1d8 + 2) piercing damage if used with two hands to make a melee attack.
+Longbow. Ranged Weapon Attack: +3 to hit, range 150/600 ft., one target. Hit: 5 (1d8 + 1) piercing damage.`,
+`Bandit
+Medium humanoid (any race), any non-lawful alignment
+Armor Class 12 (leather armor)
+Hit Points 11 (2d8 + 2)
+Speed 30 ft.
+STR DEX CON INT WIS CHA
+11 (+0) 12 (+1) 12 (+1) 10 (+0) 10 (+0) 10 (+0)
+Senses passive Perception 10
+Languages any one language (usually Common)
+Challenge 1/8 (25 XP)
+Actions
+Scimitar. Melee Weapon Attack: +3 to hit, reach 5 ft., one target. Hit: 4 (1d6 + 1) slashing damage.
+Light Crossbow. Ranged Weapon Attack: +3 to hit, range 80/320 ft., one target. Hit: 5 (1d8 + 1) piercing damage.`,
+`Bandit Captain
+Medium humanoid (any race), any non-lawful alignment
+Armor Class 15 (studded leather)
+Hit Points 65 (10d8 + 20)
+Speed 30 ft.
+STR DEX CON INT WIS CHA
+15 (+2) 16 (+3) 14 (+2) 14 (+2) 11 (+0) 14 (+2)
+Saving Throws Str +4, Dex +5, Wis +2
+Skills Athletics +4, Deception +4
+Senses passive Perception 10
+Languages any two languages
+Challenge 2 (450 XP)
+Actions
+Multiattack. The captain makes three melee attacks: two with its scimitar and one with its dagger. Or the captain makes two ranged attacks with its daggers.
+Scimitar. Melee Weapon Attack: +5 to hit, reach 5 ft., one target. Hit: 6 (1d6 + 3) slashing damage.
+Dagger. Melee or Ranged Weapon Attack: +5 to hit, reach 5 ft. or range 20/60 ft., one target. Hit: 5 (1d4 + 3) piercing damage.
+Reactions
+Parry. The captain adds 2 to its AC against one melee attack that would hit it. To do so, the captain must see the attacker and be wielding a melee weapon.`,
+`Cultist
+Medium humanoid (any race), any non-good alignment
+Armor Class 12 (leather armor)
+Hit Points 9 (2d8)
+Speed 30 ft.
+STR DEX CON INT WIS CHA
+11 (+0) 12 (+1) 10 (+0) 10 (+0) 11 (+0) 10 (+0)
+Skills Deception +2, Religion +2
+Senses passive Perception 10
+Languages any one language (usually Common)
+Challenge 1/8 (25 XP)
+Dark Devotion. The cultist has advantage on saving throws against being charmed or frightened.
+Actions
+Scimitar. Melee Weapon Attack: +3 to hit, reach 5 ft., one creature. Hit: 4 (1d6 + 1) slashing damage.`,
+`Cult Fanatic
+Medium humanoid (any race), any non-good alignment
+Armor Class 13 (leather armor)
+Hit Points 33 (6d8 + 6)
+Speed 30 ft.
+STR DEX CON INT WIS CHA
+11 (+0) 14 (+2) 12 (+1) 10 (+0) 13 (+1) 14 (+2)
+Skills Deception +4, Persuasion +4, Religion +2
+Senses passive Perception 11
+Languages any one language (usually Common)
+Challenge 2 (450 XP)
+Dark Devotion. The fanatic has advantage on saving throws against being charmed or frightened.
+Spellcasting. The fanatic is a 4th-level spellcaster. Its spellcasting ability is Wisdom (spell save DC 11, +3 to hit with spell attacks). Cantrips: light, sacred flame, thaumaturgy. 1st level (4 slots): command, inflict wounds, shield of faith. 2nd level (3 slots): hold person, spiritual weapon.
+Actions
+Multiattack. The fanatic makes two melee attacks.
+Dagger. Melee or Ranged Weapon Attack: +4 to hit, reach 5 ft. or range 20/60 ft., one creature. Hit: 4 (1d4 + 2) piercing damage.
+Sacred Flame (Cantrip). One creature the fanatic can see within 60 feet must succeed on a DC 11 Dexterity saving throw or take 4 (1d8) radiant damage.
+Inflict Wounds (1st-Level Spell). Melee Spell Attack: +3 to hit, reach 5 ft., one creature. Hit: 16 (3d10) necrotic damage.`,
+`Guard
+Medium humanoid (any race), any alignment
+Armor Class 16 (chain shirt, shield)
+Hit Points 11 (2d8 + 2)
+Speed 30 ft.
+STR DEX CON INT WIS CHA
+13 (+1) 12 (+1) 12 (+1) 10 (+0) 11 (+0) 10 (+0)
+Skills Perception +2
+Senses passive Perception 12
+Languages any one language (usually Common)
+Challenge 1/8 (25 XP)
+Actions
+Spear. Melee or Ranged Weapon Attack: +3 to hit, reach 5 ft. or range 20/60 ft., one target. Hit: 4 (1d6 + 1) piercing damage, or 5 (1d8 + 1) piercing damage if used with two hands to make a melee attack.`,
+`Thug
+Medium humanoid (any race), any non-good alignment
+Armor Class 11 (leather armor)
+Hit Points 32 (5d8 + 10)
+Speed 30 ft.
+STR DEX CON INT WIS CHA
+15 (+2) 11 (+0) 14 (+2) 10 (+0) 10 (+0) 11 (+0)
+Skills Intimidation +2
+Senses passive Perception 10
+Languages any one language (usually Common)
+Challenge 1/2 (100 XP)
+Pack Tactics. The thug has advantage on an attack roll against a creature if at least one of the thug's allies is within 5 feet of the creature and the ally isn't incapacitated.
+Actions
+Multiattack. The thug makes two melee attacks.
+Mace. Melee Weapon Attack: +4 to hit, reach 5 ft., one creature. Hit: 5 (1d6 + 2) bludgeoning damage.
+Heavy Crossbow. Ranged Weapon Attack: +2 to hit, range 100/400 ft., one target. Hit: 5 (1d10) piercing damage.`,
+`Veteran
+Medium humanoid (any race), any alignment
+Armor Class 17 (splint)
+Hit Points 58 (9d8 + 18)
+Speed 30 ft.
+STR DEX CON INT WIS CHA
+16 (+3) 13 (+1) 14 (+2) 10 (+0) 11 (+0) 10 (+0)
+Skills Athletics +5, Perception +2
+Senses passive Perception 12
+Languages any one language (usually Common)
+Challenge 3 (700 XP)
+Actions
+Multiattack. The veteran makes two longsword attacks. If it has a shortsword drawn, it can also make a shortsword attack.
+Longsword. Melee Weapon Attack: +5 to hit, reach 5 ft., one target. Hit: 7 (1d8 + 3) slashing damage, or 8 (1d10 + 3) slashing damage if used with two hands.
+Shortsword. Melee Weapon Attack: +5 to hit, reach 5 ft., one target. Hit: 6 (1d6 + 3) piercing damage.
+Heavy Crossbow. Ranged Weapon Attack: +3 to hit, range 100/400 ft., one target. Hit: 6 (1d10 + 1) piercing damage.`,
+`Knight
+Medium humanoid (any race), any alignment
+Armor Class 18 (plate)
+Hit Points 52 (8d8 + 16)
+Speed 30 ft.
+STR DEX CON INT WIS CHA
+16 (+3) 11 (+0) 14 (+2) 11 (+0) 11 (+0) 15 (+2)
+Saving Throws Con +4, Wis +2
+Senses passive Perception 10
+Languages any one language (usually Common)
+Challenge 3 (700 XP)
+Brave. The knight has advantage on saving throws against being frightened.
+Actions
+Multiattack. The knight makes two melee attacks.
+Greatsword. Melee Weapon Attack: +5 to hit, reach 5 ft., one target. Hit: 10 (2d6 + 3) slashing damage.
+Heavy Crossbow. Ranged Weapon Attack: +2 to hit, range 100/400 ft., one target. Hit: 5 (1d10) piercing damage.
+Leadership (Recharges after a Short or Long Rest). For 1 minute, the knight can utter a special command or warning whenever a nonhostile creature that it can see within 30 feet of it makes an attack roll or a saving throw. The creature can add a d4 to its roll provided it can hear and understand the knight.
+Reactions
+Parry. The knight adds 2 to its AC against one melee attack that would hit it. To do so, the knight must see the attacker and be wielding a melee weapon.`,
+`Priest
+Medium humanoid (any race), any alignment
+Armor Class 13 (chain shirt)
+Hit Points 27 (5d8 + 5)
+Speed 25 ft.
+STR DEX CON INT WIS CHA
+10 (+0) 10 (+0) 12 (+1) 13 (+1) 16 (+3) 13 (+1)
+Skills Medicine +7, Persuasion +3, Religion +4
+Senses passive Perception 13
+Languages any two languages
+Challenge 2 (450 XP)
+Divine Eminence. As a bonus action, the priest can expend a spell slot to cause its melee weapon attacks to magically deal an extra 10 (3d6) radiant damage to a target on a hit. This benefit lasts until the end of the turn.
+Spellcasting. The priest is a 5th-level spellcaster. Its spellcasting ability is Wisdom (spell save DC 13, +5 to hit with spell attacks). Cantrips: light, sacred flame, thaumaturgy. 1st level (4 slots): cure wounds, guiding bolt, sanctuary. 2nd level (3 slots): lesser restoration, spiritual weapon. 3rd level (2 slots): dispel magic, spirit guardians.
+Actions
+Mace. Melee Weapon Attack: +2 to hit, reach 5 ft., one target. Hit: 3 (1d6) bludgeoning damage.
+Sacred Flame (Cantrip). One creature the priest can see within 60 feet must succeed on a DC 13 Dexterity saving throw or take 9 (2d8) radiant damage.
+Guiding Bolt (1st-Level Spell). Ranged Spell Attack: +5 to hit, range 120 ft., one creature. Hit: 14 (4d6) radiant damage.`,
+`Mage
+Medium humanoid (any race), any alignment
+Armor Class 12 (15 with mage armor)
+Hit Points 40 (9d8)
+Speed 30 ft.
+STR DEX CON INT WIS CHA
+9 (-1) 14 (+2) 11 (+0) 17 (+3) 12 (+1) 11 (+0)
+Saving Throws Int +6, Wis +4
+Skills Arcana +6, History +6
+Senses passive Perception 11
+Languages any four languages
+Challenge 6 (2,300 XP)
+Spellcasting. The mage is a 9th-level spellcaster. Its spellcasting ability is Intelligence (spell save DC 14, +6 to hit with spell attacks). Cantrips: fire bolt, light, mage hand, prestidigitation. 1st level (4 slots): detect magic, mage armor, magic missile, shield. 2nd level (3 slots): misty step, suggestion. 3rd level (3 slots): counterspell, fireball, fly. 4th level (3 slots): greater invisibility, ice storm. 5th level (1 slot): cone of cold.
+Actions
+Dagger. Melee or Ranged Weapon Attack: +5 to hit, reach 5 ft. or range 20/60 ft., one target. Hit: 4 (1d4 + 2) piercing damage.
+Fire Bolt (Cantrip). Ranged Spell Attack: +6 to hit, range 120 ft., one target. Hit: 11 (2d10) fire damage.
+Fireball (3rd-Level Spell). Each creature in a 20-foot-radius sphere centered on a point within 150 feet must make a DC 14 Dexterity saving throw, taking 28 (8d6) fire damage on a failed save, or half as much damage on a successful one.
+Cone of Cold (5th-Level Spell). Each creature in a 60-foot cone must make a DC 14 Constitution saving throw, taking 36 (8d8) cold damage on a failed save, or half as much damage on a successful one.`,
+`Skeleton
+Medium undead, lawful evil
+Armor Class 13 (armor scraps)
+Hit Points 13 (2d8 + 4)
+Speed 30 ft.
+STR DEX CON INT WIS CHA
+10 (+0) 14 (+2) 15 (+2) 6 (-2) 8 (-1) 5 (-3)
+Damage Vulnerabilities bludgeoning
+Damage Immunities poison
+Condition Immunities exhaustion, poisoned
+Senses darkvision 60 ft., passive Perception 9
+Languages understands all languages it knew in life but can't speak
+Challenge 1/4 (50 XP)
+Actions
+Shortsword. Melee Weapon Attack: +4 to hit, reach 5 ft., one target. Hit: 5 (1d6 + 2) piercing damage.
+Shortbow. Ranged Weapon Attack: +4 to hit, range 80/320 ft., one target. Hit: 5 (1d6 + 2) piercing damage.`,
+`Zombie
+Medium undead, neutral evil
+Armor Class 8
+Hit Points 22 (3d8 + 9)
+Speed 20 ft.
+STR DEX CON INT WIS CHA
+13 (+1) 6 (-2) 16 (+3) 3 (-4) 6 (-2) 5 (-3)
+Saving Throws Wis +0
+Damage Immunities poison
+Condition Immunities poisoned
+Senses darkvision 60 ft., passive Perception 8
+Languages understands the languages it knew in life but can't speak
+Challenge 1/4 (50 XP)
+Undead Fortitude. If damage reduces the zombie to 0 hit points, it must make a Constitution saving throw with a DC of 5 + the damage taken, unless the damage is radiant or from a critical hit. On a success, the zombie drops to 1 hit point instead.
+Actions
+Slam. Melee Weapon Attack: +3 to hit, reach 5 ft., one target. Hit: 4 (1d6 + 1) bludgeoning damage.`,
+`Ghoul
+Medium undead, chaotic evil
+Armor Class 12
+Hit Points 22 (5d8)
+Speed 30 ft.
+STR DEX CON INT WIS CHA
+13 (+1) 15 (+2) 10 (+0) 7 (-2) 10 (+0) 6 (-2)
+Damage Immunities poison
+Condition Immunities charmed, exhaustion, poisoned
+Senses darkvision 60 ft., passive Perception 10
+Languages Common
+Challenge 1 (200 XP)
+Actions
+Bite. Melee Weapon Attack: +2 to hit, reach 5 ft., one creature. Hit: 9 (2d6 + 2) piercing damage.
+Claws. Melee Weapon Attack: +4 to hit, reach 5 ft., one target. Hit: 7 (2d4 + 2) slashing damage. If the target is a creature other than an elf or undead, it must succeed on a DC 10 Constitution saving throw or be paralyzed for 1 minute. The target can repeat the saving throw at the end of each of its turns, ending the effect on itself on a success.`,
+`Ghast
+Medium undead, chaotic evil
+Armor Class 13
+Hit Points 36 (8d8)
+Speed 30 ft.
+STR DEX CON INT WIS CHA
+16 (+3) 17 (+3) 10 (+0) 11 (+0) 10 (+0) 8 (-1)
+Damage Resistances necrotic
+Damage Immunities poison
+Condition Immunities charmed, exhaustion, poisoned
+Senses darkvision 60 ft., passive Perception 10
+Languages Common
+Challenge 2 (450 XP)
+Stench. Any creature that starts its turn within 5 feet of the ghast must succeed on a DC 10 Constitution saving throw or be poisoned until the start of its next turn. On a successful saving throw, the creature is immune to the ghast's Stench for 24 hours.
+Turning Defiance. The ghast and any ghouls within 30 feet of it have advantage on saving throws against effects that turn undead.
+Actions
+Bite. Melee Weapon Attack: +3 to hit, reach 5 ft., one creature. Hit: 12 (2d8 + 3) piercing damage.
+Claws. Melee Weapon Attack: +5 to hit, reach 5 ft., one target. Hit: 10 (2d6 + 3) slashing damage. If the target is a creature other than an undead, it must succeed on a DC 10 Constitution saving throw or be paralyzed for 1 minute. The target can repeat the saving throw at the end of each of its turns, ending the effect on itself on a success.`,
+`Shadow
+Medium undead, chaotic evil
+Armor Class 12
+Hit Points 16 (3d8 + 3)
+Speed 40 ft.
+STR DEX CON INT WIS CHA
+6 (-2) 14 (+2) 13 (+1) 6 (-2) 10 (+0) 8 (-1)
+Skills Stealth +4 (+6 in dim light or darkness)
+Damage Vulnerabilities radiant
+Damage Resistances acid, cold, fire, lightning, thunder; bludgeoning, piercing, and slashing from nonmagical attacks
+Damage Immunities necrotic, poison
+Condition Immunities exhaustion, frightened, grappled, paralyzed, petrified, poisoned, prone, restrained
+Senses darkvision 60 ft., passive Perception 10
+Languages -
+Challenge 1/2 (100 XP)
+Amorphous. The shadow can move through a space as narrow as 1 inch wide without squeezing.
+Shadow Stealth. While in dim light or darkness, the shadow can take the Hide action as a bonus action.
+Sunlight Weakness. While in sunlight, the shadow has disadvantage on attack rolls, ability checks, and saving throws.
+Actions
+Strength Drain. Melee Weapon Attack: +4 to hit, reach 5 ft., one creature. Hit: 9 (2d6 + 2) necrotic damage, and the target's Strength score is reduced by 1d4. The target dies if this reduces its Strength to 0. Otherwise, the reduction lasts until the target finishes a short or long rest.`,
+`Wight
+Medium undead, neutral evil
+Armor Class 14 (studded leather)
+Hit Points 45 (6d8 + 18)
+Speed 30 ft.
+STR DEX CON INT WIS CHA
+15 (+2) 14 (+2) 16 (+3) 10 (+0) 13 (+1) 15 (+2)
+Skills Perception +3, Stealth +4
+Damage Resistances necrotic; bludgeoning, piercing, and slashing from nonmagical attacks that aren't silvered
+Damage Immunities poison
+Condition Immunities exhaustion, poisoned
+Senses darkvision 60 ft., passive Perception 13
+Languages the languages it knew in life
+Challenge 3 (700 XP)
+Sunlight Sensitivity. While in sunlight, the wight has disadvantage on attack rolls, as well as on Wisdom (Perception) checks that rely on sight.
+Actions
+Multiattack. The wight makes two longsword attacks or two longbow attacks. It can use its Life Drain in place of one longsword attack.
+Life Drain. Melee Weapon Attack: +4 to hit, reach 5 ft., one creature. Hit: 5 (1d6 + 2) necrotic damage. The target must succeed on a DC 13 Constitution saving throw or its hit point maximum is reduced by an amount equal to the damage taken.
+Longsword. Melee Weapon Attack: +4 to hit, reach 5 ft., one target. Hit: 6 (1d8 + 2) slashing damage, or 7 (1d10 + 2) slashing damage if used with two hands.
+Longbow. Ranged Weapon Attack: +4 to hit, range 150/600 ft., one target. Hit: 6 (1d8 + 2) piercing damage.`,
+`Wolf
+Medium beast, unaligned
+Armor Class 13 (natural armor)
+Hit Points 11 (2d8 + 2)
+Speed 40 ft.
+STR DEX CON INT WIS CHA
+12 (+1) 15 (+2) 12 (+1) 3 (-4) 12 (+1) 6 (-2)
+Skills Perception +3, Stealth +4
+Senses passive Perception 13
+Languages -
+Challenge 1/4 (50 XP)
+Keen Hearing and Smell. The wolf has advantage on Wisdom (Perception) checks that rely on hearing or smell.
+Pack Tactics. The wolf has advantage on an attack roll against a creature if at least one of the wolf's allies is within 5 feet of the creature and the ally isn't incapacitated.
+Actions
+Bite. Melee Weapon Attack: +4 to hit, reach 5 ft., one target. Hit: 7 (2d4 + 2) piercing damage. If the target is a creature, it must succeed on a DC 11 Strength saving throw or be knocked prone.`,
+`Dire Wolf
+Large beast, unaligned
+Armor Class 14 (natural armor)
+Hit Points 37 (5d10 + 10)
+Speed 50 ft.
+STR DEX CON INT WIS CHA
+17 (+3) 15 (+2) 15 (+2) 3 (-4) 12 (+1) 7 (-2)
+Skills Perception +3, Stealth +4
+Senses passive Perception 13
+Languages -
+Challenge 1 (200 XP)
+Keen Hearing and Smell. The wolf has advantage on Wisdom (Perception) checks that rely on hearing or smell.
+Pack Tactics. The wolf has advantage on an attack roll against a creature if at least one of the wolf's allies is within 5 feet of the creature and the ally isn't incapacitated.
+Actions
+Bite. Melee Weapon Attack: +5 to hit, reach 5 ft., one target. Hit: 10 (2d6 + 3) piercing damage. If the target is a creature, it must succeed on a DC 13 Strength saving throw or be knocked prone.`,
+`Giant Spider
+Large beast, unaligned
+Armor Class 14 (natural armor)
+Hit Points 26 (4d10 + 4)
+Speed 30 ft., climb 30 ft.
+STR DEX CON INT WIS CHA
+14 (+2) 16 (+3) 12 (+1) 2 (-4) 11 (+0) 4 (-3)
+Skills Stealth +7
+Senses blindsight 10 ft., darkvision 60 ft., passive Perception 10
+Languages -
+Challenge 1 (200 XP)
+Spider Climb. The spider can climb difficult surfaces, including upside down on ceilings, without needing to make an ability check.
+Web Sense. While in contact with a web, the spider knows the exact location of any other creature in contact with the same web.
+Web Walker. The spider ignores movement restrictions caused by webbing.
+Actions
+Bite. Melee Weapon Attack: +5 to hit, reach 5 ft., one creature. Hit: 7 (1d8 + 3) piercing damage, and the target must make a DC 11 Constitution saving throw, taking 9 (2d8) poison damage on a failed save, or half as much damage on a successful one.
+Web (Recharge 5-6). Ranged Weapon Attack: +5 to hit, range 30/60 ft., one creature. Hit: The target is restrained by webbing. As an action, the restrained target can make a DC 12 Strength check, bursting the webbing on a success.`,
+`Brown Bear
+Large beast, unaligned
+Armor Class 11 (natural armor)
+Hit Points 34 (4d10 + 12)
+Speed 40 ft., climb 30 ft.
+STR DEX CON INT WIS CHA
+19 (+4) 10 (+0) 16 (+3) 2 (-4) 13 (+1) 7 (-2)
+Skills Perception +3
+Senses passive Perception 13
+Languages -
+Challenge 1 (200 XP)
+Keen Smell. The bear has advantage on Wisdom (Perception) checks that rely on smell.
+Actions
+Multiattack. The bear makes two attacks: one with its bite and one with its claws.
+Bite. Melee Weapon Attack: +6 to hit, reach 5 ft., one target. Hit: 8 (1d8 + 4) piercing damage.
+Claws. Melee Weapon Attack: +6 to hit, reach 5 ft., one target. Hit: 11 (2d6 + 4) slashing damage.`,
+`Owlbear
+Large monstrosity, unaligned
+Armor Class 13 (natural armor)
+Hit Points 59 (7d10 + 21)
+Speed 40 ft.
+STR DEX CON INT WIS CHA
+20 (+5) 12 (+1) 17 (+3) 3 (-4) 12 (+1) 7 (-2)
+Skills Perception +3
+Senses darkvision 60 ft., passive Perception 13
+Languages -
+Challenge 3 (700 XP)
+Keen Sight and Smell. The owlbear has advantage on Wisdom (Perception) checks that rely on sight or smell.
+Actions
+Multiattack. The owlbear makes two attacks: one with its beak and one with its claws.
+Beak. Melee Weapon Attack: +7 to hit, reach 5 ft., one creature. Hit: 10 (1d10 + 5) piercing damage.
+Claws. Melee Weapon Attack: +7 to hit, reach 5 ft., one target. Hit: 14 (2d8 + 5) slashing damage.`,
+`Ogre
+Large giant, chaotic evil
+Armor Class 11 (hide armor)
+Hit Points 59 (7d10 + 21)
+Speed 40 ft.
+STR DEX CON INT WIS CHA
+19 (+4) 8 (-1) 16 (+3) 5 (-3) 7 (-2) 7 (-2)
+Senses darkvision 60 ft., passive Perception 8
+Languages Common, Giant
+Challenge 2 (450 XP)
+Actions
+Greatclub. Melee Weapon Attack: +6 to hit, reach 5 ft., one target. Hit: 13 (2d8 + 4) bludgeoning damage.
+Javelin. Melee or Ranged Weapon Attack: +6 to hit, reach 5 ft. or range 30/120 ft., one target. Hit: 11 (2d6 + 4) piercing damage.`,
+`Troll
+Large giant, chaotic evil
+Armor Class 15 (natural armor)
+Hit Points 84 (8d10 + 40)
+Speed 30 ft.
+STR DEX CON INT WIS CHA
+18 (+4) 13 (+1) 20 (+5) 7 (-2) 9 (-1) 7 (-2)
+Skills Perception +2
+Senses darkvision 60 ft., passive Perception 12
+Languages Giant
+Challenge 5 (1,800 XP)
+Keen Smell. The troll has advantage on Wisdom (Perception) checks that rely on smell.
+Regeneration. The troll regains 10 hit points at the start of its turn. If the troll takes acid or fire damage, this trait doesn't function at the start of the troll's next turn. The troll dies only if it starts its turn with 0 hit points and doesn't regenerate.
+Actions
+Multiattack. The troll makes three attacks: one with its bite and two with its claws.
+Bite. Melee Weapon Attack: +7 to hit, reach 5 ft., one target. Hit: 7 (1d6 + 4) piercing damage.
+Claw. Melee Weapon Attack: +7 to hit, reach 5 ft., one target. Hit: 11 (2d6 + 4) slashing damage.`,
+`Hill Giant
+Huge giant, chaotic evil
+Armor Class 13 (natural armor)
+Hit Points 105 (10d12 + 40)
+Speed 40 ft.
+STR DEX CON INT WIS CHA
+21 (+5) 8 (-1) 19 (+4) 5 (-3) 9 (-1) 6 (-2)
+Skills Perception +2
+Senses passive Perception 12
+Languages Giant
+Challenge 5 (1,800 XP)
+Actions
+Multiattack. The giant makes two greatclub attacks.
+Greatclub. Melee Weapon Attack: +8 to hit, reach 10 ft., one target. Hit: 18 (3d8 + 5) bludgeoning damage.
+Rock. Ranged Weapon Attack: +8 to hit, range 60/240 ft., one target. Hit: 21 (3d10 + 5) bludgeoning damage.`,
+`Minotaur
+Large monstrosity, chaotic evil
+Armor Class 14 (natural armor)
+Hit Points 76 (9d10 + 27)
+Speed 40 ft.
+STR DEX CON INT WIS CHA
+18 (+4) 11 (+0) 16 (+3) 6 (-2) 16 (+3) 9 (-1)
+Skills Perception +7
+Senses darkvision 60 ft., passive Perception 17
+Languages Abyssal
+Challenge 3 (700 XP)
+Charge. If the minotaur moves at least 10 feet straight toward a target and then hits it with a gore attack on the same turn, the target takes an extra 9 (2d8) piercing damage. If the target is a creature, it must succeed on a DC 14 Strength saving throw or be pushed up to 10 feet away and knocked prone.
+Labyrinthine Recall. The minotaur can perfectly recall any path it has traveled.
+Reckless. At the start of its turn, the minotaur can gain advantage on all melee weapon attack rolls it makes during that turn, but attack rolls against it have advantage until the start of its next turn.
+Actions
+Greataxe. Melee Weapon Attack: +6 to hit, reach 5 ft., one target. Hit: 17 (2d12 + 4) slashing damage.
+Gore. Melee Weapon Attack: +6 to hit, reach 5 ft., one target. Hit: 13 (2d8 + 4) piercing damage.`,
+`Mimic
+Medium monstrosity (shapechanger), neutral
+Armor Class 12 (natural armor)
+Hit Points 58 (9d8 + 18)
+Speed 15 ft.
+STR DEX CON INT WIS CHA
+17 (+3) 12 (+1) 15 (+2) 5 (-3) 13 (+1) 8 (-1)
+Skills Stealth +5
+Damage Immunities acid
+Condition Immunities prone
+Senses darkvision 60 ft., passive Perception 11
+Languages -
+Challenge 2 (450 XP)
+Adhesive (Object Form Only). The mimic adheres to anything that touches it. A Huge or smaller creature adhered to the mimic is also grappled by it (escape DC 13). Ability checks made to escape this grapple have disadvantage.
+False Appearance (Object Form Only). While the mimic remains motionless, it is indistinguishable from an ordinary object.
+Grappler. The mimic has advantage on attack rolls against any creature grappled by it.
+Actions
+Pseudopod. Melee Weapon Attack: +5 to hit, reach 5 ft., one target. Hit: 7 (1d8 + 3) bludgeoning damage. If the mimic is in object form, the target is subjected to its Adhesive trait.
+Bite. Melee Weapon Attack: +5 to hit, reach 5 ft., one target. Hit: 7 (1d8 + 3) piercing damage plus 4 (1d8) acid damage.`,
+`Gelatinous Cube
+Large ooze, unaligned
+Armor Class 6
+Hit Points 84 (8d10 + 40)
+Speed 15 ft.
+STR DEX CON INT WIS CHA
+14 (+2) 3 (-4) 20 (+5) 1 (-5) 6 (-2) 1 (-5)
+Condition Immunities blinded, charmed, deafened, exhaustion, frightened, prone
+Senses blindsight 60 ft. (blind beyond this radius), passive Perception 8
+Languages -
+Challenge 2 (450 XP)
+Ooze Cube. The cube takes up its entire space. Other creatures can enter the space, but a creature that does so is subjected to the cube's Engulf and has disadvantage on the saving throw.
+Transparent. Even when the cube is in plain sight, it takes a successful DC 15 Wisdom (Perception) check to spot a cube that has neither moved nor attacked.
+Actions
+Pseudopod. Melee Weapon Attack: +4 to hit, reach 5 ft., one creature. Hit: 10 (3d6) acid damage.
+Engulf. The cube moves up to its speed. While doing so, it can enter Large or smaller creatures' spaces. Whenever the cube enters a creature's space, the creature must make a DC 12 Dexterity saving throw. On a failed save, the creature takes 10 (3d6) acid damage and is engulfed.`,
+`Basilisk
+Medium monstrosity, unaligned
+Armor Class 15 (natural armor)
+Hit Points 52 (8d8 + 16)
+Speed 20 ft.
+STR DEX CON INT WIS CHA
+16 (+3) 8 (-1) 15 (+2) 2 (-4) 8 (-1) 7 (-2)
+Senses darkvision 60 ft., passive Perception 9
+Languages -
+Challenge 3 (700 XP)
+Petrifying Gaze. If a creature starts its turn within 30 feet of the basilisk and the two of them can see each other, the basilisk can force the creature to make a DC 12 Constitution saving throw if the basilisk isn't incapacitated. On a failed save, the creature magically begins to turn to stone and is restrained.
+Actions
+Bite. Melee Weapon Attack: +5 to hit, reach 5 ft., one target. Hit: 10 (2d6 + 3) piercing damage plus 7 (2d6) poison damage.`,
+`Young Green Dragon
+Large dragon, lawful evil
+Armor Class 18 (natural armor)
+Hit Points 136 (16d10 + 48)
+Speed 40 ft., fly 80 ft., swim 40 ft.
+STR DEX CON INT WIS CHA
+19 (+4) 12 (+1) 17 (+3) 16 (+3) 13 (+1) 15 (+2)
+Saving Throws Dex +4, Con +6, Wis +4, Cha +5
+Skills Deception +5, Perception +7, Stealth +4
+Damage Immunities poison
+Condition Immunities poisoned
+Senses blindsight 30 ft., darkvision 120 ft., passive Perception 17
+Languages Common, Draconic
+Challenge 8 (3,900 XP)
+Amphibious. The dragon can breathe air and water.
+Actions
+Multiattack. The dragon makes three attacks: one with its bite and two with its claws.
+Bite. Melee Weapon Attack: +7 to hit, reach 10 ft., one target. Hit: 15 (2d10 + 4) piercing damage plus 7 (2d6) poison damage.
+Claw. Melee Weapon Attack: +7 to hit, reach 5 ft., one target. Hit: 11 (2d6 + 4) slashing damage.
+Poison Breath (Recharge 5-6). The dragon exhales poisonous gas in a 30-foot cone. Each creature in that area must make a DC 14 Constitution saving throw, taking 42 (12d6) poison damage on a failed save, or half as much damage on a successful one.`,
+  ];
+  let cache = null;
+  function srd() {
+    if (!cache) cache = BLOCKS.map(b => { const t = parse(b); t.id = 'srd:' + t.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'); t.srd = true; t.source = b; return t; });
+    return cache;
+  }
+  return { parse, srd, avgDice, mod };
+})();
+if (typeof module !== 'undefined') module.exports = MONSTERS;
+</script>
+
+<script>
 /* ============ PDF IMPORT ============
    Two steps:
    1. read a source into a plain "parsed sheet" (official 5e form fields, or Claude reading the text);
@@ -1653,10 +2377,10 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.3.0';
+const APP_VERSION = '1.4.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
-const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820 }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
+const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
 function saveSettings() { try { localStorage.setItem(SETKEY, JSON.stringify(SETTINGS)); } catch (e) { } }
 const DICE_MS = { quick: 450, normal: 850, dramatic: 1400 };
 document.documentElement.classList.toggle('compact', !!SETTINGS.compact);
@@ -1938,6 +2662,7 @@ function roll(title, comps, opt = {}) {
   const r = E.rollComps(comps, CTX, { mode, crit: opt.crit });
   const entry = { id: uid(), title, kind: opt.kind || '', total: Math.max(opt.minZero ? 0 : -999, r.total), parts: r.parts, mode, nat: r.nat, crit: false, fumble: false, fu: opt.fu || [], note: opt.note || '', isCrit: !!opt.crit };
   if (opt.onLand) Object.defineProperty(entry, 'onLand', { value: opt.onLand, enumerable: false });
+  if (opt.noShare) entry.shared = true;
   if (d20 && r.nat != null) { if (r.nat >= (opt.critMin || 20)) entry.crit = true; if (r.nat === 1) entry.fumble = true; }
   if (opt.after) opt.after(entry);
   ui.log.unshift(entry); if (ui.log.length > 60) ui.log.pop();
@@ -1985,7 +2710,14 @@ async function startOwlbear() {
       OBRX.room = OBR.room && OBR.room.id ? OBR.room.id : 'room';
       OBR.broadcast.onMessage(CH_ROLL, ev => receiveRoll(ev.data));
       OBR.broadcast.onMessage(CH_GM, ev => receiveGm(ev.data));
-      OBR.broadcast.onMessage(CH_LOCAL, ev => { const d = ev.data; if (d && d.type === 'view') requestSheet(d.player, d.char, d.name, d.owner); });
+      OBR.broadcast.onMessage(CH_LOCAL, ev => {
+        const d = ev.data; if (!d) return;
+        if (d.type === 'view') requestSheet(d.player, d.char, d.name, d.owner);
+        if (d.type === 'focus') { SETTINGS.view = 'encounter'; saveSettings(); ui.monFocus = d.inst; render(); const n = document.querySelector(`[data-inst="${d.inst}"]`); if (n && n.scrollIntoView) n.scrollIntoView({ block: 'center' }); }
+      });
+      try { const md = await OBR.room.getMetadata(); OBRX.init = md && md[INITKEY]; OBR.room.onMetadataChange(md => { OBRX.init = md && md[INITKEY]; refreshInitView(); }); } catch (e) { }
+      OBR.player.onChange(p => { if (OBRX.me.role !== 'GM' || !p.selection) return; const sel = p.selection; const inst = Object.keys(OBRX.monTokens).find(k => OBRX.monTokens[k].some(it => sel.includes(it.id))); if (inst && inst !== ui.monFocus) { ui.monFocus = inst; if (ui.view === 'encounter') { renderGrid(); const n = document.querySelector(`[data-inst="${inst}"]`); if (n && n.scrollIntoView) n.scrollIntoView({ block: 'nearest' }); } } });
+      writeCatalog(); ENC = null; enc(); render();
       setInterval(() => { if (!document.hidden) refreshLinks(); }, 5000);
       try {
         OBR.scene.items.onChange(items => refreshLinks(items));
@@ -2021,8 +2753,10 @@ OBRX.links = [];
 async function refreshLinks(items) {
   if (!OBRX.ready) return;
   try {
-    if (!items) items = (await OBRX.api.scene.isReady()) ? await OBRX.api.scene.items.getItems(it => !!(it.metadata && it.metadata[LINK])) : [];
+    if (!items) items = (await OBRX.api.scene.isReady()) ? await OBRX.api.scene.items.getItems(it => !!(it.metadata && (it.metadata[LINK] || it.metadata[MONLINK]))) : [];
   } catch (e) { items = []; }
+  const hadMon = Object.keys(OBRX.monTokens).length; scanTokens(items);
+  if (OBRX.me.role === 'GM') { syncMonTokens(); if (ui.view === 'encounter' && Object.keys(OBRX.monTokens).length !== hadMon) renderGrid(); }
   if (ui.viewing) return;
   const before = OBRX.links.length, cid = C().id;
   OBRX.otherLinks = items.filter(it => it.metadata && it.metadata[LINK] && it.metadata[LINK].player === OBRX.me.id && it.metadata[LINK].char !== cid).map(it => it.metadata[LINK].name || 'another character');
@@ -2065,8 +2799,23 @@ function renderParty() {
   if (!IN_OBR) return '<div class="empty">Open Grimsheet inside Owlbear Rodeo to see your party here: everyone\'s HP, AC and conditions, live.</div>';
   return `<div data-party>${partyList()}</div>`;
 }
+function refreshInitView() { refreshParty(); renderBanner(); }
+function initStrip() {
+  const I = OBRX.init; if (!I || !I.active || !I.rows) return '';
+  const i = I.rows.findIndex(r => r.k === I.turn), cur = I.rows[i], next = I.rows[(i + 1) % I.rows.length];
+  const mine = cur && cur.pc === OBRX.me.id, soon = next && next.pc === OBRX.me.id;
+  return `<b>Round ${esc(I.round)}</b> · ${mine ? '<b style="color:var(--accent)">Your turn!</b>' : esc(cur ? cur.name : '') + "'s turn"}${soon && !mine ? ' · <b>you\'re next</b>' : ''}`;
+}
+function initOrderHtml() {
+  const I = OBRX.init; if (!I || !I.active || !I.rows) return '';
+  return `<div class="sub-h" style="margin-top:0">Turn order · round ${esc(I.round)}</div><div class="init-list small">${I.rows.map(r => `<div class="irow ${r.k === I.turn ? 'cur' : ''}"><span class="ini mono">${r.init ?? '–'}</span><span class="iname">${esc(r.name)}${r.pc === OBRX.me.id ? ' <span class="chip tag-action">You</span>' : ''}</span><span class="ihp muted">${esc(r.hp || '')}</span></div>`).join('')}</div>`;
+}
 function partyList() {
   if (!OBRX.ready) return '<div class="empty">Connecting to Owlbear…</div>';
+  if (OBRX.me.role !== 'GM' && OBRX.init && OBRX.init.active) return initOrderHtml() + partyMembers();
+  return partyMembers();
+}
+function partyMembers() {
   const others = OBRX.party.filter(p => p.id !== OBRX.me.id);
   if (!others.length) return '<div class="empty">Nobody else in this room has Grimsheet open yet. Party members appear here as soon as they do.</div>';
   return others.map(p => {
@@ -2095,8 +2844,23 @@ async function unpackJSON(b64) {
   const bin = atob(b64), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
   return JSON.parse(await new Response(new Blob([u]).stream().pipeThrough(new DecompressionStream('gzip'))).text());
 }
+function reportInit(en) {
+  if (!IN_OBR || !OBRX.ready || ui.viewing) return;
+  OBRX.api.broadcast.sendMessage(CH_GM, { type: 'init', id: uid(), from: OBRX.me.id, owner: OBRX.me.name, charId: C().id, name: C().name, total: en.total }, { destination: 'REMOTE' }).catch(() => { });
+}
 async function receiveGm(d) {
   if (!d || !OBRX.ready) return;
+  if (d.type === 'init') {
+    if (OBRX.me.role !== 'GM') return;
+    const e = enc(), key = 'pc:' + d.from;
+    let p = e.pcs.find(x => x.key === key);
+    if (!p) { p = { key, player: d.from, owner: d.owner, charId: d.charId, name: d.name, init: null }; e.pcs.push(p); }
+    p.init = d.total; p.name = d.name; p.charId = d.charId;
+    saveEnc(); if (ui.view === 'encounter') renderGrid();
+    toast(d.owner + ' (' + d.name + ') rolled ' + d.total + ' for initiative.');
+    return;
+  }
+  if (d.type === 'askInit') { if (OBRX.me.role !== 'GM' && !bgAlive()) { OBRX.api.notification.show(d.from + ' asks for initiative. Tap INIT in your Combat module.', 'INFO').catch(() => { }); } if (OBRX.me.role !== 'GM') toast(d.from + ' asks for initiative. Tap INIT in Combat.'); return; }
   if (d.type === 'sheet' && d.to === OBRX.me.id && ui.pendingSheet && ui.pendingSheet.id === d.id) return receiveSheetPart(d);
   if (d.to !== OBRX.me.id || gmSeen.has(d.id)) return;
   gmSeen.add(d.id);
@@ -2150,6 +2914,309 @@ function receiveRoll(d) {
   const extra = d.crit ? ' · critical!' : d.fumble ? ' · natural 1' : '';
   OBRX.api.notification.show(`${d.who} (${d.char}): ${d.title} = ${d.total}${extra}${d.gmOnly ? ' [GM only]' : ''}`, d.crit ? 'SUCCESS' : d.fumble ? 'WARNING' : 'DEFAULT').catch(() => { });
   if (ui.modal && ui.modal.type === 'log') renderModal();
+}
+
+/* ---------- ENCOUNTER: monsters and initiative (GM) ---------- */
+const BESTKEY = 'grimsheet.bestiary.v1', ENCKEY = 'grimsheet.encounter.v1', CATKEY = 'grimsheet.moncat.v1';
+const MONLINK = 'com.grimsheet/monster', INITKEY = 'com.grimsheet/initiative';
+const isGM = () => !IN_OBR || OBRX.me.role === 'GM';
+const roomKey = () => (IN_OBR ? (OBRX.room || 'room') : 'local');
+let bestiary = (() => { const b = readJSON(BESTKEY); return Array.isArray(b) ? b : []; })();
+function saveBestiary() { writeJSON(BESTKEY, bestiary); writeCatalog(); }
+function catalog() { return MONSTERS.srd().concat(bestiary); }
+function tplById(id) { return catalog().find(t => t.id === id) || null; }
+// a light list for the GM's token menu, which runs as its own page
+function writeCatalog() { writeJSON(CATKEY, catalog().map(t => ({ id: t.id, name: t.name, cr: t.cr, hp: t.hp, ac: t.ac, init: t.init, srd: !!t.srd }))); }
+function blankEnc() { return { tpls: {}, mons: [], pcs: [], groupInit: {}, seq: {}, combat: { active: false, round: 1, turn: null } }; }
+function loadEnc() { const all = readJSON(ENCKEY) || {}; const e = all[roomKey()] || blankEnc(); for (const k of Object.keys(blankEnc())) if (e[k] == null) e[k] = blankEnc()[k]; fillTpls(e); return e; }
+function fillTpls(e) { for (const m of e.mons) if (!e.tpls[m.tpl]) { const t = tplById(m.tpl); if (t) e.tpls[m.tpl] = t; } }
+let ENC = null;
+function enc() { if (!ENC) ENC = loadEnc(); return ENC; }
+function saveEnc(opts = {}) {
+  const all = readJSON(ENCKEY) || {}; all[roomKey()] = ENC; writeJSON(ENCKEY, all);
+  if (!opts.quiet) { publishInit(); syncMonTokens(); }
+}
+window.addEventListener('storage', ev => {
+  if (ev.key === ENCKEY) { ENC = null; enc(); if (ui.view === 'encounter') renderGrid(); syncMonTokens(); publishInit(); }
+  if (ev.key === BESTKEY) { bestiary = readJSON(BESTKEY) || []; }
+});
+
+/* ---- instances ---- */
+const tplOf = m => enc().tpls[m.tpl] || tplById(m.tpl) || { name: m.name, ac: m.ac, hp: m.max, abilities: { STR: 10, DEX: 10, CON: 10, INT: 10, WIS: 10, CHA: 10 }, saves: {}, actions: [], bonus: [], reactions: [], legendary: [], traits: [], details: [], init: 0 };
+function addMonsters(t, n, opts = {}) {
+  const e = enc(); e.tpls[t.id] = t;
+  const made = [];
+  // a lone monster is just "Ogre"; once there are more, they are numbered
+  const same = e.mons.filter(x => x.tpl === t.id);
+  if (same.length === 1 && same[0].name === t.name) { same[0].name = t.name + ' 1'; }
+  const numbered = same.length + n > 1;
+  for (let i = 0; i < n; i++) {
+    e.seq[t.id] = Math.max(e.seq[t.id] || 0, same.length) + 1;
+    const m = { id: uid(), tpl: t.id, name: numbered ? t.name + ' ' + e.seq[t.id] : t.name, hp: t.hp, max: t.hp, temp: 0, ac: t.ac, cond: [], rech: {}, uses: {}, leg: 0, init: null, solo: opts.group === false };
+    e.mons.push(m); made.push(m);
+  }
+  saveEnc(); return made;
+}
+function monHpText(m) {
+  if (m.hp <= 0) return 'Down';
+  const mode = SETTINGS.monHp || 'hidden';
+  if (mode === 'exact') return m.hp + '/' + m.max;
+  if (mode === 'status') return m.hp <= m.max / 2 ? 'Bloodied' : 'Healthy';
+  return null;
+}
+// what players see for a turn-order row: exact HP, Healthy/Bloodied, or only how many are down
+function groupHpText(ms) {
+  const mode = SETTINGS.monHp || 'hidden', down = ms.filter(m => m.hp <= 0).length;
+  if (mode === 'hidden') return down ? (ms.length > 1 ? down + ' down' : 'Down') : null;
+  return ms.map(monHpText).join(', ');
+}
+function applyMonHp(m, amount) {
+  if (amount < 0) { let d = -amount; const t = Math.min(m.temp || 0, d); m.temp = (m.temp || 0) - t; d -= t; m.hp = Math.max(0, m.hp - d); }
+  else m.hp = Math.min(m.max, m.hp + amount);
+}
+
+/* ---- initiative ---- */
+function initRows() {
+  const e = enc(), rows = [];
+  const groups = {};
+  for (const m of e.mons) {
+    if (m.solo) rows.push({ k: 'm:' + m.id, name: m.name, init: m.init, kind: 'mon', members: [m] });
+    else (groups[m.tpl] = groups[m.tpl] || []).push(m);
+  }
+  for (const [tid, ms] of Object.entries(groups)) rows.push({ k: 'g:' + tid, name: ms.length > 1 ? tplOf(ms[0]).name + ' ×' + ms.length : ms[0].name, init: e.groupInit[tid] ?? null, kind: 'mon', members: ms, tid });
+  for (const p of e.pcs) rows.push({ k: p.key, name: p.name, init: p.init, kind: 'pc', pc: p });
+  rows.sort((a, b) => (b.init ?? -99) - (a.init ?? -99) || (a.kind === 'pc' ? -1 : 1));
+  return rows;
+}
+function setRowInit(k, v) {
+  const e = enc(); const val = v === '' || v == null || isNaN(+v) ? null : Math.round(+v);
+  if (k.startsWith('g:')) e.groupInit[k.slice(2)] = val;
+  else if (k.startsWith('m:')) { const m = e.mons.find(x => x.id === k.slice(2)); if (m) m.init = val; }
+  else { const p = e.pcs.find(x => x.key === k); if (p) p.init = val; }
+}
+function quickD20(bonus) { return E.rollComps([{ d20: true }, { f: String(bonus || 0) }], CTX, { mode: 'normal' }).total; }
+function rollMonsterInit(all) {
+  const e = enc(), out = [];
+  const groups = {};
+  for (const m of e.mons) {
+    const t = tplOf(m);
+    if (m.solo) { if (all || m.init == null) { m.init = quickD20(t.init); out.push(m.name + ' ' + m.init); } }
+    else groups[m.tpl] = t;
+  }
+  for (const [tid, t] of Object.entries(groups)) if (all || e.groupInit[tid] == null) { e.groupInit[tid] = quickD20(t.init); out.push(t.name + ' ' + e.groupInit[tid]); }
+  saveEnc(); renderGrid();
+  toast(out.length ? 'Initiative: ' + out.join(', ') + '.' : 'Every monster already has initiative.');
+}
+function addParty() {
+  const e = enc(); let n = 0;
+  for (const p of OBRX.party || []) {
+    if (!p.s || !p.s.charId || p.role === 'GM') continue;
+    const key = 'pc:' + p.id;
+    const ex = e.pcs.find(x => x.key === key);
+    if (ex) { ex.name = p.s.char; ex.charId = p.s.charId; continue; }
+    e.pcs.push({ key, player: p.id, owner: p.name, charId: p.s.charId, name: p.s.char, init: null }); n++;
+  }
+  saveEnc(); renderGrid();
+  return n;
+}
+function startCombat() {
+  const e = enc(); if (IN_OBR) addParty();
+  if (e.mons.some(m => (m.solo ? m.init : e.groupInit[m.tpl]) == null)) rollMonsterInit(false);
+  const rows = initRows(); if (!rows.length) { toast('Add monsters or players first.'); return; }
+  e.combat = { active: true, round: 1, turn: rows[0].k };
+  saveEnc(); onTurnStart(rows[0]); renderGrid();
+  if (IN_OBR && e.pcs.some(p => p.init == null)) askInitiative();
+}
+function nextTurn(dir = 1) {
+  const e = enc(); const rows = initRows(); if (!rows.length || !e.combat.active) return;
+  let i = rows.findIndex(r => r.k === e.combat.turn); if (i < 0) i = dir > 0 ? -1 : 0;
+  let j = i + dir;
+  if (j >= rows.length) { j = 0; e.combat.round++; }
+  if (j < 0) { j = rows.length - 1; e.combat.round = Math.max(1, e.combat.round - 1); }
+  e.combat.turn = rows[j].k;
+  saveEnc(); if (dir > 0) onTurnStart(rows[j]); renderGrid();
+}
+function endCombat() {
+  const e = enc(); e.combat = { active: false, round: 1, turn: null };
+  saveEnc(); renderGrid(); toast('Combat ended.');
+}
+// start of a monster's turn: legendary actions come back and recharge abilities roll
+function onTurnStart(row) {
+  if (!row || row.kind !== 'mon') { selectRowTokens(row); return; }
+  const msgs = [];
+  for (const m of row.members) {
+    const t = tplOf(m); m.leg = 0;
+    for (const [list, acts] of [['actions', t.actions], ['bonus', t.bonus], ['reactions', t.reactions]]) (acts || []).forEach((a, i) => {
+      const key = list + ':' + i;
+      if (a.recharge && m.rech[key] === false) { const r = 1 + Math.floor(Math.random() * 6); if (r >= a.recharge) { m.rech[key] = true; msgs.push(`${m.name}: ${a.name} recharged (rolled ${r})`); } else msgs.push(`${m.name}: ${a.name} not recharged (rolled ${r})`); }
+    });
+  }
+  saveEnc({ quiet: true });
+  toast(row.name + "'s turn." + (msgs.length ? ' ' + msgs.join('; ') + '.' : ''));
+  selectRowTokens(row);
+}
+function askInitiative() {
+  if (!IN_OBR || !OBRX.ready) return;
+  OBRX.api.broadcast.sendMessage(CH_GM, { type: 'askInit', id: uid(), from: OBRX.me.name }, { destination: 'REMOTE' }).catch(() => { });
+  toast('Asked everyone to roll initiative.');
+}
+// what players see: a short turn order in room metadata
+function publishInit() {
+  if (!IN_OBR || !OBRX.ready || OBRX.me.role !== 'GM') return;
+  const e = enc();
+  const rows = initRows().slice(0, 40).map(r => ({ k: r.k, name: r.name, init: r.init, pc: r.kind === 'pc' ? r.pc.player : null, hp: r.kind === 'mon' ? groupHpText(r.members) : null }));
+  OBRX.api.room.setMetadata({ [INITKEY]: { v: 1, active: !!e.combat.active, round: e.combat.round, turn: e.combat.turn, rows } }).catch(() => { });
+  if (SETTINGS.obrTracker !== false) writeTrackerTokens(e);
+}
+
+/* ---- monster tokens ---- */
+OBRX.monTokens = {}; OBRX.pcTokens = {};
+function scanTokens(items) {
+  const mon = {}, pc = {};
+  for (const it of items || []) {
+    const ml = it.metadata && it.metadata[MONLINK]; if (ml && ml.room === roomKey()) (mon[ml.inst] = mon[ml.inst] || []).push(it);
+    const pl = it.metadata && it.metadata[LINK]; if (pl) (pc[pl.player] = pc[pl.player] || []).push(it);
+  }
+  OBRX.monTokens = mon; OBRX.pcTokens = pc;
+}
+async function syncMonTokens() {
+  if (!IN_OBR || !OBRX.ready || OBRX.me.role !== 'GM') return;
+  const hide = (SETTINGS.monHp || 'hidden') !== 'exact', e = enc(), want = {};
+  for (const m of e.mons) for (const it of OBRX.monTokens[m.id] || []) {
+    const w = { health: m.hp, 'max health': m.max, 'temporary health': m.temp || 0, 'armor class': m.ac, hide };
+    const b = it.metadata[BUBBLES] || {};
+    if (Object.keys(w).some(k => b[k] !== w[k])) want[it.id] = w;
+  }
+  const ids = Object.keys(want); if (!ids.length) return;
+  OBRX.api.scene.items.updateItems(ids, drafts => { for (const d of drafts) d.metadata[BUBBLES] = Object.assign({}, d.metadata[BUBBLES] || {}, want[d.id]); }).catch(() => { });
+}
+function rowTokenIds(row) {
+  if (!row) return [];
+  if (row.kind === 'mon') return row.members.flatMap(m => (OBRX.monTokens[m.id] || []).map(i => i.id));
+  return (OBRX.pcTokens[row.pc.player] || []).filter(i => !row.pc.charId || i.metadata[LINK].char === row.pc.charId).map(i => i.id);
+}
+function selectRowTokens(row) { if (!IN_OBR || !OBRX.ready) return; const ids = rowTokenIds(row); if (ids.length) OBRX.api.player.select(ids, true).catch(() => { }); }
+function writeTrackerTokens(e) {
+  const rows = initRows(), want = {};
+  for (const r of rows) for (const id of rowTokenIds(r)) if (r.init != null) want[id] = { count: String(r.init), active: e.combat.active && e.combat.turn === r.k };
+  const ids = Object.keys(want); if (!ids.length) return;
+  OBRX.api.scene.items.updateItems(ids, drafts => { for (const d of drafts) d.metadata[INIT] = want[d.id]; }).catch(() => { });
+}
+
+/* ---- monster rolls (stay on the GM's screen unless sharing is on) ---- */
+function actOf(m, ref) { const [list, i] = ref.split(':'); const t = tplOf(m); return (t[list] || [])[+i]; }
+function monAttack(m, ref) {
+  const a = actOf(m, ref); if (!a) return;
+  roll(m.name + ' · ' + a.name + ' to hit', [{ d20: true }, { src: 'Attack bonus', f: String(a.attack || 0) }], {
+    noShare: !SETTINGS.monShare, fu: a.damage.length ? [{ label: 'Damage', act: 'mondmg', id: m.id + '|' + ref }] : [],
+    after: en => { if (en.crit && a.damage.length) en.fu = [{ label: 'Crit damage', act: 'mondmg', id: m.id + '|' + ref, crit: 1 }, ...en.fu]; },
+  });
+}
+function monDamage(m, ref, crit) {
+  const a = actOf(m, ref); if (!a) return;
+  const comps = []; a.damage.forEach(d => { if (d.dice) comps.push({ f: d.dice, suffix: d.type }); if (d.mod) comps.push({ f: d.mod, src: d.dice ? '' : d.type }); });
+  roll(m.name + ' · ' + a.name + ' damage' + (crit ? ' (crit)' : ''), comps, { crit, kind: 'dmg', minZero: true, noShare: !SETTINGS.monShare, note: [...new Set(a.damage.map(d => d.type))].join(', ') });
+}
+function monCheck(m, ab, save) {
+  const t = tplOf(m), md = MONSTERS.mod(t.abilities[ab] || 10), sv = save && t.saves[ab] != null ? t.saves[ab] : md;
+  roll(m.name + ' · ' + ab + (save ? ' save' : ' check'), [{ d20: true }, { src: save && t.saves[ab] != null ? 'Save bonus' : ab, f: String(save ? sv : md) }], { noShare: !SETTINGS.monShare });
+}
+
+/* ---- rendering ---- */
+function renderEncounter() {
+  const e = enc(), rows = initRows(), cur = e.combat.active ? e.combat.turn : null;
+  const head = `<div class="enc-head">
+    <div class="enc-title"><b>Encounter</b>${e.combat.active ? `<span class="chip tag-action">Round ${e.combat.round}</span>` : ''}</div>
+    <div class="enc-tools">
+      <button class="btn small primary" data-act="addmon">+ Monsters</button>
+      ${IN_OBR ? '<button class="btn small" data-act="addparty">+ Party</button><button class="btn small" data-act="askinit">Ask for initiative</button>' : '<button class="btn small" data-act="addpc">+ Character</button>'}
+      <button class="btn small" data-act="rollmoninit">Roll monster initiative</button>
+      ${e.combat.active ? '<button class="btn small" data-act="prevturn" title="Previous turn">◀</button><button class="btn small primary" data-act="nextturn">Next turn ▶</button><button class="btn small" data-act="endcombat">End combat</button>' : '<button class="btn small primary" data-act="startcombat">Start combat</button>'}
+      <button class="btn small ${ui.confirm === 'encclear' ? 'danger' : 'ghost'}" data-act="encclear">${ui.confirm === 'encclear' ? 'Remove all monsters?' : 'Clear'}</button>
+    </div></div>`;
+  const order = rows.length ? `<div class="init-list">${rows.map(r => {
+    const hp = r.kind === 'mon' ? r.members.map(m => m.hp + '/' + m.max).join(' · ') : '';
+    return `<div class="irow ${r.k === cur ? 'cur' : ''} ${r.kind === 'mon' && r.members.every(m => m.hp <= 0) ? 'down' : ''}" data-row="${esc(r.k)}">
+      <input class="ed-inline ini" id="ini-${esc(r.k)}" data-ini="${esc(r.k)}" value="${r.init ?? ''}" placeholder="–" aria-label="Initiative for ${esc(r.name)}" inputmode="numeric">
+      <button class="iname" data-act="turnto" data-v="${esc(r.k)}" title="Make it this one's turn">${r.kind === 'pc' ? '<span class="chip tag-action">PC</span> ' : ''}${esc(r.name)}${r.kind === 'pc' && r.pc.owner ? ` <span class="muted">${esc(r.pc.owner)}</span>` : ''}</button>
+      <span class="ihp mono muted">${esc(hp)}</span>
+      ${r.kind === 'pc' ? `<button class="ico" data-act="pcdel" data-v="${esc(r.k)}" title="Remove from initiative">✕</button>` : ''}
+    </div>`;
+  }).join('')}</div>` : '<div class="empty">Add monsters with “+ Monsters”' + (IN_OBR ? ', or right-click tokens on the map and choose Grimsheet → make them monsters.' : '.') + ' Players are added from the Party when combat starts.</div>';
+  const cards = e.mons.length ? `<div class="mgrid">${e.mons.map(m => monCard(m, cur)).join('')}</div>` : '';
+  return head + order + cards;
+}
+function monCard(m, cur) {
+  const t = tplOf(m), open = ui.monOpen && ui.monOpen.has(m.id), edit = ui.monEdit === m.id;
+  const rowKey = m.solo ? 'm:' + m.id : 'g:' + m.tpl, isCur = cur === rowKey;
+  const pct = m.max ? Math.max(0, Math.min(100, m.hp / m.max * 100)) : 0;
+  const tok = (OBRX.monTokens[m.id] || []).length;
+  const acts = [['actions', 'Actions'], ['bonus', 'Bonus actions'], ['reactions', 'Reactions']].map(([list, label]) => {
+    const as = t[list] || []; if (!as.length) return '';
+    return `<div class="mact-h">${label}</div>` + as.map((a, i) => {
+      const ref = list + ':' + i, ready = m.rech[ref] !== false, used = m.uses[ref] || 0;
+      const btns = [];
+      if (a.attack != null) btns.push(`<button class="roll hit" data-act="monatk" data-id="${m.id}" data-v="${ref}">${signed(a.attack)}</button>`);
+      if (a.damage.length) btns.push(`<button class="roll dmg" data-act="mondmg" data-id="${m.id}|${ref}">${esc(a.damage.map(d => (d.dice || '') + (d.mod ? (d.dice ? (+d.mod < 0 ? ' − ' + Math.abs(+d.mod) : ' + ' + d.mod) : d.mod) : '')).join(' + '))}</button>`);
+      if (a.save) btns.push(`<span class="chip dc">DC ${a.save.dc} ${a.save.ability}</span>`);
+      if (a.recharge) btns.push(`<button class="chip ${ready ? 'tag-action' : ''}" data-act="monrech" data-id="${m.id}" data-v="${ref}" title="Tap to mark used or ready">${ready ? 'Ready' : 'Recharging'} · ${a.recharge}–6</button>`);
+      if (a.uses) btns.push(`<span class="boxes">${Array.from({ length: a.uses }, (_, k) => `<button class="box ${k < used ? 'used' : ''}" data-act="monuse" data-id="${m.id}" data-v="${ref}" data-i="${k}" aria-label="Use ${k + 1}"></button>`).join('')}</span>`);
+      return `<div class="mact"><button class="mname" data-act="montxt" data-id="${m.id}" data-v="${ref}" title="${esc(a.text)}">${esc(a.name)}</button>${btns.join('')}</div>${ui.monTxt === m.id + ref ? `<div class="e-body" style="margin:2px 0 6px">${esc(a.text)}</div>` : ''}`;
+    }).join('');
+  }).join('');
+  const leg = t.legendaryCount ? `<div class="mact-h">Legendary actions</div><div class="mact"><span class="boxes">${Array.from({ length: t.legendaryCount }, (_, k) => `<button class="box ${k < m.leg ? 'used' : ''}" data-act="monleg" data-id="${m.id}" data-i="${k}" aria-label="Legendary action ${k + 1}"></button>`).join('')}</span><span class="muted" style="font-size:.8rem">${esc(t.legendary.map(a => a.name + (a.cost > 1 ? ' (' + a.cost + ')' : '')).join(', '))}</span></div>` : '';
+  const ab = `<div class="mab">${['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA'].map(k => `<div><span class="k">${k}</span><button class="md" data-act="moncheck" data-id="${m.id}" data-v="${k}" title="${k} check">${signed(MONSTERS.mod(t.abilities[k] || 10))}</button><button class="sv" data-act="monsave" data-id="${m.id}" data-v="${k}" title="${k} save">${t.saves[k] != null ? 'save ' + signed(t.saves[k]) : 'save'}</button></div>`).join('')}</div>`;
+  const details = open ? `<div class="mdet">${t.meta ? `<div class="muted" style="font-style:italic">${esc(t.meta)}</div>` : ''}<div class="muted">Speed ${esc(t.speed || '')}${t.cr ? ' · CR ' + esc(t.cr) + (t.xp ? ' (' + t.xp + ' XP)' : '') : ''}${t.hpDice ? ' · HP dice ' + esc(t.hpDice) : ''}</div>
+    ${(t.details || []).map(d => `<div><b>${esc(d.k)}</b> ${esc(d.v)}</div>`).join('')}
+    ${(t.traits || []).map(a => `<div><b>${esc(a.name)}.</b> ${esc(a.text)}</div>`).join('')}
+    ${(t.legendary || []).map(a => `<div><b>${esc(a.name)}${a.cost > 1 ? ' (costs ' + a.cost + ')' : ''}.</b> ${esc(a.text)}</div>`).join('')}</div>` : '';
+  const editRow = edit ? `<div class="medit">
+      <label>Name <input class="ed-inline" id="mn-${m.id}" data-monf="name" data-id="${m.id}" value="${esc(m.name)}" style="width:140px"></label>
+      <label>Max HP <input class="ed-inline" id="mx-${m.id}" data-monf="max" data-id="${m.id}" value="${m.max}" inputmode="numeric"></label>
+      <label>AC <input class="ed-inline" id="ma-${m.id}" data-monf="ac" data-id="${m.id}" value="${m.ac}" inputmode="numeric"></label>
+      <label class="muted"><input type="checkbox" id="ms-${m.id}" data-monf="solo" data-id="${m.id}" ${m.solo ? 'checked' : ''}> Rolls its own initiative</label>
+      ${t.hpDice ? `<button class="btn small" data-act="monrollhp" data-id="${m.id}">Roll HP (${esc(t.hpDice)})</button>` : ''}
+    </div>` : '';
+  return `<section class="mcard ${isCur ? 'cur' : ''} ${m.hp <= 0 ? 'down' : ''} ${ui.monFocus === m.id ? 'focus' : ''}" data-inst="${m.id}">
+    <div class="mhead"><b class="mtitle">${esc(m.name)}</b><span class="chip">AC ${m.ac}</span>${tok ? `<span class="chip tag-action" title="Linked to ${tok} token${tok > 1 ? 's' : ''}">Token</span>` : ''}
+      <span style="flex:1"></span>
+      <button class="ico" data-act="monedit" data-id="${m.id}" title="Edit name, HP, AC">${ICON.edit}</button>
+      <button class="ico" data-act="monopen" data-id="${m.id}" title="${open ? 'Hide' : 'Show'} stat block">${open ? ICON.chev : ICON.chevR}</button>
+      <button class="ico ${ui.confirm === 'mondel-' + m.id ? 'on' : ''}" data-act="mondel" data-id="${m.id}" title="${ui.confirm === 'mondel-' + m.id ? 'Tap again to remove' : 'Remove'}">${ICON.trash}</button></div>
+    ${editRow}
+    <div class="mhp"><span class="pool">${m.hp}<small>/${m.max}</small></span>${m.temp ? `<span class="temp">+${m.temp}</span>` : ''}${m.hp <= 0 ? '<span class="chip" style="color:var(--danger);border-color:var(--danger)">Down</span>' : m.hp <= m.max / 2 ? '<span class="chip" style="color:var(--gold);border-color:var(--gold)">Bloodied</span>' : ''}
+      <span style="flex:1"></span><input class="qm" id="mq-${m.id}" data-qm="monhp" data-id="${m.id}" placeholder="−7 or +5" style="width:84px" aria-label="Damage or heal ${esc(m.name)}"></div>
+    <div class="hpbar"><i class="${pct < 25 ? 'low' : pct < 55 ? 'mid' : ''}" style="width:${pct}%"></i></div>
+    <div class="cond" style="margin-top:6px">${m.cond.map(k => `<button class="on" data-act="moncond" data-id="${m.id}" data-v="${esc(k)}" title="Remove">${esc(k)} ✕</button>`).join('')}
+      <select class="ed-inline" id="mc-${m.id}" data-moncond="${m.id}" aria-label="Add a condition" style="width:auto;font-size:.78rem"><option value="">+ condition</option>${CONDITIONS.filter(k => !m.cond.includes(k)).map(k => `<option>${k}</option>`).join('')}</select></div>
+    ${ab}${acts}${leg}${details}
+  </section>`;
+}
+
+/* ---- add monsters / paste a stat block ---- */
+function addMonHtml(md) {
+  const tab = md.tab || 'list';
+  const head = dlgHead('Add monsters') + `<div class="dlg-b" style="gap:10px"><div class="tabs" style="margin:0"><button class="${tab === 'list' ? 'on' : ''}" data-act="amtab" data-v="list">Bestiary</button><button class="${tab === 'paste' ? 'on' : ''}" data-act="amtab" data-v="paste">Paste a stat block</button></div>`;
+  if (tab === 'paste') {
+    const p = md.parsed;
+    return head + `<label class="fld"><span>Stat block</span><textarea id="am-text" placeholder="Paste a whole stat block: name, Armor Class, Hit Points, ability scores, traits, Actions…" style="min-height:180px">${esc(md.text || '')}</textarea></label>
+      <div class="addrow" style="margin:0"><button class="btn small primary" data-act="amparse">Read stat block</button></div>
+      ${p ? `<div class="sugg"><h3>${esc(p.name)} <span class="muted" style="font-weight:400">${esc(p.meta)}</span></h3>
+        <div class="frow"><label class="fld"><span>Name</span><input id="am-name" data-amf="name" value="${esc(p.name)}"></label><label class="fld"><span>AC</span><input id="am-ac" data-amf="ac" value="${p.ac}" inputmode="numeric"></label><label class="fld"><span>Average HP</span><input id="am-hp" data-amf="hp" value="${p.hp}" inputmode="numeric"></label><label class="fld"><span>HP dice</span><input id="am-hd" data-amf="hpDice" value="${esc(p.hpDice)}"></label><label class="fld"><span>Initiative bonus</span><input id="am-in" data-amf="init" value="${p.init}" inputmode="numeric"></label></div>
+        <div style="font-size:.85rem">CR ${esc(p.cr || '?')} · ${['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA'].map(k => k + ' ' + p.abilities[k]).join(' ')}</div>
+        <div style="font-size:.85rem">${[['Traits', p.traits], ['Actions', p.actions], ['Bonus actions', p.bonus], ['Reactions', p.reactions], ['Legendary', p.legendary]].filter(x => x[1].length).map(([l, xs]) => `<b>${l}:</b> ${xs.map(a => esc(a.name) + (a.attack != null ? ' ' + signed(a.attack) : '') + (a.damage.length ? ' ' + esc(a.damage.map(d => d.dice || d.mod).join('+')) : '') + (a.save ? ' DC ' + a.save.dc : '') + (a.recharge ? ' (recharge ' + a.recharge + ')' : '')).join(', ')}`).join('<br>')}</div>
+        <div class="addrow" style="margin:0"><button class="btn small" data-act="amsave">Save to my monsters</button><label class="muted">Add <input class="ed-inline" id="am-n" value="1" style="width:44px" inputmode="numeric"></label><button class="btn small primary" data-act="amsaveadd">Save and add</button></div></div>` : ''}
+      ${md.err ? `<div class="banner warn" style="margin:0">${esc(md.err)}</div>` : ''}</div><div class="dlg-f"><button class="btn" data-act="close">Done</button></div>`;
+  }
+  const q = (md.q || '').toLowerCase();
+  const list = catalog().filter(t => !q || (t.name + ' ' + t.meta + ' cr ' + t.cr).toLowerCase().includes(q)).sort((a, b) => a.name.localeCompare(b.name));
+  return head + `<input id="am-q" class="srd-q" data-amq="1" value="${esc(md.q || '')}" placeholder="Search monsters: name, type, CR…" aria-label="Search monsters">
+    <label class="muted" style="font-size:.88rem;display:flex;gap:6px;align-items:center"><input type="checkbox" id="am-group" data-amgroup="1" ${SETTINGS.groupInit !== false ? 'checked' : ''}> Monsters of the same kind share one initiative roll</label>
+    <div id="am-list">${list.length ? list.map(t => `<div class="list-i"><div class="grow"><b>${esc(t.name)}</b>${t.srd ? '' : ' <span class="chip">Mine</span>'}<div class="muted" style="font-size:.82rem">CR ${esc(t.cr || '?')} · AC ${t.ac} · HP ${t.hp}${t.hpDice ? ' (' + esc(t.hpDice) + ')' : ''} · ${esc(t.meta || '')}</div></div>
+      <input class="ed-inline" id="amn-${esc(t.id)}" data-amn="${esc(t.id)}" value="1" style="width:44px" inputmode="numeric" aria-label="How many">
+      <button class="btn small primary" data-act="amadd" data-id="${esc(t.id)}">Add</button>${t.srd ? '' : `<button class="ico" data-act="amdel" data-id="${esc(t.id)}" title="Delete from my monsters">${ICON.trash}</button>`}</div>`).join('') : '<div class="empty">No monsters match. Paste a stat block to add your own.</div>'}</div>
+    <div class="muted" style="font-size:.75rem;line-height:1.4">${esc(SRD.ATTRIBUTION_51)}</div></div>
+    <div class="dlg-f"><button class="btn primary" data-act="close">Done</button></div>`;
 }
 
 /* ---------- dice animation ---------- */
@@ -2222,6 +3289,7 @@ function renderTop() {
       <div class="restbar"><button class="btn" data-act="rest" data-v="short">Short rest</button><button class="btn" data-act="rest" data-v="long">Long rest</button><button class="btn" data-act="rest" data-v="dawn" title="Reset anything that recharges at dawn">Dawn</button></div>
       <div class="seg" role="group" aria-label="Mode"><button data-act="mode" data-v="play" class="${!ed ? 'on' : ''}">Play</button><button data-act="mode" data-v="edit" class="${ed ? 'on' : ''}">Edit</button></div>
       <button class="btn" data-act="modal" data-v="chars">Characters</button>
+      ${isGM() && !ui.viewing ? `<div class="seg" role="group" aria-label="View"><button data-act="setview" data-v="sheet" class="${SETTINGS.view !== 'encounter' ? 'on' : ''}">Sheet</button><button data-act="setview" data-v="encounter" class="${SETTINGS.view === 'encounter' ? 'on' : ''}">Encounter</button></div>` : ''}
       ${IN_OBR ? '<button class="btn" data-act="sizemenu" title="Panel size and compact mode">Size</button>' : ''}
       <button class="btn" data-act="modal" data-v="settings" aria-label="Settings" title="Settings">Settings</button>
       ${ed ? `<button class="btn" data-act="modal" data-v="addModule">+ Module</button>` : ''}
@@ -2230,6 +3298,7 @@ function renderTop() {
 
 function renderBanner() {
   const c = C(); let h = '';
+  if (IN_OBR && OBRX.ready && OBRX.me.role !== 'GM' && OBRX.init && OBRX.init.active && !ui.viewing) h += `<div class="banner" style="background:var(--accent-soft)"><span>⚔ ${initStrip()}</span></div>`;
   if (ui.viewing) {
     const t = new Date(ui.viewing.at); const hhmm = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
     $('#banner').innerHTML = `<div class="banner" style="background:var(--accent-soft)"><span style="flex:1;min-width:200px">Viewing <b>${esc(ui.viewing.owner)}'s ${esc(c.name)}</b>, read-only, as of ${hhmm}. Rolls here stay on your screen.</span><button class="btn small" data-act="viewrefresh">Refresh</button><button class="btn small primary" data-act="viewend">Back to my sheet</button></div>`;
@@ -2256,6 +3325,8 @@ function modHeader(m) {
 }
 
 function renderGrid() {
+  ui.view = isGM() && !ui.viewing ? (SETTINGS.view || 'sheet') : 'sheet';
+  if (ui.view === 'encounter') { $('#grid').innerHTML = `<div class="encwrap">${renderEncounter()}</div>`; return; }
   const c = C(), L = ensureLayout(c), hid = new Set(c.hidden), ed = ui.mode === 'edit';
   const byId = id => c.modules.find(m => m.id === id);
   const modHtml = id => { const m = byId(id); return `<section class="mod ${m.collapsed ? 'collapsed' : ''} ${ui.drag === id ? 'dragging' : ''}" data-mod="${m.id}">${modHeader(m)}<div class="mod-b">${modBody(m)}</div></section>`; };
@@ -2559,6 +3630,7 @@ function renderModal() {
   else if (m.type === 'import') h = importHtml(m);
   else if (m.type === 'pdf') h = pdfHtml(m);
   else if (m.type === 'settings') h = settingsHtml();
+  else if (m.type === 'addmon') h = addMonHtml(m);
   else if (m.type === 'viewwait') h = dlgHead('Opening ' + (m.name || 'sheet')) + `<div class="dlg-b">${m.failed ? `<div class="banner warn" style="margin:0">${esc(m.owner || 'The player')}'s Grimsheet didn't answer. They need to be in the room with Grimsheet 1.3 or newer installed.</div>` : `<div class="sugg"><h3>Asking ${esc(m.owner || 'the player')}'s Grimsheet…</h3><span>The sheet opens read-only in a moment.</span></div>`}</div><div class="dlg-f"><button class="btn" data-act="close">${m.failed ? 'Close' : 'Cancel'}</button></div>`;
   $('#ovl').innerHTML = `<div class="ovl" data-act="ovlbg"><div class="dlg" role="dialog" aria-modal="true">${h}</div></div>`;
   $('#ovl .ovl').scrollTop = keepScroll;
@@ -2725,6 +3797,13 @@ function settingsHtml() {
       ${SETTINGS.panel === 'custom' ? `<div class="inline" style="flex-basis:100%;justify-content:flex-end;font-size:.88rem"><label class="muted">Width <input class="ed-inline" id="set-pw" data-setpanel="panelW" type="number" min="320" max="1600" step="20" value="${SETTINGS.panelW}" style="width:72px"></label><label class="muted">Height <input class="ed-inline" id="set-ph" data-setpanel="panelH" type="number" min="300" max="1400" step="20" value="${SETTINGS.panelH}" style="width:72px"></label><span class="muted">px</span></div>` : ''}</div>
     <div class="setrow"><div class="grow"><b>Share my rolls in Owlbear Rodeo</b><div class="muted">${IN_OBR ? (OBRX.ready ? 'Connected to your Owlbear room as ' + esc(OBRX.me.name || 'you') + '.' : 'Connecting to Owlbear…') : 'Applies when Grimsheet is opened inside Owlbear Rodeo.'} “GM only” shows your rolls to the GM and nobody else.</div></div>
       <div class="seg" role="group" aria-label="Share rolls">${[['all', 'Everyone'], ['gm', 'GM only'], ['off', 'Off']].map(([v, l]) => `<button data-act="setshare" data-v="${v}" class="${SETTINGS.share === v ? 'on' : ''}">${l}</button>`).join('')}</div></div>
+    ${isGM() ? `<div class="sub-h" style="margin-top:14px">Encounters (GM)</div>
+    <div class="setrow" style="flex-wrap:wrap"><div class="grow" style="min-width:220px"><b>Monster HP for players</b><div class="muted">What players see on monster tokens and in the turn order.</div></div>
+      <div class="seg" role="group" aria-label="Monster HP for players">${[['hidden', 'Hidden'], ['status', 'Healthy / Bloodied'], ['exact', 'Exact']].map(([v, l]) => `<button data-act="setmonhp" data-v="${v}" class="${(SETTINGS.monHp || 'hidden') === v ? 'on' : ''}">${l}</button>`).join('')}</div></div>
+    <div class="setrow"><div class="grow"><b>Share monster rolls</b><div class="muted">Off keeps monster attacks and damage on your screen only.</div></div>
+      <button class="switch ${SETTINGS.monShare ? 'on' : ''}" data-act="setmonshare" aria-pressed="${!!SETTINGS.monShare}"><i></i>${SETTINGS.monShare ? 'On' : 'Off'}</button></div>
+    <div class="setrow"><div class="grow"><b>Also update Owlbear's initiative tracker</b><div class="muted">Writes initiative and the current turn onto tokens, for tables that use that tracker.</div></div>
+      <button class="switch ${SETTINGS.obrTracker !== false ? 'on' : ''}" data-act="setobrtracker" aria-pressed="${SETTINGS.obrTracker !== false}"><i></i>${SETTINGS.obrTracker !== false ? 'On' : 'Off'}</button></div>` : ''}
     <div class="setrow"><div class="grow"><b>Try it</b><div class="muted">Settings are saved in this browser. Grimsheet ${APP_VERSION}${IN_OBR ? (bgAlive() ? ' · background page running' + ((readJSON(BGKEY) || {}).v ? ' (' + readJSON(BGKEY).v + ')' : '') : ' · background page not running: re-add the extension in Owlbear') : ''}.</div></div><button class="btn" data-act="settest">Roll 1d20 + 2d6</button></div>
   </div><div class="dlg-f"><button class="btn primary" data-act="close">Done</button></div>`;
 }
@@ -2870,7 +3949,7 @@ document.addEventListener('click', ev => {
     case 'delskill': c.skills.splice(i, 1); rerender(); break;
     case 'addskill': c.skills.push({ id: uid(), name: 'New skill', ab: 'INT', prof: 0 }); rerender(); break;
     case 'addabil': { let k = 'NEW', n = 1; while (c.abilities.some(a => a.key === k)) k = 'NEW' + (++n); c.abilities.push({ key: k, name: 'Custom', score: 10, save: false, custom: true }); ui.mode = 'edit'; rerender(); toast('Rename it, then set its key in formulas (e.g. SAN).'); break; }
-    case 'init': roll('Initiative', initComps(), { onLand: sendInitiative }); break;
+    case 'init': roll('Initiative', initComps(), { onLand: en => { sendInitiative(en); reportInit(en); } }); break;
     case 'explain': {
       if (v === 'ac') showPop(el, explainHtml('Armor Class', acComps()));
       else if (v === 'spelldc') showPop(el, explainHtml('Spell save DC', [{ src: 'Base', f: '8' }, { f: 'SPELL', src: c.spellAbility ? c.spellAbility + ' (spellcasting)' : 'Spellcasting' }, { f: 'PROF' }]));
@@ -2982,6 +4061,45 @@ document.addEventListener('click', ev => {
     case 'setanim': SETTINGS.diceAnim = !SETTINGS.diceAnim; saveSettings(); if (!SETTINGS.diceAnim) { stopDice(); const b = $('#dicefx'); b.hidden = true; renderTray(); } renderModal(); break;
     case 'setspeed': SETTINGS.diceSpeed = v; saveSettings(); renderModal(); break;
     case 'setshare': SETTINGS.share = v; saveSettings(); renderModal(); break;
+    case 'setview': SETTINGS.view = v; saveSettings(); render(); window.scrollTo(0, 0); break;
+    case 'setmonhp': SETTINGS.monHp = v; saveSettings(); syncMonTokens(); publishInit(); renderModal(); break;
+    case 'setmonshare': SETTINGS.monShare = !SETTINGS.monShare; saveSettings(); renderModal(); break;
+    case 'setobrtracker': SETTINGS.obrTracker = SETTINGS.obrTracker === false; saveSettings(); publishInit(); renderModal(); break;
+    case 'addmon': openModal('addmon', { tab: 'list', q: '' }); break;
+    case 'amtab': ui.modal.tab = v; renderModal(); break;
+    case 'amparse': { const tx = ($('#am-text') || {}).value || ''; ui.modal.text = tx; const pp = MONSTERS.parse(tx); if (!pp || !pp.name || (!pp.actions.length && !pp.traits.length && pp.hp <= 1)) { ui.modal.parsed = null; ui.modal.err = 'Couldn\'t find a stat block in that text. Paste the whole block, starting with the monster\'s name.'; } else { ui.modal.parsed = pp; ui.modal.err = ''; } renderModal(); break; }
+    case 'amsave': case 'amsaveadd': {
+      const pp = ui.modal.parsed; if (!pp) break;
+      pp.id = 'my:' + uid(); pp.source = ui.modal.text;
+      bestiary.push(pp); saveBestiary();
+      if (act === 'amsaveadd') { const n = Math.max(1, Math.min(30, +($('#am-n') || {}).value || 1)); addMonsters(pp, n, { group: SETTINGS.groupInit !== false }); SETTINGS.view = 'encounter'; saveSettings(); }
+      toast(pp.name + ' saved to your monsters.'); ui.modal.parsed = null; ui.modal.text = ''; renderModal(); render(); break;
+    }
+    case 'amadd': { const t = tplById(id); if (!t) break; const n = Math.max(1, Math.min(30, +(document.querySelector(`[data-amn="${CSS.escape(id)}"]`) || {}).value || 1)); addMonsters(t, n, { group: SETTINGS.groupInit !== false }); SETTINGS.view = 'encounter'; saveSettings(); render(); toast('Added ' + n + ' ' + t.name + (n > 1 ? 's' : '') + '.'); break; }
+    case 'amdel': bestiary = bestiary.filter(t => t.id !== id); saveBestiary(); renderModal(); break;
+    case 'addparty': { const n = addParty(); toast(n ? 'Added ' + n + ' character' + (n > 1 ? 's' : '') + ' from the party.' : 'No new party members with Grimsheet open.'); break; }
+    case 'addpc': { const e = enc(); e.pcs.push({ key: 'pc:local:' + uid(), player: null, charId: c.id, name: c.name, init: null }); saveEnc(); renderGrid(); break; }
+    case 'askinit': askInitiative(); break;
+    case 'rollmoninit': rollMonsterInit(true); break;
+    case 'startcombat': startCombat(); break;
+    case 'nextturn': nextTurn(1); break;
+    case 'prevturn': nextTurn(-1); break;
+    case 'endcombat': endCombat(); break;
+    case 'encclear': { if (ui.confirm !== 'encclear') { ui.confirm = 'encclear'; renderGrid(); break; } ui.confirm = null; const e = enc(); e.mons = []; e.groupInit = {}; e.seq = {}; e.combat = { active: false, round: 1, turn: null }; saveEnc(); renderGrid(); toast('Monsters removed.'); break; }
+    case 'turnto': { const e = enc(); if (!e.combat.active) break; e.combat.turn = v; saveEnc(); onTurnStart(initRows().find(r => r.k === v)); renderGrid(); break; }
+    case 'pcdel': { const e = enc(); e.pcs = e.pcs.filter(x => x.key !== v); saveEnc(); renderGrid(); break; }
+    case 'monatk': { const m = enc().mons.find(x => x.id === id); if (m) monAttack(m, v); break; }
+    case 'mondmg': { const [mid, ref] = String(id).split('|'); const m = enc().mons.find(x => x.id === mid); if (m) monDamage(m, ref, !!el.dataset.crit); break; }
+    case 'monrech': { const m = enc().mons.find(x => x.id === id); if (!m) break; m.rech[v] = m.rech[v] === false; saveEnc({ quiet: true }); renderGrid(); break; }
+    case 'monuse': { const m = enc().mons.find(x => x.id === id); if (!m) break; const u = m.uses[v] || 0; m.uses[v] = i < u ? i : i + 1; saveEnc({ quiet: true }); renderGrid(); break; }
+    case 'monleg': { const m = enc().mons.find(x => x.id === id); if (!m) break; m.leg = i < m.leg ? i : i + 1; saveEnc({ quiet: true }); renderGrid(); break; }
+    case 'montxt': ui.monTxt = ui.monTxt === id + v ? null : id + v; renderGrid(); break;
+    case 'moncheck': case 'monsave': { const m = enc().mons.find(x => x.id === id); if (m) monCheck(m, v, act === 'monsave'); break; }
+    case 'monedit': ui.monEdit = ui.monEdit === id ? null : id; renderGrid(); break;
+    case 'monopen': ui.monOpen = ui.monOpen || new Set(); if (ui.monOpen.has(id)) ui.monOpen.delete(id); else ui.monOpen.add(id); renderGrid(); break;
+    case 'mondel': { if (ui.confirm !== 'mondel-' + id) { ui.confirm = 'mondel-' + id; renderGrid(); break; } ui.confirm = null; const e = enc(); e.mons = e.mons.filter(x => x.id !== id); saveEnc(); renderGrid(); break; }
+    case 'moncond': { const m = enc().mons.find(x => x.id === id); if (!m) break; m.cond = m.cond.filter(k => k !== v); saveEnc(); renderGrid(); break; }
+    case 'monrollhp': { const m = enc().mons.find(x => x.id === id); if (!m) break; const t = tplOf(m); const r = E.rollComps([{ f: t.hpDice }], CTX, {}).total; m.max = Math.max(1, r); m.hp = m.max; saveEnc(); renderGrid(); toast(m.name + ' has ' + m.max + ' HP (rolled ' + t.hpDice + ').'); break; }
     case 'setcompact': SETTINGS.compact = !SETTINGS.compact; saveSettings(); document.documentElement.classList.toggle('compact', SETTINGS.compact); if (ui.modal) renderModal(); else hidePop(); break;
     case 'setpanel': SETTINGS.panel = v; saveSettings(); applyPanelSize(); hidePop(); if (ui.modal) renderModal(); break;
     case 'sizemenu': {
@@ -3081,6 +4199,24 @@ document.addEventListener('change', ev => {
     toast('Sent ' + Math.abs(amount) + (amount < 0 ? ' damage' : ' healing') + ' to ' + t.dataset.name + '.'); t.value = ''; return;
   }
   if (ui.viewing && (t.dataset.bind || t.dataset.qm || t.dataset.mtitle || t.dataset.mnotes)) { toast('This sheet is read-only.'); render(); return; }
+  if (t.dataset.ini) { setRowInit(t.dataset.ini, t.value.trim()); saveEnc(); renderGrid(); return; }
+  if (t.dataset.qm === 'monhp') {
+    const m = enc().mons.find(x => x.id === t.dataset.id); if (!m) return;
+    const raw = t.value.trim().replace(/−/g, '-'); if (!raw) return;
+    const v = quick(raw, m.hp); if (v == null) return;
+    if (raw[0] === '-' || raw[0] === '+') applyMonHp(m, v - m.hp); else m.hp = Math.max(0, Math.min(m.max, v));
+    saveEnc(); renderGrid(); return;
+  }
+  if (t.dataset.monf) {
+    const m = enc().mons.find(x => x.id === t.dataset.id); if (!m) return; const k = t.dataset.monf;
+    if (k === 'solo') { m.solo = t.checked; if (m.solo && m.init == null) m.init = enc().groupInit[m.tpl] ?? null; }
+    else if (k === 'name') m.name = t.value.trim() || m.name;
+    else { const n = Math.max(0, Math.round(+t.value || 0)); if (k === 'max') { m.max = Math.max(1, n); m.hp = Math.min(m.hp, m.max); } else m[k] = n; }
+    saveEnc(); renderGrid(); return;
+  }
+  if (t.dataset.moncond) { const m = enc().mons.find(x => x.id === t.dataset.moncond); if (m && t.value) { m.cond.push(t.value); saveEnc(); renderGrid(); } return; }
+  if (t.dataset.amgroup) { SETTINGS.groupInit = t.checked; saveSettings(); return; }
+  if (t.dataset.amf && ui.modal && ui.modal.parsed) { const k = t.dataset.amf; ui.modal.parsed[k] = ['ac', 'hp', 'init'].includes(k) ? Math.round(+t.value || 0) : t.value.trim(); return; }
   if (t.id === 'pdf-file' && t.files && t.files[0]) { readPdf(t.files[0]); return; }
   if (t.id === 'imp-file' && t.files && t.files[0]) { const r = new FileReader(); r.onload = () => { $('#imp-text').value = r.result; }; r.readAsText(t.files[0]); return; }
   if (t.dataset.bind) {
@@ -3103,6 +4239,8 @@ document.addEventListener('change', ev => {
 });
 document.addEventListener('input', ev => {
   const t = ev.target;
+  if (t.dataset.amq && ui.modal) { ui.modal.q = t.value; const pos = t.selectionStart; renderModal(); const n = $('#am-q'); if (n) { n.focus(); n.setSelectionRange(pos, pos); } return; }
+  if (t.id === 'am-text' && ui.modal) { ui.modal.text = t.value; return; }
   if (t.dataset.srdq && ui.modal) { ui.modal.q = t.value; const l = $('#srd-list'); if (l) l.innerHTML = srdListHtml(ui.modal); return; }
   if (t.dataset.d && ui.modal && ui.modal.draft && t.type !== 'checkbox') {
     let v = t.value; if ('num' in t.dataset) v = v === '' ? '' : +v || 0;

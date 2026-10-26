@@ -1,6 +1,6 @@
-# D&D Character Sheet App — Product Spec (v1.1)
+# D&D Character Sheet App — Product Spec (v1.2)
 
-*Working name: Grimsheet. v0.2 recorded the platform decision and first build; v0.3 added the SRD 5.2 content pack and locked skill proficiency to Edit mode; v0.4 expanded the pack; v0.5 added PDF import and documented the saved character format; v0.6 replaced the grid with a row-and-column layout; v0.7 added dice animation and a Settings panel; v0.8 added the Owlbear Rodeo extension and a backup reminder; v0.9 added panel sizes and compact mode; v1.0 added the background page and token linking; v1.1 adds GM tools.*
+*Working name: Grimsheet. v0.2 recorded the platform decision and first build; v0.3 added the SRD 5.2 content pack and locked skill proficiency to Edit mode; v0.4 expanded the pack; v0.5 added PDF import and documented the saved character format; v0.6 replaced the grid with a row-and-column layout; v0.7 added dice animation and a Settings panel; v0.8 added the Owlbear Rodeo extension and a backup reminder; v0.9 added panel sizes and compact mode; v1.0 added the background page and token linking; v1.1 added GM tools; v1.2 adds monsters, the Encounter view and initiative.*
 
 ## 1. Vision
 
@@ -260,8 +260,20 @@ Number fields (`bonus`, `mod`, `dc`, `max`, `acFormula`) are formulas over `STR�
 - **Diagnostics**: Settings shows the app version and whether the background page is running (and its version). The panel rechecks links every 5 seconds and explains when a token is linked to a different character.
 - Shared helpers for background and GM pages in `shared.js`.
 
+### Built in v2.0: Monsters, Encounter view and initiative
+Decisions: monster HP visibility is a GM setting; Grimsheet's tracker is primary and Owlbear's tracker is kept updated; monsters start at average HP (editable, or re-roll from hit dice); identical monsters share initiative by default with a per-monster "rolls its own initiative" option.
+- **Stat block reader** (`MONSTERS.parse`): 2014 and 2024 layouts. Reads name, size/type, AC (+note), HP and hit dice, speed, initiative (or DEX), ability scores and saves, CR/XP/PB, skills/senses/languages/resistances, traits, Actions, Bonus Actions, Reactions and Legendary Actions (count and costs). Per action: attack bonus, damage parts (skipping "or …" alternatives and "if …" extras), save DC and ability, Recharge X–6, X/Day, "recharges after a rest".
+- **SRD 5.1 starter set**: 35 monsters (kobold to young green dragon) stored as stat blocks and read at load. **My monsters**: pasted stat blocks saved in the browser (`grimsheet.bestiary.v1`).
+- **Encounter view** (GM in Owlbear; anyone outside Owlbear): Sheet/Encounter switch in the toolbar. Encounter state per room in the browser (`grimsheet.encounter.v1`): templates, monster instances (HP, temp, max, AC, conditions, recharge, uses, legendary used, initiative, group/solo), characters, group initiative, combat (active, round, turn).
+- **Monster cards**: HP with quick math, Bloodied/Down, conditions, ability checks and saves, attack and damage buttons (crits double dice), DC chips, recharge toggles, per-day uses, legendary action boxes, full stat block on demand, edit name/max HP/AC, roll HP. Rolls are GM-only unless "Share monster rolls" is on.
+- **Initiative**: rows are monster groups (shared roll), solo monsters and characters, sorted high to low. Roll monster initiative, add party, Ask for initiative (players get a notification), players' INIT rolls arrive automatically (`com.grimsheet/gm` `type: 'init'`), type any value by hand, Start combat (adds party, rolls missing monster initiative), Next/previous turn with round counter, tap a row to jump. At the start of a monster's turn its legendary actions reset and recharge abilities roll d6 (toast with results). The current row's tokens are selected on the map.
+- **Players**: turn order published in room metadata (`com.grimsheet/initiative`: round, turn, rows with name, initiative, owner and the HP text allowed by the setting; groups show "N down" when HP is hidden). Their panel shows a round/turn strip and the order in the Party module; the background page notifies "Your turn!" and "You're up next".
+- **Monster tokens**: GM menu now works on several tokens. Unlinked tokens → search the bestiary (catalog cached in `grimsheet.moncat.v1` for the menu page) → numbered monsters, token renamed, linked with `com.grimsheet/monster = { room, inst, name }`. Linked selections → damage/heal all (characters by message, monsters directly), unlink all, "Open in Encounter" (focuses the card). Selecting a monster token highlights its card. Stat Bubbles on monster tokens use `hide` unless HP visibility is Exact.
+- **Owlbear tracker**: when on, initiative and the active turn are written to linked character and monster tokens.
+
 ### Next
 1. Cloud backup/sync of characters across devices.
+2. Condition durations and concentration prompts in combat; encounter difficulty from CR and party level.
 2. PWA install + offline (service worker, manifest).
 2. Cloud sync of the user's own characters across devices.
 3. Print / PDF layout.

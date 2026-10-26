@@ -36,6 +36,10 @@ Characters are saved in each player's own browser. Nothing is uploaded and this 
 - Right-click any character token → **Grimsheet**: link the token to any player's character, deal **damage** or **healing** (it goes straight to the player's sheet, temporary HP first), **open the player's sheet** read-only, or unlink.
 - The **Party** module has a damage/heal box and a **View sheet** button for every player.
 - Changes reach players who are in the room even if their Grimsheet panel is closed.
+- **Encounter view** (Sheet / Encounter switch in the toolbar): add monsters from the SRD or your own (paste any stat block, 2014 or 2024 layout), at average HP you can edit or re-roll. Each monster gets a compact card: HP with a damage box, AC, conditions, every action as a roll button, recharge and per-day uses, legendary actions, and the full stat block on demand. Monster rolls stay on your screen unless you turn sharing on.
+- **Monster tokens:** select one or more tokens → right-click → **Grimsheet** → pick a monster. They're numbered (Goblin 1, 2, 3), renamed on the map and linked. Selecting several linked tokens lets you damage or heal them all at once, characters and monsters together.
+- **Initiative tracker:** monsters of the same kind share one roll by default (any monster can roll its own), **Ask for initiative** notifies players and their rolls arrive automatically, **Next turn** moves the turn, counts rounds, recharges abilities and resets legendary actions, and selects the token on the map. Players see the turn order and get "Your turn!" notifications. Owlbear's own initiative tracker is kept updated too.
+- **GM settings:** monster HP for players (hidden, Healthy / Bloodied, or exact), sharing monster rolls, and updating Owlbear's tracker.
 - Follows Owlbear's light or dark theme.
 
 Stat Bubbles and the initiative tracker are separate extensions; add them to your room to see the HP rings and the turn order. Grimsheet writes their data even if they aren't installed, so turning them on later shows the current values.
