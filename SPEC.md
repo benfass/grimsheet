@@ -1,6 +1,6 @@
-# D&D Character Sheet App — Product Spec (v0.9)
+# D&D Character Sheet App — Product Spec (v1.0)
 
-*Working name: Grimsheet. v0.2 recorded the platform decision and first build; v0.3 added the SRD 5.2 content pack and locked skill proficiency to Edit mode; v0.4 expanded the pack; v0.5 added PDF import and documented the saved character format; v0.6 replaced the grid with a row-and-column layout; v0.7 added dice animation and a Settings panel; v0.8 added the Owlbear Rodeo extension and a backup reminder; v0.9 adds panel sizes and compact mode.*
+*Working name: Grimsheet. v0.2 recorded the platform decision and first build; v0.3 added the SRD 5.2 content pack and locked skill proficiency to Edit mode; v0.4 expanded the pack; v0.5 added PDF import and documented the saved character format; v0.6 replaced the grid with a row-and-column layout; v0.7 added dice animation and a Settings panel; v0.8 added the Owlbear Rodeo extension and a backup reminder; v0.9 added panel sizes and compact mode; v1.0 adds the background page and token linking.*
 
 ## 1. Vision
 
@@ -244,8 +244,17 @@ Number fields (`bonus`, `mod`, `dc`, `max`, `acFormula`) are formulas over `STR�
 - **Compact** setting (everywhere): smaller text and tighter spacing.
 - In narrow (< 560 px) or short (< 700 px) panels the toolbar scrolls with the page instead of staying pinned.
 
+### Built in v1.8: Background page and token linking
+- **Background page** (`background.html`, manifest `background_url`): runs for each player while they're in the room, even with the panel closed. Shows roll notifications, stores the table feed in the browser (`grimsheet.feed.<room>`, last 100), and registers the token right-click menus. It writes a heartbeat (`grimsheet.bg.v1`); while that's fresh the panel doesn't show notifications itself, so nothing doubles. Without the background page (old installs) the panel falls back to notifying on its own.
+- **Link / Unlink** in the token right-click menu (character layer, one token, only when the player may edit it). Link metadata: `com.grimsheet/link = { player, char, name }`. A token links to the active character; the panel shows "Token linked" or how to link in the Combat module.
+- **Stat Bubbles sync:** on every save the panel writes `com.owlbear-rodeo-bubbles-extension/metadata` `{ health, "max health", "temporary health", "armor class" }` on linked tokens (other keys such as `hide` are kept), only when values changed. Linking fills it immediately from the last saved status (`grimsheet.status.v1`). Format read from the Stat Bubbles source.
+- **Initiative tracker:** rolling Initiative sets `rodeo.owlbear.initiative-tracker/metadata` `{ count: "<total>", active }` on linked tokens after the dice land (keeps `active`). Format read from the official initiative tracker source.
+- Repo `index.html` is now built as a complete HTML page (charset, viewport) from the artifact source.
+
 ### Next
-1. PWA install + offline (service worker, manifest).
+1. GM tools: apply damage/healing from a linked token to the player's sheet; read-only view of party sheets.
+2. Cloud backup/sync of characters across devices.
+3. PWA install + offline (service worker, manifest).
 2. Cloud sync of the user's own characters across devices.
 3. Print / PDF layout.
 4. Triggers (on 0 HP, on rest) and concentration reminders when taking damage.

@@ -1,3 +1,9 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font-size:14px;font-family:system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
 <title>Grimsheet</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -299,7 +305,8 @@ textarea.code{width:100%;min-height:220px;font-family:var(--f-mono);font-size:.7
 .pop .opt:disabled{opacity:.45;cursor:default}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom,0px));z-index:45;background:var(--ink);color:var(--surface);padding:8px 14px;border-radius:8px;font-size:.88rem;max-width:min(520px,calc(100vw - 32px));box-shadow:0 8px 24px rgba(0,0,0,.25)}
 </style>
-
+</head>
+<body>
 <header class="top"><div class="top-in gut" id="top"></div></header>
 <div class="gut"><div id="banner"></div></div>
 <main class="grid gut" id="grid"></main>
@@ -1929,11 +1936,12 @@ function roll(title, comps, opt = {}) {
   const mode = d20 ? ui.adv : 'normal';
   const r = E.rollComps(comps, CTX, { mode, crit: opt.crit });
   const entry = { id: uid(), title, kind: opt.kind || '', total: Math.max(opt.minZero ? 0 : -999, r.total), parts: r.parts, mode, nat: r.nat, crit: false, fumble: false, fu: opt.fu || [], note: opt.note || '', isCrit: !!opt.crit };
+  if (opt.onLand) Object.defineProperty(entry, 'onLand', { value: opt.onLand, enumerable: false });
   if (d20 && r.nat != null) { if (r.nat >= (opt.critMin || 20)) entry.crit = true; if (r.nat === 1) entry.fumble = true; }
   if (opt.after) opt.after(entry);
   ui.log.unshift(entry); if (ui.log.length > 60) ui.log.pop();
   if (SETTINGS.diceAnim && entry.parts.some(p => p.dice && p.dice.length)) animateDice(entry);
-  else { stopDice(); renderTray(true); shareRoll(entry); }
+  else { stopDice(); renderTray(true); shareRoll(entry); entry.onLand && entry.onLand(entry); }
   return entry;
 }
 
@@ -1942,6 +1950,16 @@ function roll(title, comps, opt = {}) {
 const IN_OBR = (() => { try { return new URLSearchParams(location.search).has('obrref'); } catch (e) { return false; } })();
 const OBRX = { ready: false, api: null, me: { id: '', name: '', role: 'PLAYER' }, feed: [], party: [] };
 const CH_ROLL = 'com.grimsheet/roll', META = 'com.grimsheet/status';
+const LINK = 'com.grimsheet/link', BUBBLES = 'com.owlbear-rodeo-bubbles-extension/metadata', INIT = 'rodeo.owlbear.initiative-tracker/metadata';
+const STATUSKEY = 'grimsheet.status.v1', BGKEY = 'grimsheet.bg.v1';
+const readJSON = k => { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } };
+const writeJSON = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } };
+const feedKey = () => 'grimsheet.feed.' + (OBRX.room || 'room');
+// the background page (when running) shows notifications and stores other players' rolls
+function bgAlive() { const b = readJSON(BGKEY); return !!b && Date.now() - b.at < 45000 && (!OBRX.room || b.room === OBRX.room); }
+function feedGet() { const s = readJSON(feedKey()); return Array.isArray(s) ? s : OBRX.feed; }
+function feedPush(d) { OBRX.feed.unshift(d); OBRX.feed.length = Math.min(OBRX.feed.length, 100); const s = readJSON(feedKey()) || []; s.unshift(d); writeJSON(feedKey(), s.slice(0, 100)); }
+window.addEventListener('storage', ev => { if (ev.key && ev.key.startsWith('grimsheet.feed.') && ui.modal && ui.modal.type === 'log' && ui.logTab === 'table') renderModal(); });
 async function startOwlbear() {
   try {
     let OBR = window.GrimsheetOBR; // a test double can be provided here
@@ -1953,7 +1971,13 @@ async function startOwlbear() {
       OBR.player.onChange(p => { OBRX.me = { id: p.id, name: p.name, role: p.role }; });
       const applyTheme = t => { if (t && t.mode) document.documentElement.setAttribute('data-theme', t.mode === 'DARK' ? 'dark' : 'light'); };
       try { applyTheme(await OBR.theme.getTheme()); OBR.theme.onChange(applyTheme); } catch (e) { }
+      OBRX.room = OBR.room && OBR.room.id ? OBR.room.id : 'room';
       OBR.broadcast.onMessage(CH_ROLL, ev => receiveRoll(ev.data));
+      try {
+        OBR.scene.items.onChange(items => refreshLinks(items));
+        OBR.scene.onReadyChange(() => refreshLinks());
+        refreshLinks();
+      } catch (e) { }
       const setParty = players => { OBRX.party = (players || []).map(p => ({ id: p.id, name: p.name, role: p.role, s: p.metadata && p.metadata[META] })).filter(p => p.s); refreshParty(); };
       setParty(await OBR.party.getPlayers()); OBR.party.onChange(setParty);
       publishStatus();
@@ -1971,7 +1995,45 @@ let statusT = null;
 function publishStatus() {
   if (!OBRX.ready) return;
   clearTimeout(statusT);
-  statusT = setTimeout(() => { CTX = ctxFor(C()); OBRX.api.player.setMetadata({ [META]: statusOf(C()) }).catch(() => { }); }, 400);
+  statusT = setTimeout(() => {
+    CTX = ctxFor(C()); const st = statusOf(C());
+    OBRX.api.player.setMetadata({ [META]: st }).catch(() => { });
+    const all = readJSON(STATUSKEY) || {}; all[C().id] = st; writeJSON(STATUSKEY, all);
+    syncTokens(st);
+  }, 400);
+}
+/* ---- linked tokens: Stat Bubbles and initiative tracker ---- */
+OBRX.links = [];
+async function refreshLinks(items) {
+  if (!OBRX.ready) return;
+  try {
+    if (!items) items = (await OBRX.api.scene.isReady()) ? await OBRX.api.scene.items.getItems(it => !!(it.metadata && it.metadata[LINK])) : [];
+  } catch (e) { items = []; }
+  const before = OBRX.links.length, cid = C().id;
+  OBRX.links = items.filter(it => it.metadata && it.metadata[LINK] && it.metadata[LINK].player === OBRX.me.id && it.metadata[LINK].char === cid).map(it => ({ id: it.id, name: it.name, b: it.metadata[BUBBLES] || null }));
+  paintLink();
+  if (OBRX.links.length > before) syncTokens(statusOf(C()));
+}
+function linkHtml() {
+  if (!IN_OBR) return '';
+  if (!OBRX.ready) return '<span class="muted">Connecting to Owlbear…</span>';
+  const n = OBRX.links.length;
+  return n ? `<span class="chip tag-action">Token linked</span> <span class="muted">${n > 1 ? n + ' tokens in this scene follow' : 'Your token follows'} your HP, AC and initiative.</span>`
+    : '<span class="muted">Not linked to a token. Right-click your token in Owlbear and choose <b>Link to my Grimsheet character</b>.</span>';
+}
+function paintLink() { document.querySelectorAll('[data-link]').forEach(n => { n.innerHTML = linkHtml(); }); }
+function syncTokens(st) {
+  if (!OBRX.ready || !OBRX.links.length) return;
+  const want = { health: st.hp, 'max health': st.max, 'temporary health': st.temp || 0, 'armor class': typeof st.ac === 'number' ? st.ac : 0 };
+  const stale = OBRX.links.filter(l => !l.b || Object.keys(want).some(k => l.b[k] !== want[k])).map(l => l.id);
+  if (!stale.length) return;
+  OBRX.api.scene.items.updateItems(stale, drafts => { for (const it of drafts) it.metadata[BUBBLES] = Object.assign({}, it.metadata[BUBBLES] || {}, want); }).catch(() => { });
+}
+function sendInitiative(entry) {
+  if (!OBRX.ready || !OBRX.links.length) return;
+  const ids = OBRX.links.map(l => l.id);
+  OBRX.api.scene.items.updateItems(ids, drafts => { for (const it of drafts) it.metadata[INIT] = { count: String(entry.total), active: !!(it.metadata[INIT] && it.metadata[INIT].active) }; })
+    .then(() => toast('Initiative ' + entry.total + ' added to the initiative tracker.'), () => toast('Couldn\'t update the initiative tracker. You may not have permission to edit that token.'));
 }
 function ensurePartyModule() {
   const c = C(); if (c.obrParty || c.modules.some(m => m.type === 'party')) return;
@@ -2003,13 +2065,14 @@ function shareRoll(entry) {
   if (!IN_OBR || !OBRX.ready || SETTINGS.share === 'off' || entry.shared || entry.title === 'Test roll') return;
   entry.shared = true;
   const msg = rollMessage(entry);
-  OBRX.feed.unshift(Object.assign({ mine: true }, msg)); OBRX.feed.length = Math.min(OBRX.feed.length, 100);
+  feedPush(Object.assign({ mine: true }, msg));
   OBRX.api.broadcast.sendMessage(CH_ROLL, msg, { destination: 'REMOTE' }).catch(() => toast('Couldn\'t share that roll with the room.'));
 }
 function receiveRoll(d) {
   if (!d || d.v !== 1) return;
   if (d.gmOnly && OBRX.me.role !== 'GM') return;
-  OBRX.feed.unshift(d); OBRX.feed.length = Math.min(OBRX.feed.length, 100);
+  if (bgAlive()) { if (ui.modal && ui.modal.type === 'log') setTimeout(renderModal, 150); return; }
+  feedPush(d);
   const extra = d.crit ? ' · critical!' : d.fumble ? ' · natural 1' : '';
   OBRX.api.notification.show(`${d.who} (${d.char}): ${d.title} = ${d.total}${extra}${d.gmOnly ? ' [GM only]' : ''}`, d.crit ? 'SUCCESS' : d.fumble ? 'WARNING' : 'DEFAULT').catch(() => { });
   if (ui.modal && ui.modal.type === 'log') renderModal();
@@ -2047,7 +2110,7 @@ function animateDice(entry) {
       if (d.s === 20 && !d.drop && entry.crit && d.v >= 2) el.classList.add('crit');
       if (d.s === 20 && !d.drop && d.v === 1 && entry.fumble) el.classList.add('fum');
     });
-    renderTray(true); shareRoll(entry);
+    renderTray(true); shareRoll(entry); entry.onLand && entry.onLand(entry);
     DICE.hideT = setTimeout(() => { box.classList.add('out'); DICE.hideT = setTimeout(() => { box.hidden = true; }, 400); }, 2600);
   }, ms + 45 * (shown.length - 1)));
 }
@@ -2176,7 +2239,7 @@ function renderCombat() {
   const ini = staticLabel(initComps()).text;
   const pct = c.hp.max ? Math.max(0, Math.min(100, c.hp.cur / c.hp.max * 100)) : 0;
   const hdMax = +c.level || 1;
-  return `<div class="vitals">
+  return `${IN_OBR ? `<div data-link style="font-size:.85rem;margin-bottom:8px;display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center">${linkHtml()}</div>` : ''}<div class="vitals">
       <div class="vt"><span class="k">AC</span>${ed ? `<input id="f-ac" data-bind="acFormula" value="${esc(c.acFormula)}" title="Base AC formula, e.g. 10 + DEX or 17" aria-label="AC formula">` : ''}<button class="v vt-b" data-act="explain" data-v="ac" title="Where does this come from?">${ac}</button></div>
       <div class="vt"><span class="k">INIT</span>${ed ? `<input id="f-ini" data-bind="initBonus" value="${esc(c.initBonus)}" placeholder="bonus" aria-label="Initiative bonus">` : ''}<button class="v vt-b" data-act="init" title="Roll initiative">${ini}</button></div>
       <div class="vt"><span class="k">SPEED</span>${ed ? `<input id="f-speed" data-bind="speed" value="${esc(c.speed)}" aria-label="Speed">` : `<span class="v" style="font-size:1.05rem;padding-top:3px">${esc(c.speed)}</span>`}</div>
@@ -2442,7 +2505,7 @@ function addModuleHtml() {
 function logHtml() {
   if (IN_OBR && ui.logTab === 'table') {
     return dlgHead('Roll history') + `<div class="dlg-b"><div class="tabs" style="margin:0"><button data-act="logtab" data-v="mine">My rolls</button><button class="on" data-act="logtab" data-v="table">Table</button></div>
-      ${OBRX.feed.length ? OBRX.feed.map(r => `<div class="log-i"><span class="t" style="${r.crit ? 'color:var(--gold)' : r.fumble ? 'color:var(--danger)' : ''}">${esc(r.total)}</span><div style="min-width:0"><b>${esc(r.who)}</b> <span class="muted">${esc(r.char)}</span>${r.gmOnly ? ' <span class="badge">GM ONLY</span>' : ''}<div>${esc(r.title)}${r.crit ? ' <span class="badge">CRIT</span>' : ''}${r.fumble ? ' <span class="badge red">NAT 1</span>' : ''}</div><div class="mono muted" style="font-size:.78rem;overflow-wrap:anywhere">${esc(r.detail)}</div></div></div>`).join('') : '<div class="empty">No shared rolls yet. Rolls from everyone using Grimsheet in this room appear here.</div>'}</div>
+      ${feedGet().length ? feedGet().map(r => `<div class="log-i"><span class="t" style="${r.crit ? 'color:var(--gold)' : r.fumble ? 'color:var(--danger)' : ''}">${esc(r.total)}</span><div style="min-width:0"><b>${esc(r.who)}</b> <span class="muted">${esc(r.char)}</span>${r.gmOnly ? ' <span class="badge">GM ONLY</span>' : ''}<div>${esc(r.title)}${r.crit ? ' <span class="badge">CRIT</span>' : ''}${r.fumble ? ' <span class="badge red">NAT 1</span>' : ''}</div><div class="mono muted" style="font-size:.78rem;overflow-wrap:anywhere">${esc(r.detail)}</div></div></div>`).join('') : '<div class="empty">No shared rolls yet. Rolls from everyone using Grimsheet in this room appear here.</div>'}</div>
       <div class="dlg-f"><button class="btn primary" data-act="close">Done</button></div>`;
   }
   return dlgHead('Roll history') + `<div class="dlg-b">${IN_OBR ? '<div class="tabs" style="margin:0"><button class="on" data-act="logtab" data-v="mine">My rolls</button><button data-act="logtab" data-v="table">Table</button></div>' : ''}${ui.log.length ? ui.log.map(r => `<div class="log-i"><span class="t ${r.crit ? '' : ''}" style="${r.crit ? 'color:var(--gold)' : r.fumble ? 'color:var(--danger)' : ''}">${r.total}</span><div style="min-width:0"><b>${esc(r.title)}</b> ${badges(r)}<div class="mono muted" style="font-size:.78rem;overflow-wrap:anywhere">${breakdown(r)}</div></div></div>`).join('') : '<div class="empty">No rolls yet this session.</div>'}</div>
@@ -2723,7 +2786,7 @@ document.addEventListener('click', ev => {
     case 'delskill': c.skills.splice(i, 1); rerender(); break;
     case 'addskill': c.skills.push({ id: uid(), name: 'New skill', ab: 'INT', prof: 0 }); rerender(); break;
     case 'addabil': { let k = 'NEW', n = 1; while (c.abilities.some(a => a.key === k)) k = 'NEW' + (++n); c.abilities.push({ key: k, name: 'Custom', score: 10, save: false, custom: true }); ui.mode = 'edit'; rerender(); toast('Rename it, then set its key in formulas (e.g. SAN).'); break; }
-    case 'init': roll('Initiative', initComps()); break;
+    case 'init': roll('Initiative', initComps(), { onLand: sendInitiative }); break;
     case 'explain': {
       if (v === 'ac') showPop(el, explainHtml('Armor Class', acComps()));
       else if (v === 'spelldc') showPop(el, explainHtml('Spell save DC', [{ src: 'Base', f: '8' }, { f: 'SPELL', src: c.spellAbility ? c.spellAbility + ' (spellcasting)' : 'Spellcasting' }, { f: 'PROF' }]));
@@ -2822,7 +2885,7 @@ document.addEventListener('click', ev => {
     case 'madd': { const m = mkModule(v, c.modules.some(x => x.type === v) ? MODTYPES[v] + ' 2' : MODTYPES[v]); c.modules.push(m); closeModal(); rerender(); { const s = document.querySelector(`[data-mod="${m.id}"]`); if (s && s.scrollIntoView) s.scrollIntoView({ behavior: 'smooth', block: 'center' }); } break; }
     case 'modal': if (v === 'export') { const ch = store.chars[id] || c; openModal('export', { id: ch.id, fname: ch.name.replace(/[^\w-]+/g, '-').toLowerCase() || 'character' }); } else if (v === 'fromlib') { const mm = c.modules.find(x => x.id === id); openModal('fromlib', { id, tab: 'srd', cat: SRD_DEFAULT_CAT[mm && mm.type] || 'Spells', q: '', added: [] }); } else openModal(v, { id, lib: el.dataset.lib }); break;
     case 'close': ui.confirm = null; closeModal(); break;
-    case 'switch': store.active = id; ui.open.clear(); save(); closeModal(); render(); break;
+    case 'switch': store.active = id; ui.open.clear(); save(); closeModal(); render(); if (IN_OBR) { refreshLinks(); publishStatus(); } break;
     case 'newchar': { const n = blankChar(); store.chars[n.id] = n; store.active = n.id; ui.mode = 'edit'; save(); closeModal(); render(); toast('Blank character created. You are in Edit mode.'); break; }
     case 'sample': { const n = sampleChar(); store.chars[n.id] = n; store.active = n.id; save(); closeModal(); render(); break; }
     case 'dismiss-ex': c.example = false; rerender(); break;
@@ -3089,3 +3152,5 @@ window.GrimsheetImport = { build: p => PDFIMPORT.build(p, { E, SRD, blankChar, n
 render();
 })();
 </script>
+</body>
+</html>

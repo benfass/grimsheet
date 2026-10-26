@@ -25,10 +25,14 @@ Characters are saved in each player's own browser. Nothing is uploaded and this 
 
 ## Owlbear Rodeo features
 
-- **Share rolls** with everyone, with the GM only, or not at all (Settings).
+- **Share rolls** with everyone, with the GM only, or not at all (Settings). Notifications arrive even while your Grimsheet panel is closed.
 - **Table** tab in roll history with everyone's shared rolls.
 - **Party** module with live HP, AC and conditions of everyone using Grimsheet in the room.
+- **Link your token:** right-click your character token → **Link to my Grimsheet character**. The token's [Stat Bubbles for D&D](https://github.com/SeamusFinlayson/Bubbles-for-Owlbear-Rodeo) HP and AC follow your sheet, and rolling Initiative puts your total into Owlbear's initiative tracker. Right-click → **Unlink from Grimsheet** to undo.
+- **Panel size** (Small, Medium, Large or custom) and a **Compact** mode.
 - Follows Owlbear's light or dark theme.
+
+Stat Bubbles and the initiative tracker are separate extensions; add them to your room to see the HP rings and the turn order. Grimsheet writes their data even if they aren't installed, so turning them on later shows the current values.
 
 ## Legal
 

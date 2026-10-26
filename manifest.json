@@ -1,9 +1,9 @@
 {
   "name": "Grimsheet",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "manifest_version": 1,
   "author": "Ben",
-  "description": "Modular D&D 5e character sheet for official content and homebrew. Tap to roll; rolls and party HP are shared with the room.",
+  "description": "Modular D&D 5e character sheet. Rolls, party HP, token Stat Bubbles and initiative stay in sync with your sheet.",
   "homepage_url": "https://benfass.github.io/grimsheet/",
   "icon": "https://benfass.github.io/grimsheet/icon.svg",
   "action": {
@@ -12,5 +12,6 @@
     "popover": "https://benfass.github.io/grimsheet/index.html",
     "height": 1400,
     "width": 1600
-  }
+  },
+  "background_url": "https://benfass.github.io/grimsheet/background.html"
 }
