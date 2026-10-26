@@ -1,83 +1,105 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>Grimsheet background</title></head>
+<html><head><meta charset="utf-8"><title>Grimsheet background</title><script src="shared.js"></script></head>
 <body>
 <script>
-/* Grimsheet background page for Owlbear Rodeo.
-   Runs for each player while they are in the room, even when the Grimsheet panel is closed:
-   - shows notifications for rolls shared by other players and keeps the table feed;
-   - adds the token right-click menu to link or unlink a character;
-   - fills a newly linked token's Stat Bubbles from the character's last saved status. */
+/* Grimsheet background page for Owlbear Rodeo. Runs for each player while they are in the room,
+   even when the Grimsheet panel is closed:
+   - notifications and the table feed for rolls shared by other players;
+   - token right-click menus: players link their own token; the GM gets a menu to link any player,
+     apply damage or healing, open the sheet or unlink;
+   - applies the GM's damage and healing to this player's saved character and answers the GM's
+     requests to view the sheet. */
 (function () {
-  const CH_ROLL = 'com.grimsheet/roll';
-  const LINK = 'com.grimsheet/link';
-  const BUBBLES = 'com.owlbear-rodeo-bubbles-extension/metadata';
-  const STORE = 'grimsheet.v1', STATUS = 'grimsheet.status.v1', BG = 'grimsheet.bg.v1';
-  const read = k => { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } };
-  const write = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { } };
+  const S = GS;
   const ICON = new URL('icon.svg', location.href).href;
+  const GM_URL = new URL('gm.html', location.href).href;
 
-  function load(src) { return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); }); }
+  S.sdk().then(OBR => OBR.onReady(async () => {
+    const room = OBR.room && OBR.room.id ? OBR.room.id : 'room';
+    const FEED = 'grimsheet.feed.' + room;
+    const me = { id: OBR.player.id, name: await OBR.player.getName(), role: await OBR.player.getRole() };
+    OBR.player.onChange(p => { me.name = p.name; me.role = p.role; });
 
-  async function start() {
-    let OBR = window.GrimsheetOBR;
-    if (!OBR) { await load('vendor/owlbear-sdk-3.1.0.js'); OBR = window.OwlbearSDK; }
-    OBR.onReady(async () => {
-      const room = OBR.room && OBR.room.id ? OBR.room.id : 'room';
-      const FEED = 'grimsheet.feed.' + room;
-      const me = { id: OBR.player.id || await OBR.player.getId(), name: await OBR.player.getName(), role: await OBR.player.getRole() };
-      OBR.player.onChange(p => { me.name = p.name; me.role = p.role; });
+    // heartbeat: while fresh, the panel leaves notifications and GM requests to this page
+    const beat = () => S.write(S.BG, { at: Date.now(), room, v: S.VERSION });
+    beat(); setInterval(beat, 15000);
 
-      // let the panel know the background is running, so it doesn't show notifications twice
-      const beat = () => write(BG, { at: Date.now(), room });
-      beat(); setInterval(beat, 15000);
-
-      // rolls from other players
-      OBR.broadcast.onMessage(CH_ROLL, ev => {
-        const d = ev.data;
-        if (!d || d.v !== 1) return;
-        if (d.gmOnly && me.role !== 'GM') return;
-        const feed = read(FEED) || [];
-        feed.unshift(d); write(FEED, feed.slice(0, 100));
-        const extra = d.crit ? ' · critical!' : d.fumble ? ' · natural 1' : '';
-        OBR.notification.show(`${d.who} (${d.char}): ${d.title} = ${d.total}${extra}${d.gmOnly ? ' [GM only]' : ''}`, d.crit ? 'SUCCESS' : d.fumble ? 'WARNING' : 'DEFAULT').catch(() => { });
-      });
-
-      // token right-click menu
-      await OBR.contextMenu.create({
-        id: 'com.grimsheet/menu-link',
-        icons: [{
-          icon: ICON, label: 'Link to my Grimsheet character',
-          filter: { min: 1, max: 1, permissions: ['UPDATE'], every: [{ key: 'layer', value: 'CHARACTER', coordinator: '&&' }, { key: ['metadata', LINK, 'player'], value: me.id, operator: '!=' }] },
-        }],
-        onClick: async ctx => {
-          const store = read(STORE);
-          const ch = store && store.chars && store.chars[store.active];
-          if (!ch) { OBR.notification.show('Open Grimsheet and create or pick a character first, then link it.', 'WARNING'); return; }
-          const st = (read(STATUS) || {})[ch.id];
-          const id = ctx.items[0].id;
-          await OBR.scene.items.updateItems([id], drafts => {
-            for (const it of drafts) {
-              it.metadata[LINK] = { player: me.id, char: ch.id, name: ch.name };
-              if (st) it.metadata[BUBBLES] = Object.assign({}, it.metadata[BUBBLES] || {}, { health: st.hp, 'max health': st.max, 'temporary health': st.temp || 0, 'armor class': typeof st.ac === 'number' ? st.ac : 0 });
-            }
-          });
-          OBR.notification.show(`${ch.name} is linked to this token. HP, AC and initiative now follow your sheet.`, 'SUCCESS');
-        },
-      });
-      await OBR.contextMenu.create({
-        id: 'com.grimsheet/menu-unlink',
-        icons: [{
-          icon: ICON, label: 'Unlink from Grimsheet',
-          filter: { min: 1, max: 1, every: [{ key: ['metadata', LINK, 'player'], value: me.id }] },
-        }],
-        onClick: async ctx => {
-          await OBR.scene.items.updateItems(ctx.items.map(i => i.id), drafts => { for (const it of drafts) delete it.metadata[LINK]; });
-          OBR.notification.show('Token unlinked from Grimsheet.');
-        },
-      });
+    /* ---- rolls from other players ---- */
+    OBR.broadcast.onMessage(S.CH_ROLL, ev => {
+      const d = ev.data;
+      if (!d || d.v !== 1) return;
+      if (d.gmOnly && me.role !== 'GM') return;
+      const feed = S.read(FEED) || [];
+      feed.unshift(d); S.write(FEED, feed.slice(0, 100));
+      const extra = d.crit ? ' · critical!' : d.fumble ? ' · natural 1' : '';
+      OBR.notification.show(`${d.who} (${d.char}): ${d.title} = ${d.total}${extra}${d.gmOnly ? ' [GM only]' : ''}`, d.crit ? 'SUCCESS' : d.fumble ? 'WARNING' : 'DEFAULT').catch(() => { });
     });
-  }
-  start().catch(() => { });
+
+    /* ---- GM requests aimed at this player ---- */
+    const done = new Set();
+    OBR.broadcast.onMessage(S.CH_GM, async ev => {
+      const d = ev.data;
+      if (!d || d.to !== me.id || done.has(d.id)) return;
+      done.add(d.id);
+      const store = S.read(S.STORE);
+      const ch = store && store.chars && (store.chars[d.char] || store.chars[store.active]);
+      if (d.type === 'hp') {
+        if (!ch) return;
+        const r = S.applyHp(ch, +d.amount || 0);
+        S.write(S.STORE, store);
+        // keep the party panel and the token in step with the new HP
+        const all = S.read(S.STATUS) || {}; const st = Object.assign({}, all[ch.id] || {}, { charId: ch.id, char: ch.name, hp: r.hp, max: r.max, temp: r.temp, down: r.hp <= 0 });
+        all[ch.id] = st; S.write(S.STATUS, all);
+        if (store.active === ch.id) OBR.player.setMetadata({ [S.META]: st }).catch(() => { });
+        try {
+          const items = await OBR.scene.items.getItems(it => !!(it.metadata && it.metadata[S.LINK] && it.metadata[S.LINK].player === me.id && it.metadata[S.LINK].char === ch.id));
+          if (items.length) await OBR.scene.items.updateItems(items.map(i => i.id), drafts => { for (const it of drafts) it.metadata[S.BUBBLES] = Object.assign({}, it.metadata[S.BUBBLES] || {}, { health: r.hp, 'max health': r.max, 'temporary health': r.temp }); });
+        } catch (e) { }
+        OBR.notification.show(`${d.from}: ${r.text} to ${ch.name}. HP ${r.hp}/${r.max}${r.temp ? ' (+' + r.temp + ' temp)' : ''}`, d.amount < 0 ? 'WARNING' : 'SUCCESS').catch(() => { });
+      }
+      if (d.type === 'sheetReq') {
+        if (!ch) { OBR.broadcast.sendMessage(S.CH_GM, { type: 'sheet', id: d.id, to: d.from, error: 'no character' }, { destination: 'REMOTE' }).catch(() => { }); return; }
+        const parts = S.chunks(await S.pack(ch));
+        for (let i = 0; i < parts.length; i++) await OBR.broadcast.sendMessage(S.CH_GM, { type: 'sheet', id: d.id, to: d.from, part: i, parts: parts.length, data: parts[i], owner: me.name }, { destination: 'REMOTE' }).catch(() => { });
+      }
+    });
+
+    /* ---- token right-click menus ---- */
+    await OBR.contextMenu.create({
+      id: 'com.grimsheet/menu-link',
+      icons: [{
+        icon: ICON, label: 'Link to my Grimsheet character',
+        filter: { min: 1, max: 1, roles: ['PLAYER'], permissions: ['UPDATE'], every: [{ key: 'layer', value: 'CHARACTER', coordinator: '&&' }, { key: ['metadata', S.LINK, 'player'], value: me.id, operator: '!=' }] },
+      }],
+      onClick: async ctx => {
+        const store = S.read(S.STORE);
+        const ch = store && store.chars && store.chars[store.active];
+        if (!ch) { OBR.notification.show('Open Grimsheet and create or pick a character first, then link it.', 'WARNING'); return; }
+        const st = (S.read(S.STATUS) || {})[ch.id];
+        await OBR.scene.items.updateItems([ctx.items[0].id], drafts => {
+          for (const it of drafts) {
+            it.metadata[S.LINK] = { player: me.id, char: ch.id, name: ch.name, owner: me.name };
+            if (st) it.metadata[S.BUBBLES] = Object.assign({}, it.metadata[S.BUBBLES] || {}, { health: st.hp, 'max health': st.max, 'temporary health': st.temp || 0, 'armor class': typeof st.ac === 'number' ? st.ac : 0 });
+          }
+        });
+        OBR.notification.show(`${ch.name} is linked to this token. HP, AC and initiative now follow your sheet.`, 'SUCCESS');
+      },
+    });
+    await OBR.contextMenu.create({
+      id: 'com.grimsheet/menu-unlink',
+      icons: [{ icon: ICON, label: 'Unlink from Grimsheet', filter: { min: 1, max: 1, roles: ['PLAYER'], every: [{ key: ['metadata', S.LINK, 'player'], value: me.id }] } }],
+      onClick: async ctx => {
+        await OBR.scene.items.updateItems(ctx.items.map(i => i.id), drafts => { for (const it of drafts) delete it.metadata[S.LINK]; });
+        OBR.notification.show('Token unlinked from Grimsheet.');
+      },
+    });
+    // the GM's menu opens a small panel inside the right-click menu
+    await OBR.contextMenu.create({
+      id: 'com.grimsheet/menu-gm',
+      icons: [{ icon: ICON, label: 'Grimsheet', filter: { min: 1, max: 1, roles: ['GM'], every: [{ key: 'layer', value: 'CHARACTER' }] } }],
+      embed: { url: GM_URL, height: 230 },
+    });
+  })).catch(() => { });
 })();
 </script>
 </body></html>

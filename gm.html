@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Grimsheet GM</title>
+<script src="shared.js"></script>
+<style>
+/* Compact panel shown inside Owlbear's right-click menu for the GM. */
+:root { --bg: #FAFCFB; --ink: #17201E; --muted: #596764; --line: #D0DAD6; --accent: #1C6D61; --on: #fff; --danger: #A63232; --ok: #2A7849; --soft: #EEF3F1; color-scheme: light }
+:root[data-theme="dark"] { --bg: #152024; --ink: #E3EBE9; --muted: #93A39F; --line: #26353A; --accent: #55B8A6; --on: #05201B; --danger: #E27979; --ok: #71C493; --soft: #10191C; color-scheme: dark }
+* { box-sizing: border-box }
+html, body { margin: 0; background: transparent; color: var(--ink); font: 13px/1.35 "Segoe UI", system-ui, sans-serif }
+.wrap { padding: 8px 10px; display: flex; flex-direction: column; gap: 7px }
+.t { font-weight: 700; font-size: 14px; display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap }
+.m { color: var(--muted); font-size: 12px }
+.row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap }
+button { font: inherit; color: inherit; border: 1px solid var(--line); background: var(--soft); border-radius: 7px; padding: 4px 9px; cursor: pointer }
+button:hover { border-color: var(--accent) }
+button.dmg { color: var(--danger); border-color: var(--danger) }
+button.heal { color: var(--ok); border-color: var(--ok) }
+button.pri { background: var(--accent); border-color: var(--accent); color: var(--on) }
+button:disabled { opacity: .45; cursor: default }
+input { font: inherit; color: inherit; width: 64px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); padding: 4px 6px; font-variant-numeric: tabular-nums }
+.list { display: flex; flex-direction: column; gap: 4px; max-height: 150px; overflow: auto }
+.list button { text-align: left; display: flex; justify-content: space-between; gap: 8px }
+.bar { height: 5px; border-radius: 3px; background: var(--soft); overflow: hidden; border: 1px solid var(--line) }
+.bar i { display: block; height: 100% }
+.note { font-size: 12px; color: var(--accent) }
+.warn { font-size: 12px; color: var(--danger) }
+</style></head>
+<body><div class="wrap" id="app"><div class="m">Loading…</div></div>
+<script>
+(function () {
+  const S = GS, $ = s => document.querySelector(s), esc = S.esc;
+  let OBR, item = null, players = [], note = '', warnText = '';
+  const link = () => item && item.metadata && item.metadata[S.LINK];
+
+  function render() {
+    const app = $('#app');
+    if (!item) { app.innerHTML = '<div class="m">Select one character token.</div>'; return; }
+    const L = link();
+    if (!L) {
+      const opts = players.filter(p => p.s && p.s.charId);
+      app.innerHTML = `<div class="t">${esc(item.name || 'Token')}</div>
+        <div class="m">Link this token to a player's Grimsheet character:</div>
+        ${opts.length ? `<div class="list">${opts.map(p => `<button data-link="${esc(p.id)}"><span><b>${esc(p.s.char)}</b> · ${esc(p.name)}</span><span class="m">${esc(p.s.hp)}/${esc(p.s.max)} HP</span></button>`).join('')}</div>`
+          : '<div class="m">Nobody has Grimsheet open in this room right now. Players need to open it once, then their character appears here.</div>'}`;
+      return;
+    }
+    const owner = players.find(p => p.id === L.player);
+    const st = owner && owner.s && owner.s.charId === L.char ? owner.s : null;
+    const b = item.metadata[S.BUBBLES] || {};
+    const hp = st ? st.hp : b.health, max = st ? st.max : b['max health'], temp = st ? st.temp : b['temporary health'];
+    const pct = max ? Math.max(0, Math.min(100, hp / max * 100)) : 0;
+    const online = !!owner;
+    app.innerHTML = `<div class="t">${esc(L.name || 'Character')} <span class="m">${esc(owner ? owner.name : L.owner || 'player')}${online ? '' : ' · not in the room'}</span></div>
+      <div class="row"><b style="font-variant-numeric:tabular-nums">${esc(hp ?? '?')}/${esc(max ?? '?')} HP</b>${temp ? `<span class="m">+${esc(temp)} temp</span>` : ''}${b['armor class'] ? `<span class="m">AC ${esc(b['armor class'])}</span>` : ''}</div>
+      <div class="bar"><i style="width:${pct}%;background:${pct < 25 ? 'var(--danger)' : pct < 55 ? '#C9962B' : 'var(--ok)'}"></i></div>
+      <div class="row"><input id="amt" type="number" min="1" inputmode="numeric" placeholder="12" aria-label="Amount" ${online ? '' : 'disabled'}>
+        <button class="dmg" data-hp="-1" ${online ? '' : 'disabled'}>Damage</button><button class="heal" data-hp="1" ${online ? '' : 'disabled'}>Heal</button></div>
+      <div class="row"><button class="pri" data-view ${online ? '' : 'disabled'}>Open sheet</button><button data-unlink>Unlink</button></div>
+      ${note ? `<div class="note">${esc(note)}</div>` : ''}${warnText ? `<div class="warn">${esc(warnText)}</div>` : ''}
+      ${online ? '' : '<div class="m">Damage and the sheet reach the player only while they are in the room.</div>'}`;
+    const a = $('#amt'); if (a) { a.focus(); a.addEventListener('keydown', e => { if (e.key === 'Enter') hpChange(-1); }); }
+  }
+
+  async function refresh() {
+    const sel = await OBR.player.getSelection();
+    const items = sel && sel.length === 1 ? await OBR.scene.items.getItems(sel) : [];
+    item = items[0] || null;
+    players = (await OBR.party.getPlayers()).map(p => ({ id: p.id, name: p.name, role: p.role, s: p.metadata && p.metadata[S.META] }));
+    // include the GM's own character too, if the GM uses Grimsheet
+    const mine = await OBR.player.getMetadata(); const s = mine && mine[S.META];
+    if (s && !players.some(p => p.id === OBR.player.id)) players.push({ id: OBR.player.id, name: await OBR.player.getName(), role: 'GM', s });
+    render();
+  }
+
+  async function hpChange(sign) {
+    const L = link(); const n = Math.abs(parseInt(($('#amt') || {}).value, 10));
+    if (!L || !n) { warnText = 'Type an amount first.'; render(); return; }
+    warnText = '';
+    await OBR.broadcast.sendMessage(S.CH_GM, { type: 'hp', id: S.uid(), to: L.player, char: L.char, amount: sign * n, from: await OBR.player.getName() }, { destination: L.player === OBR.player.id ? 'LOCAL' : 'REMOTE' });
+    note = `Sent ${n} ${sign < 0 ? 'damage' : 'healing'} to ${L.name}.`;
+    render(); setTimeout(refresh, 900);
+  }
+
+  document.addEventListener('click', async ev => {
+    const t = ev.target.closest('button'); if (!t || t.disabled) return;
+    if (t.dataset.hp) return hpChange(+t.dataset.hp);
+    if (t.hasAttribute('data-link')) {
+      const p = players.find(x => x.id === t.dataset.link); if (!p) return;
+      await OBR.scene.items.updateItems([item.id], drafts => {
+        for (const it of drafts) {
+          it.metadata[S.LINK] = { player: p.id, char: p.s.charId, name: p.s.char, owner: p.name };
+          it.metadata[S.BUBBLES] = Object.assign({}, it.metadata[S.BUBBLES] || {}, { health: p.s.hp, 'max health': p.s.max, 'temporary health': p.s.temp || 0, 'armor class': typeof p.s.ac === 'number' ? p.s.ac : 0 });
+        }
+      });
+      note = `Linked to ${p.s.char}.`; refresh();
+    }
+    if (t.hasAttribute('data-unlink')) {
+      await OBR.scene.items.updateItems([item.id], drafts => { for (const it of drafts) delete it.metadata[S.LINK]; });
+      note = 'Unlinked.'; refresh();
+    }
+    if (t.hasAttribute('data-view')) {
+      const L = link();
+      await OBR.broadcast.sendMessage(S.CH_LOCAL, { type: 'view', player: L.player, char: L.char, name: L.name, owner: L.owner }, { destination: 'LOCAL' });
+      try { await OBR.action.open(); } catch (e) { }
+      note = `Opening ${L.name} in your Grimsheet panel…`; render();
+    }
+  });
+
+  S.sdk().then(o => { OBR = o; OBR.onReady(async () => {
+    try { const th = await OBR.theme.getTheme(); document.documentElement.setAttribute('data-theme', th.mode === 'DARK' ? 'dark' : 'light'); } catch (e) { }
+    await refresh();
+    OBR.party.onChange(() => refresh());
+    OBR.scene.items.onChange(() => refresh());
+  }); });
+})();
+</script>
+</body></html>

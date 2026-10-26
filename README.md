@@ -8,7 +8,7 @@ It runs in any browser, and as an **Owlbear Rodeo extension**: rolls are shared 
 
 - **In a browser:** https://benfass.github.io/grimsheet/
 - **In Owlbear Rodeo:** open your profile → **Add Extension**, paste
-  `https://benfass.github.io/grimsheet/manifest.json`, then enable Grimsheet in your room. A d20 button appears in the toolbar.
+  `https://benfass.github.io/grimsheet/manifest.json`, then enable Grimsheet in your room. After an update, if Owlbear still shows the old version, remove the extension and add it again with `?v=<new version>` on the end of the link (for example `manifest.json?v=1.3.0`). A d20 button appears in the toolbar.
 
 ## Where characters are saved
 
@@ -30,6 +30,12 @@ Characters are saved in each player's own browser. Nothing is uploaded and this 
 - **Party** module with live HP, AC and conditions of everyone using Grimsheet in the room.
 - **Link your token:** right-click your character token → **Link to my Grimsheet character**. The token's [Stat Bubbles for D&D](https://github.com/SeamusFinlayson/Bubbles-for-Owlbear-Rodeo) HP and AC follow your sheet, and rolling Initiative puts your total into Owlbear's initiative tracker. Right-click → **Unlink from Grimsheet** to undo.
 - **Panel size** (Small, Medium, Large or custom) and a **Compact** mode.
+
+### For the GM
+
+- Right-click any character token → **Grimsheet**: link the token to any player's character, deal **damage** or **healing** (it goes straight to the player's sheet, temporary HP first), **open the player's sheet** read-only, or unlink.
+- The **Party** module has a damage/heal box and a **View sheet** button for every player.
+- Changes reach players who are in the room even if their Grimsheet panel is closed.
 - Follows Owlbear's light or dark theme.
 
 Stat Bubbles and the initiative tracker are separate extensions; add them to your room to see the HP rings and the turn order. Grimsheet writes their data even if they aren't installed, so turning them on later shows the current values.

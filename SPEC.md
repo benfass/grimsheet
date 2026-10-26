@@ -1,6 +1,6 @@
-# D&D Character Sheet App — Product Spec (v1.0)
+# D&D Character Sheet App — Product Spec (v1.1)
 
-*Working name: Grimsheet. v0.2 recorded the platform decision and first build; v0.3 added the SRD 5.2 content pack and locked skill proficiency to Edit mode; v0.4 expanded the pack; v0.5 added PDF import and documented the saved character format; v0.6 replaced the grid with a row-and-column layout; v0.7 added dice animation and a Settings panel; v0.8 added the Owlbear Rodeo extension and a backup reminder; v0.9 added panel sizes and compact mode; v1.0 adds the background page and token linking.*
+*Working name: Grimsheet. v0.2 recorded the platform decision and first build; v0.3 added the SRD 5.2 content pack and locked skill proficiency to Edit mode; v0.4 expanded the pack; v0.5 added PDF import and documented the saved character format; v0.6 replaced the grid with a row-and-column layout; v0.7 added dice animation and a Settings panel; v0.8 added the Owlbear Rodeo extension and a backup reminder; v0.9 added panel sizes and compact mode; v1.0 added the background page and token linking; v1.1 adds GM tools.*
 
 ## 1. Vision
 
@@ -251,10 +251,18 @@ Number fields (`bonus`, `mod`, `dc`, `max`, `acFormula`) are formulas over `STR�
 - **Initiative tracker:** rolling Initiative sets `rodeo.owlbear.initiative-tracker/metadata` `{ count: "<total>", active }` on linked tokens after the dice land (keeps `active`). Format read from the official initiative tracker source.
 - Repo `index.html` is now built as a complete HTML page (charset, viewport) from the artifact source.
 
+### Built in v1.9: GM tools
+- **GM token menu** (right-click a character token → **Grimsheet**, GM only): a small panel inside the menu (`gm.html`). Unlinked token: list of every connected player's current character (from party metadata, now including `charId`) to link it to. Linked token: owner, HP/AC bar, an amount box with **Damage** and **Heal**, **Open sheet**, **Unlink**. Damage and the sheet are disabled when the owner isn't in the room.
+- **Damage/heal reach the player's sheet**: broadcast `com.grimsheet/gm` `{ type: 'hp', to, char, amount, from }`. The player's background page applies it to the saved character (temporary HP first; healing from 0 clears death saves), updates the party status and the linked token's Stat Bubbles, and notifies the player. An open panel reloads live (storage event) and shows a toast. Without a background page the panel applies it itself.
+- **Read-only sheet viewer**: the GM's panel sends `sheetReq`; the player's background replies with the character gzip-compressed, base64, in parts of 12,000 characters (Owlbear messages are capped at 16 kB). The GM's panel shows it with a banner (owner, time, Refresh, Back to my sheet). Rolling works and stays on the GM's screen; every change is blocked. "Open sheet" in the token menu opens the GM's panel (`OBR.action.open`) via a same-browser message.
+- **Party module for the GM**: a "−12 or +8" box and **View sheet** for each player.
+- Players' own Link/Unlink menu items now show only for the PLAYER role; the GM uses the Grimsheet menu.
+- **Diagnostics**: Settings shows the app version and whether the background page is running (and its version). The panel rechecks links every 5 seconds and explains when a token is linked to a different character.
+- Shared helpers for background and GM pages in `shared.js`.
+
 ### Next
-1. GM tools: apply damage/healing from a linked token to the player's sheet; read-only view of party sheets.
-2. Cloud backup/sync of characters across devices.
-3. PWA install + offline (service worker, manifest).
+1. Cloud backup/sync of characters across devices.
+2. PWA install + offline (service worker, manifest).
 2. Cloud sync of the user's own characters across devices.
 3. Print / PDF layout.
 4. Triggers (on 0 HP, on rest) and concentration reminders when taking damage.

@@ -1653,6 +1653,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
+const APP_VERSION = '1.3.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820 }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -1864,14 +1865,14 @@ function load() {
   const c = sampleChar(); return { chars: { [c.id]: c }, active: c.id };
 }
 let saveT = null;
-function save() { const ch = store.chars[store.active]; if (ch) ch.changedAt = Date.now(); clearTimeout(saveT); saveT = setTimeout(() => { if (IN_OBR) publishStatus(); try { localStorage.setItem(KEY, JSON.stringify(store)); storageOK = true; } catch (e) { if (storageOK) { storageOK = false; renderBanner(); } } }, 250); }
+function save() { if (ui.viewing) return; const ch = store.chars[store.active]; if (ch) ch.changedAt = Date.now(); clearTimeout(saveT); saveT = setTimeout(() => { if (IN_OBR) publishStatus(); try { localStorage.setItem(KEY, JSON.stringify(store)); storageOK = true; } catch (e) { if (storageOK) { storageOK = false; renderBanner(); } } }, 250); }
 function loadLib() { try { return JSON.parse(localStorage.getItem(LIBKEY) || '[]'); } catch (e) { return []; } }
 function saveLib() { try { localStorage.setItem(LIBKEY, JSON.stringify(library)); } catch (e) { } }
 
 let store = load();
 let library = loadLib();
 const ui = { mode: 'play', adv: 'normal', open: new Set(), log: [], modal: null, actTab: {}, confirm: null, dragId: null };
-const C = () => store.chars[store.active];
+const C = () => (ui.viewing ? ui.viewing.char : store.chars[store.active]);
 
 /* ---------- derived values ---------- */
 const abMod = s => Math.floor(((+s || 0) - 10) / 2);
@@ -1959,6 +1960,16 @@ const feedKey = () => 'grimsheet.feed.' + (OBRX.room || 'room');
 function bgAlive() { const b = readJSON(BGKEY); return !!b && Date.now() - b.at < 45000 && (!OBRX.room || b.room === OBRX.room); }
 function feedGet() { const s = readJSON(feedKey()); return Array.isArray(s) ? s : OBRX.feed; }
 function feedPush(d) { OBRX.feed.unshift(d); OBRX.feed.length = Math.min(OBRX.feed.length, 100); const s = readJSON(feedKey()) || []; s.unshift(d); writeJSON(feedKey(), s.slice(0, 100)); }
+window.addEventListener('storage', ev => {
+  if (ev.key !== KEY || !ev.newValue) return;
+  try {
+    const s = JSON.parse(ev.newValue); if (!s || !s.chars) return;
+    Object.values(s.chars).forEach(normalize); clearTimeout(saveT); store = s;
+    if (!store.chars[store.active]) store.active = Object.keys(store.chars)[0];
+    if (ui.modal && ui.modal.type === 'editor') { renderTop(); renderGrid(); } else render();
+    if (IN_OBR) publishStatus();
+  } catch (e) { }
+});
 window.addEventListener('storage', ev => { if (ev.key && ev.key.startsWith('grimsheet.feed.') && ui.modal && ui.modal.type === 'log' && ui.logTab === 'table') renderModal(); });
 async function startOwlbear() {
   try {
@@ -1968,11 +1979,14 @@ async function startOwlbear() {
       OBRX.api = OBR;
       const refreshMe = async () => { OBRX.me = { id: OBR.player.id || await OBR.player.getId(), name: await OBR.player.getName(), role: await OBR.player.getRole() }; };
       await refreshMe(); OBRX.ready = true;
-      OBR.player.onChange(p => { OBRX.me = { id: p.id, name: p.name, role: p.role }; });
+      OBR.player.onChange(p => { OBRX.me.name = p.name; OBRX.me.role = p.role; });
       const applyTheme = t => { if (t && t.mode) document.documentElement.setAttribute('data-theme', t.mode === 'DARK' ? 'dark' : 'light'); };
       try { applyTheme(await OBR.theme.getTheme()); OBR.theme.onChange(applyTheme); } catch (e) { }
       OBRX.room = OBR.room && OBR.room.id ? OBR.room.id : 'room';
       OBR.broadcast.onMessage(CH_ROLL, ev => receiveRoll(ev.data));
+      OBR.broadcast.onMessage(CH_GM, ev => receiveGm(ev.data));
+      OBR.broadcast.onMessage(CH_LOCAL, ev => { const d = ev.data; if (d && d.type === 'view') requestSheet(d.player, d.char, d.name, d.owner); });
+      setInterval(() => { if (!document.hidden) refreshLinks(); }, 5000);
       try {
         OBR.scene.items.onChange(items => refreshLinks(items));
         OBR.scene.onReadyChange(() => refreshLinks());
@@ -1989,11 +2003,11 @@ async function startOwlbear() {
 }
 function statusOf(c) {
   const ac = (() => { try { return E.staticSum(acComps(), CTX).flat; } catch (e) { return '?'; } })();
-  return { char: c.name, cls: [c.species, c.cls].filter(Boolean).join(' '), level: c.level, hp: c.hp.cur, max: c.hp.max, temp: c.hp.temp, ac, cond: c.conditions.concat(c.exhaustion ? ['Exhaustion ' + c.exhaustion] : []), dead: c.death.f >= 3, down: c.hp.cur <= 0 };
+  return { charId: c.id, char: c.name, cls: [c.species, c.cls].filter(Boolean).join(' '), level: c.level, hp: c.hp.cur, max: c.hp.max, temp: c.hp.temp, ac, cond: c.conditions.concat(c.exhaustion ? ['Exhaustion ' + c.exhaustion] : []), dead: c.death.f >= 3, down: c.hp.cur <= 0 };
 }
 let statusT = null;
 function publishStatus() {
-  if (!OBRX.ready) return;
+  if (!OBRX.ready || ui.viewing) return;
   clearTimeout(statusT);
   statusT = setTimeout(() => {
     CTX = ctxFor(C()); const st = statusOf(C());
@@ -2009,16 +2023,20 @@ async function refreshLinks(items) {
   try {
     if (!items) items = (await OBRX.api.scene.isReady()) ? await OBRX.api.scene.items.getItems(it => !!(it.metadata && it.metadata[LINK])) : [];
   } catch (e) { items = []; }
+  if (ui.viewing) return;
   const before = OBRX.links.length, cid = C().id;
+  OBRX.otherLinks = items.filter(it => it.metadata && it.metadata[LINK] && it.metadata[LINK].player === OBRX.me.id && it.metadata[LINK].char !== cid).map(it => it.metadata[LINK].name || 'another character');
   OBRX.links = items.filter(it => it.metadata && it.metadata[LINK] && it.metadata[LINK].player === OBRX.me.id && it.metadata[LINK].char === cid).map(it => ({ id: it.id, name: it.name, b: it.metadata[BUBBLES] || null }));
   paintLink();
   if (OBRX.links.length > before) syncTokens(statusOf(C()));
 }
 function linkHtml() {
-  if (!IN_OBR) return '';
+  if (!IN_OBR || ui.viewing) return '';
   if (!OBRX.ready) return '<span class="muted">Connecting to Owlbear…</span>';
   const n = OBRX.links.length;
+  if (!n && (OBRX.otherLinks || []).length) return `<span class="muted">Your token in this scene is linked to <b>${esc(OBRX.otherLinks[0])}</b>, not to ${esc(C().name)}. Switch to that character in Characters, or link the token again.</span>`;
   return n ? `<span class="chip tag-action">Token linked</span> <span class="muted">${n > 1 ? n + ' tokens in this scene follow' : 'Your token follows'} your HP, AC and initiative.</span>`
+    : OBRX.me.role === 'GM' ? '<span class="muted">As GM, right-click any character token and choose <b>Grimsheet</b> to link it to a player, deal damage or healing, or open their sheet.</span>'
     : '<span class="muted">Not linked to a token. Right-click your token in Owlbear and choose <b>Link to my Grimsheet character</b>.</span>';
 }
 function paintLink() { document.querySelectorAll('[data-link]').forEach(n => { n.innerHTML = linkHtml(); }); }
@@ -2030,7 +2048,7 @@ function syncTokens(st) {
   OBRX.api.scene.items.updateItems(stale, drafts => { for (const it of drafts) it.metadata[BUBBLES] = Object.assign({}, it.metadata[BUBBLES] || {}, want); }).catch(() => { });
 }
 function sendInitiative(entry) {
-  if (!OBRX.ready || !OBRX.links.length) return;
+  if (!OBRX.ready || !OBRX.links.length || ui.viewing) return;
   const ids = OBRX.links.map(l => l.id);
   OBRX.api.scene.items.updateItems(ids, drafts => { for (const it of drafts) it.metadata[INIT] = { count: String(entry.total), active: !!(it.metadata[INIT] && it.metadata[INIT].active) }; })
     .then(() => toast('Initiative ' + entry.total + ' added to the initiative tracker.'), () => toast('Couldn\'t update the initiative tracker. You may not have permission to edit that token.'));
@@ -2055,14 +2073,70 @@ function partyList() {
     const s = p.s, pct = s.max ? Math.max(0, Math.min(100, s.hp / s.max * 100)) : 0;
     return `<div class="entry"><div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap"><b>${esc(s.char)}</b><span class="muted" style="font-size:.85rem">${esc(p.name)}${p.role === 'GM' ? ' · GM' : ''}${s.cls ? ' · ' + esc(s.cls) : ''}${s.level ? ' ' + esc(s.level) : ''}</span></div>
       <div class="inline" style="margin-top:4px"><span class="pool">${esc(s.hp)}<small>/${esc(s.max)} HP</small></span>${s.temp ? `<span class="temp">+${esc(s.temp)}</span>` : ''}<span class="chip">AC ${esc(s.ac)}</span>${s.dead ? '<span class="chip" style="color:var(--danger);border-color:var(--danger)">Dead</span>' : s.down ? '<span class="chip" style="color:var(--danger);border-color:var(--danger)">Down</span>' : ''}${(s.cond || []).map(k => `<span class="chip" style="color:var(--danger);border-color:var(--danger)">${esc(k)}</span>`).join('')}</div>
-      <div class="hpbar" style="margin-top:6px"><i class="${pct < 25 ? 'low' : pct < 55 ? 'mid' : ''}" style="width:${pct}%"></i></div></div>`;
+      <div class="hpbar" style="margin-top:6px"><i class="${pct < 25 ? 'low' : pct < 55 ? 'mid' : ''}" style="width:${pct}%"></i></div>
+      ${OBRX.me.role === 'GM' && s.charId ? `<div class="inline" style="margin-top:6px"><input class="qm" id="gmhp-${esc(p.id)}" data-qm="gmhp" data-player="${esc(p.id)}" data-char="${esc(s.charId)}" data-name="${esc(s.char)}" style="width:104px" placeholder="−12 or +8" aria-label="Damage or heal ${esc(s.char)}"><button class="btn small" data-act="gmview" data-player="${esc(p.id)}" data-char="${esc(s.charId)}" data-name="${esc(s.char)}" data-owner="${esc(p.name)}">View sheet</button></div>` : ''}</div>`;
   }).join('');
+}
+const CH_GM = 'com.grimsheet/gm', CH_LOCAL = 'com.grimsheet/local';
+// what still works while viewing someone else's sheet
+const VIEW_OK = new Set(['check', 'save', 'skill', 'atk', 'dmg', 'init', 'spellatk', 'tdice', 'explain', 'toggle', 'acttab', 'logtab', 'close', 'ovlbg', 'adv', 'viewend', 'viewrefresh', 'mcollapse', 'sizemenu', 'setpanel', 'setcompact', 'setanim', 'setspeed', 'setshare', 'settest', 'clearlog', 'gmview']);
+const gmSeen = new Set(), sheetParts = {};
+function applyHpChange(ch, amount) {
+  const hp = ch.hp, before = hp.cur; let text;
+  if (amount < 0) { let d = -amount; const t = Math.min(hp.temp || 0, d); hp.temp = (hp.temp || 0) - t; d -= t; hp.cur = Math.max(0, hp.cur - d); text = (-amount) + ' damage' + (t ? ' (' + t + ' from temp HP)' : ''); }
+  else { hp.cur = Math.min(hp.max, hp.cur + amount); if (before <= 0 && hp.cur > 0) ch.death = { s: 0, f: 0 }; text = (hp.cur - before) + ' healing'; }
+  return text;
+}
+async function packJSON(obj) {
+  const gz = new Uint8Array(await new Response(new Blob([new TextEncoder().encode(JSON.stringify(obj))]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer());
+  let s = ''; for (let i = 0; i < gz.length; i += 0x8000) s += String.fromCharCode.apply(null, gz.subarray(i, i + 0x8000)); return btoa(s);
+}
+async function unpackJSON(b64) {
+  const bin = atob(b64), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+  return JSON.parse(await new Response(new Blob([u]).stream().pipeThrough(new DecompressionStream('gzip'))).text());
+}
+async function receiveGm(d) {
+  if (!d || !OBRX.ready) return;
+  if (d.type === 'sheet' && d.to === OBRX.me.id && ui.pendingSheet && ui.pendingSheet.id === d.id) return receiveSheetPart(d);
+  if (d.to !== OBRX.me.id || gmSeen.has(d.id)) return;
+  gmSeen.add(d.id);
+  if (bgAlive()) { if (d.type === 'hp') setTimeout(() => toast(d.from + ': ' + (d.amount < 0 ? -d.amount + ' damage' : d.amount + ' healing') + '. Your sheet is updated.'), 300); return; }
+  // no background page: handle it here
+  const ch = store.chars[d.char] || store.chars[store.active];
+  if (d.type === 'hp' && ch) {
+    const text = applyHpChange(ch, +d.amount || 0); save(); render();
+    OBRX.api.notification.show(`${d.from}: ${text} to ${ch.name}. HP ${ch.hp.cur}/${ch.hp.max}`, d.amount < 0 ? 'WARNING' : 'SUCCESS').catch(() => { });
+  }
+  if (d.type === 'sheetReq' && ch) {
+    const s = await packJSON(ch), parts = []; for (let i = 0; i < s.length; i += 12000) parts.push(s.slice(i, i + 12000));
+    for (let i = 0; i < parts.length; i++) await OBRX.api.broadcast.sendMessage(CH_GM, { type: 'sheet', id: d.id, to: d.from, part: i, parts: parts.length, data: parts[i], owner: OBRX.me.name }, { destination: 'REMOTE' }).catch(() => { });
+  }
+}
+function requestSheet(player, charId, name, owner) {
+  if (!OBRX.ready) return;
+  const id = uid();
+  ui.pendingSheet = { id, player, charId, name, owner };
+  openModal('viewwait', { name, owner });
+  OBRX.api.broadcast.sendMessage(CH_GM, { type: 'sheetReq', id, to: player, char: charId, from: OBRX.me.id }, { destination: player === OBRX.me.id ? 'LOCAL' : 'REMOTE' }).catch(() => { });
+  setTimeout(() => { if (ui.pendingSheet && ui.pendingSheet.id === id) { ui.pendingSheet = null; if (ui.modal && ui.modal.type === 'viewwait') { ui.modal.failed = true; renderModal(); } } }, 9000);
+}
+async function receiveSheetPart(d) {
+  const p = sheetParts[d.id] = sheetParts[d.id] || [];
+  if (d.error) { ui.pendingSheet = null; if (ui.modal) { ui.modal.failed = true; renderModal(); } return; }
+  p[d.part] = d.data;
+  if (p.filter(x => x != null).length < d.parts) return;
+  const req = ui.pendingSheet; ui.pendingSheet = null; delete sheetParts[d.id];
+  try {
+    const ch = normalize(await unpackJSON(p.join('')));
+    ui.viewing = { char: ch, owner: d.owner || (req && req.owner) || 'player', player: req && req.player, at: Date.now() };
+    ui.mode = 'play'; ui.open.clear(); closeModal(); render(); window.scrollTo(0, 0);
+  } catch (e) { if (ui.modal) { ui.modal.failed = true; renderModal(); } }
 }
 function rollMessage(entry) {
   return { v: 1, who: OBRX.me.name || 'Someone', char: C().name, title: entry.title, total: String(entry.total), detail: entry.parts.map(p => p.label + (p.detail ? ' [' + p.detail + ']' : '') + ' ' + signed(p.value)).join(' · ').slice(0, 600), crit: !!entry.crit, fumble: !!entry.fumble, mode: entry.mode, gmOnly: SETTINGS.share === 'gm', at: Date.now() };
 }
 function shareRoll(entry) {
-  if (!IN_OBR || !OBRX.ready || SETTINGS.share === 'off' || entry.shared || entry.title === 'Test roll') return;
+  if (!IN_OBR || !OBRX.ready || SETTINGS.share === 'off' || entry.shared || entry.title === 'Test roll' || ui.viewing) return;
   entry.shared = true;
   const msg = rollMessage(entry);
   feedPush(Object.assign({ mine: true }, msg));
@@ -2156,6 +2230,11 @@ function renderTop() {
 
 function renderBanner() {
   const c = C(); let h = '';
+  if (ui.viewing) {
+    const t = new Date(ui.viewing.at); const hhmm = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
+    $('#banner').innerHTML = `<div class="banner" style="background:var(--accent-soft)"><span style="flex:1;min-width:200px">Viewing <b>${esc(ui.viewing.owner)}'s ${esc(c.name)}</b>, read-only, as of ${hhmm}. Rolls here stay on your screen.</span><button class="btn small" data-act="viewrefresh">Refresh</button><button class="btn small primary" data-act="viewend">Back to my sheet</button></div>`;
+    return;
+  }
   if (!storageOK) h += `<div class="banner warn">This browser view isn't saving changes. Use <b>Characters → Export</b> to keep a copy of your character.</div>`;
   const DAY = 864e5;
   if (!c.example && !ui.backupLater && c.changedAt && (c.lastBackup ? c.changedAt > c.lastBackup && Date.now() - c.lastBackup > 3 * DAY : Date.now() - (c.createdAt || Date.now()) > DAY)) {
@@ -2480,6 +2559,7 @@ function renderModal() {
   else if (m.type === 'import') h = importHtml(m);
   else if (m.type === 'pdf') h = pdfHtml(m);
   else if (m.type === 'settings') h = settingsHtml();
+  else if (m.type === 'viewwait') h = dlgHead('Opening ' + (m.name || 'sheet')) + `<div class="dlg-b">${m.failed ? `<div class="banner warn" style="margin:0">${esc(m.owner || 'The player')}'s Grimsheet didn't answer. They need to be in the room with Grimsheet 1.3 or newer installed.</div>` : `<div class="sugg"><h3>Asking ${esc(m.owner || 'the player')}'s Grimsheet…</h3><span>The sheet opens read-only in a moment.</span></div>`}</div><div class="dlg-f"><button class="btn" data-act="close">${m.failed ? 'Close' : 'Cancel'}</button></div>`;
   $('#ovl').innerHTML = `<div class="ovl" data-act="ovlbg"><div class="dlg" role="dialog" aria-modal="true">${h}</div></div>`;
   $('#ovl .ovl').scrollTop = keepScroll;
 }
@@ -2645,7 +2725,7 @@ function settingsHtml() {
       ${SETTINGS.panel === 'custom' ? `<div class="inline" style="flex-basis:100%;justify-content:flex-end;font-size:.88rem"><label class="muted">Width <input class="ed-inline" id="set-pw" data-setpanel="panelW" type="number" min="320" max="1600" step="20" value="${SETTINGS.panelW}" style="width:72px"></label><label class="muted">Height <input class="ed-inline" id="set-ph" data-setpanel="panelH" type="number" min="300" max="1400" step="20" value="${SETTINGS.panelH}" style="width:72px"></label><span class="muted">px</span></div>` : ''}</div>
     <div class="setrow"><div class="grow"><b>Share my rolls in Owlbear Rodeo</b><div class="muted">${IN_OBR ? (OBRX.ready ? 'Connected to your Owlbear room as ' + esc(OBRX.me.name || 'you') + '.' : 'Connecting to Owlbear…') : 'Applies when Grimsheet is opened inside Owlbear Rodeo.'} “GM only” shows your rolls to the GM and nobody else.</div></div>
       <div class="seg" role="group" aria-label="Share rolls">${[['all', 'Everyone'], ['gm', 'GM only'], ['off', 'Off']].map(([v, l]) => `<button data-act="setshare" data-v="${v}" class="${SETTINGS.share === v ? 'on' : ''}">${l}</button>`).join('')}</div></div>
-    <div class="setrow"><div class="grow"><b>Try it</b><div class="muted">Settings are saved in this browser.</div></div><button class="btn" data-act="settest">Roll 1d20 + 2d6</button></div>
+    <div class="setrow"><div class="grow"><b>Try it</b><div class="muted">Settings are saved in this browser. Grimsheet ${APP_VERSION}${IN_OBR ? (bgAlive() ? ' · background page running' + ((readJSON(BGKEY) || {}).v ? ' (' + readJSON(BGKEY).v + ')' : '') : ' · background page not running: re-add the extension in Owlbear') : ''}.</div></div><button class="btn" data-act="settest">Roll 1d20 + 2d6</button></div>
   </div><div class="dlg-f"><button class="btn primary" data-act="close">Done</button></div>`;
 }
 function importHtml(m) {
@@ -2770,12 +2850,16 @@ document.addEventListener('click', ev => {
   const act = el.dataset.act, id = el.dataset.id, v = el.dataset.v, i = +el.dataset.i;
   if (act === 'ovlbg') { if (ev.target === el && ui.modal && ui.modal.type !== 'editor') closeModal(); return; }
   if (el.type === 'checkbox' && !['hideused'].includes(act)) return;
+  if (ui.viewing && !VIEW_OK.has(act) && !(act === 'modal' && ['log', 'settings'].includes(v))) { toast('This sheet is read-only. Choose “Back to my sheet” to edit your own.'); return; }
   const c = C(); const ed = ui.mode === 'edit';
   const rerender = () => { save(); render(); };
   const f = id ? findEntry(id) : null;
   if (act !== 'edel' && act !== 'delchar' && act !== 'mdel') ui.confirm = null;
   switch (act) {
     case 'mode': ui.mode = v; render(); break;
+    case 'viewend': ui.viewing = null; ui.open.clear(); render(); if (IN_OBR) refreshLinks(); break;
+    case 'viewrefresh': requestSheet(ui.viewing.player, ui.viewing.char.id, ui.viewing.char.name, ui.viewing.owner); break;
+    case 'gmview': requestSheet(el.dataset.player, el.dataset.char, el.dataset.name, el.dataset.owner); break;
     case 'adv': ui.adv = v; renderTop(); break;
     case 'rest': doRest(v); break;
     case 'check': { const a = c.abilities.find(x => x.key === v); roll(a.name + ' check', checkComps(v, 0)); break; }
@@ -2989,6 +3073,14 @@ function doImport(lib) {
 
 document.addEventListener('change', ev => {
   const t = ev.target;
+  if (t.dataset.qm === 'gmhp') {
+    const raw = t.value.trim().replace(/−/g, '-'); const n = parseInt(raw, 10);
+    if (!n) { toast('Type −12 for damage or +8 for healing.'); return; }
+    const amount = raw[0] === '+' ? Math.abs(n) : -Math.abs(n);
+    OBRX.api.broadcast.sendMessage(CH_GM, { type: 'hp', id: uid(), to: t.dataset.player, char: t.dataset.char, amount, from: OBRX.me.name }, { destination: t.dataset.player === OBRX.me.id ? 'LOCAL' : 'REMOTE' }).catch(() => { });
+    toast('Sent ' + Math.abs(amount) + (amount < 0 ? ' damage' : ' healing') + ' to ' + t.dataset.name + '.'); t.value = ''; return;
+  }
+  if (ui.viewing && (t.dataset.bind || t.dataset.qm || t.dataset.mtitle || t.dataset.mnotes)) { toast('This sheet is read-only.'); render(); return; }
   if (t.id === 'pdf-file' && t.files && t.files[0]) { readPdf(t.files[0]); return; }
   if (t.id === 'imp-file' && t.files && t.files[0]) { const r = new FileReader(); r.onload = () => { $('#imp-text').value = r.result; }; r.readAsText(t.files[0]); return; }
   if (t.dataset.bind) {
