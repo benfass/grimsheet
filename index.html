@@ -27,7 +27,19 @@
   --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 18px rgba(0,0,0,.25); color-scheme:dark}
 
 *{box-sizing:border-box}
-body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.45}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:.9375rem;line-height:1.45}
+/* in small panels the toolbar scrolls away instead of staying pinned */
+@media (max-width:560px),(max-height:700px){.top{position:relative;top:auto}.top-in{gap:6px 10px}.tools .btn{padding:4px 9px}}
+html.compact{font-size:13.5px}
+html.compact .grid,html.compact .lrow,html.compact .lcol{gap:9px}
+html.compact .grid{margin-top:9px}
+html.compact .lcol{min-width:min(100%,250px)}
+html.compact .mod-h{padding:6px 10px}
+html.compact .mod-b{padding:7px 10px}
+html.compact .top-in{padding-block:6px}
+html.compact .ico{width:24px;height:24px}
+html.compact .row-i{padding:3px 0}
+html.compact .entry{padding:6px 0}
 body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:30;background:var(--surface)}
 button,input,select,textarea{font:inherit;color:inherit}
 button{cursor:pointer}
@@ -1636,9 +1648,18 @@ const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
-const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
+const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820 }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
 function saveSettings() { try { localStorage.setItem(SETKEY, JSON.stringify(SETTINGS)); } catch (e) { } }
 const DICE_MS = { quick: 450, normal: 850, dramatic: 1400 };
+document.documentElement.classList.toggle('compact', !!SETTINGS.compact);
+// Owlbear panel sizes (width × height in pixels)
+const PANEL = { small: [440, 620], medium: [760, 820], large: [1100, 960] };
+function panelSize() { return SETTINGS.panel === 'custom' ? [SETTINGS.panelW, SETTINGS.panelH] : (PANEL[SETTINGS.panel] || PANEL.medium); }
+function applyPanelSize() {
+  if (!OBRX.ready) return;
+  const [w, h] = panelSize();
+  OBRX.api.action.setWidth(w).catch(() => { }); OBRX.api.action.setHeight(h).catch(() => { });
+}
 
 const ICON = {
   edit: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 2.5l2.5 2.5L6 12.5H3.5V10z"/></svg>',
@@ -1936,6 +1957,7 @@ async function startOwlbear() {
       const setParty = players => { OBRX.party = (players || []).map(p => ({ id: p.id, name: p.name, role: p.role, s: p.metadata && p.metadata[META] })).filter(p => p.s); refreshParty(); };
       setParty(await OBR.party.getPlayers()); OBR.party.onChange(setParty);
       publishStatus();
+      applyPanelSize();
       ensurePartyModule();
       renderBanner();
     });
@@ -2063,6 +2085,7 @@ function renderTop() {
       <div class="restbar"><button class="btn" data-act="rest" data-v="short">Short rest</button><button class="btn" data-act="rest" data-v="long">Long rest</button><button class="btn" data-act="rest" data-v="dawn" title="Reset anything that recharges at dawn">Dawn</button></div>
       <div class="seg" role="group" aria-label="Mode"><button data-act="mode" data-v="play" class="${!ed ? 'on' : ''}">Play</button><button data-act="mode" data-v="edit" class="${ed ? 'on' : ''}">Edit</button></div>
       <button class="btn" data-act="modal" data-v="chars">Characters</button>
+      ${IN_OBR ? '<button class="btn" data-act="sizemenu" title="Panel size and compact mode">Size</button>' : ''}
       <button class="btn" data-act="modal" data-v="settings" aria-label="Settings" title="Settings">Settings</button>
       ${ed ? `<button class="btn" data-act="modal" data-v="addModule">+ Module</button>` : ''}
     </div>`;
@@ -2552,6 +2575,11 @@ function settingsHtml() {
       <button class="switch ${SETTINGS.diceAnim ? 'on' : ''}" data-act="setanim" aria-pressed="${SETTINGS.diceAnim}"><i></i>${SETTINGS.diceAnim ? 'On' : 'Off'}</button></div>
     <div class="setrow" ${SETTINGS.diceAnim ? '' : 'style="opacity:.5"'}><div class="grow"><b>Animation speed</b><div class="muted">How long the dice take to land.</div></div>
       <div class="seg" role="group" aria-label="Animation speed">${[['quick', 'Quick'], ['normal', 'Normal'], ['dramatic', 'Dramatic']].map(([v, l]) => `<button data-act="setspeed" data-v="${v}" class="${sp === v ? 'on' : ''}" ${SETTINGS.diceAnim ? '' : 'disabled'}>${l}</button>`).join('')}</div></div>
+    <div class="setrow"><div class="grow"><b>Compact</b><div class="muted">Smaller text and tighter spacing, to fit more on screen.</div></div>
+      <button class="switch ${SETTINGS.compact ? 'on' : ''}" data-act="setcompact" aria-pressed="${!!SETTINGS.compact}"><i></i>${SETTINGS.compact ? 'On' : 'Off'}</button></div>
+    <div class="setrow" style="flex-wrap:wrap"><div class="grow" style="min-width:220px"><b>Panel size in Owlbear Rodeo</b><div class="muted">${IN_OBR ? 'How much of the Owlbear screen Grimsheet takes up.' : 'Applies when Grimsheet is opened inside Owlbear Rodeo.'}</div></div>
+      <div class="seg" role="group" aria-label="Panel size">${[['small', 'Small'], ['medium', 'Medium'], ['large', 'Large'], ['custom', 'Custom']].map(([v, l]) => `<button data-act="setpanel" data-v="${v}" class="${SETTINGS.panel === v ? 'on' : ''}">${l}</button>`).join('')}</div>
+      ${SETTINGS.panel === 'custom' ? `<div class="inline" style="flex-basis:100%;justify-content:flex-end;font-size:.88rem"><label class="muted">Width <input class="ed-inline" id="set-pw" data-setpanel="panelW" type="number" min="320" max="1600" step="20" value="${SETTINGS.panelW}" style="width:72px"></label><label class="muted">Height <input class="ed-inline" id="set-ph" data-setpanel="panelH" type="number" min="300" max="1400" step="20" value="${SETTINGS.panelH}" style="width:72px"></label><span class="muted">px</span></div>` : ''}</div>
     <div class="setrow"><div class="grow"><b>Share my rolls in Owlbear Rodeo</b><div class="muted">${IN_OBR ? (OBRX.ready ? 'Connected to your Owlbear room as ' + esc(OBRX.me.name || 'you') + '.' : 'Connecting to Owlbear…') : 'Applies when Grimsheet is opened inside Owlbear Rodeo.'} “GM only” shows your rolls to the GM and nobody else.</div></div>
       <div class="seg" role="group" aria-label="Share rolls">${[['all', 'Everyone'], ['gm', 'GM only'], ['off', 'Off']].map(([v, l]) => `<button data-act="setshare" data-v="${v}" class="${SETTINGS.share === v ? 'on' : ''}">${l}</button>`).join('')}</div></div>
     <div class="setrow"><div class="grow"><b>Try it</b><div class="muted">Settings are saved in this browser.</div></div><button class="btn" data-act="settest">Roll 1d20 + 2d6</button></div>
@@ -2807,6 +2835,16 @@ document.addEventListener('click', ev => {
     case 'setanim': SETTINGS.diceAnim = !SETTINGS.diceAnim; saveSettings(); if (!SETTINGS.diceAnim) { stopDice(); const b = $('#dicefx'); b.hidden = true; renderTray(); } renderModal(); break;
     case 'setspeed': SETTINGS.diceSpeed = v; saveSettings(); renderModal(); break;
     case 'setshare': SETTINGS.share = v; saveSettings(); renderModal(); break;
+    case 'setcompact': SETTINGS.compact = !SETTINGS.compact; saveSettings(); document.documentElement.classList.toggle('compact', SETTINGS.compact); if (ui.modal) renderModal(); else hidePop(); break;
+    case 'setpanel': SETTINGS.panel = v; saveSettings(); applyPanelSize(); hidePop(); if (ui.modal) renderModal(); break;
+    case 'sizemenu': {
+      const [w, hh] = panelSize();
+      showPop(el, `<b style="font-family:var(--f-display)">Panel size</b><div class="muted" style="font-size:.8rem;margin:2px 0 4px">Now ${w} × ${hh}</div>
+        ${[['small', 'Small · 440 × 620'], ['medium', 'Medium · 760 × 820'], ['large', 'Large · 1100 × 960']].map(([k, l]) => `<button class="opt" data-act="setpanel" data-v="${k}">${SETTINGS.panel === k ? '✓ ' : ''}${l}</button>`).join('')}
+        <button class="opt" data-act="modal" data-v="settings">Custom size…</button>
+        <button class="opt" data-act="setcompact">${SETTINGS.compact ? '✓ ' : ''}Compact text and spacing</button>`);
+      break;
+    }
     case 'logtab': ui.logTab = v; renderModal(); break;
     case 'backupnow': openModal('export', { id: c.id, fname: c.name.replace(/[^\w-]+/g, '-').toLowerCase() || 'character' }); break;
     case 'backuplater': ui.backupLater = true; renderBanner(); break;
@@ -2900,6 +2938,7 @@ document.addEventListener('change', ev => {
   if (t.dataset.mtitle) { const m = C().modules.find(x => x.id === t.dataset.mtitle); m.title = t.value || MODTYPES[m.type]; save(); return; }
   if (t.dataset.mnotes) { const m = C().modules.find(x => x.id === t.dataset.mnotes); if (m.id === notesHome()) C().notes = t.value; else m.text = t.value; save(); return; }
   if (t.dataset.qm) applyQuick(t);
+  if (t.dataset.setpanel) { const k = t.dataset.setpanel, lim = k === 'panelW' ? [320, 1600] : [300, 1400]; SETTINGS[k] = Math.max(lim[0], Math.min(lim[1], Math.round(+t.value || 0))); saveSettings(); applyPanelSize(); renderModal(); }
   if (t.dataset.d && ui.modal && ui.modal.draft) {
     const d = ui.modal.draft; let v = t.type === 'checkbox' ? t.checked : t.value;
     if ('num' in t.dataset) v = v === '' ? 0 : +v || 0;

@@ -1,6 +1,6 @@
-# D&D Character Sheet App — Product Spec (v0.8)
+# D&D Character Sheet App — Product Spec (v0.9)
 
-*Working name: Grimsheet. v0.2 recorded the platform decision and first build; v0.3 added the SRD 5.2 content pack and locked skill proficiency to Edit mode; v0.4 expanded the pack; v0.5 added PDF import and documented the saved character format; v0.6 replaced the grid with a row-and-column layout; v0.7 added dice animation and a Settings panel; v0.8 adds the Owlbear Rodeo extension and a backup reminder.*
+*Working name: Grimsheet. v0.2 recorded the platform decision and first build; v0.3 added the SRD 5.2 content pack and locked skill proficiency to Edit mode; v0.4 expanded the pack; v0.5 added PDF import and documented the saved character format; v0.6 replaced the grid with a row-and-column layout; v0.7 added dice animation and a Settings panel; v0.8 added the Owlbear Rodeo extension and a backup reminder; v0.9 adds panel sizes and compact mode.*
 
 ## 1. Vision
 
@@ -97,7 +97,7 @@ The key module for homebrew and class/race features.
 - **Dice animation (optional):** the dice tumble onto a small tray above the roll bar in their real shapes (d4 triangle, d6 square, d8 diamond, d10 kite, d12 pentagon, d20 hexagon; others round), flicker through faces and land on the actual results. The total appears when they land. Attack/check dice are teal, damage gold, healing green; the dropped advantage/disadvantage die is faded and struck through; a natural 20 glows gold and a natural 1 red. Up to 12 dice are drawn, with "+N more" beyond. The tray fades after a few seconds; a new roll replaces it.
 
 ## 5a. Settings
-- **Settings** button in the toolbar. Saved per browser (`grimsheet.settings.v1`), not per character.
+- **Settings** button in the toolbar. Saved per browser (`grimsheet.settings.v1`), not per character. Also holds Compact mode, roll sharing and the Owlbear panel size.
 - **Dice animation** on/off. Starts off when the device asks for reduced motion.
 - **Animation speed:** Quick (≈0.45 s), Normal (≈0.85 s), Dramatic (≈1.4 s).
 - **Try it** button rolls 1d20 + 2d6.
@@ -238,6 +238,11 @@ Number fields (`bonus`, `mod`, `dc`, `max`, `acFormula`) are formulas over `STR�
 - Follows Owlbear's light or dark theme.
 - **Backup reminder** (everywhere): a banner when a character has never been exported (after a day) or has changes not exported for 3+ days; Copy or Download in Export counts as a backup. Room storage was considered for backups but Owlbear caps room metadata at 16 kB for the whole room.
 - Not available inside Owlbear: Claude-assisted PDF reading (needs claude.ai). Official-form PDF import works.
+
+### Built in v1.7: Panel size and compact mode
+- **Size** button in the toolbar inside Owlbear: Small (440 × 620), Medium (760 × 820, default), Large (1100 × 960), or Custom width × height in Settings (320–1600 × 300–1400). Uses `OBR.action.setWidth/setHeight`; applied each time the panel connects. Manifest maximum raised to 1600 × 1400 so Large and Custom aren't capped.
+- **Compact** setting (everywhere): smaller text and tighter spacing.
+- In narrow (< 560 px) or short (< 700 px) panels the toolbar scrolls with the page instead of staying pinned.
 
 ### Next
 1. PWA install + offline (service worker, manifest).
