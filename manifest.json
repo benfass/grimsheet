@@ -1,0 +1,16 @@
+{
+  "name": "Grimsheet",
+  "version": "1.0.0",
+  "manifest_version": 1,
+  "author": "Ben",
+  "description": "Modular D&D 5e character sheet for official content and homebrew. Tap to roll; rolls and party HP are shared with the room.",
+  "homepage_url": "https://benfass.github.io/grimsheet/",
+  "icon": "https://benfass.github.io/grimsheet/icon.svg",
+  "action": {
+    "title": "Grimsheet",
+    "icon": "https://benfass.github.io/grimsheet/icon.svg",
+    "popover": "https://benfass.github.io/grimsheet/index.html",
+    "height": 900,
+    "width": 1000
+  }
+}
