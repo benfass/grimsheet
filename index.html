@@ -256,6 +256,21 @@ select.ed-inline{width:auto}
 .chip.conc{color:var(--accent);border-color:var(--accent)}
 .atkc.save.death{border-color:var(--danger);box-shadow:var(--shadow),inset 3px 0 0 var(--danger)}
 .init-list .iturn{padding:3px 10px 6px 64px;font-size:.8rem;color:var(--ink);background:var(--accent-soft);border-bottom:1px solid var(--line)}
+.lvlup{margin-left:6px;font:inherit;font-size:.78rem;font-weight:600;color:var(--accent);background:var(--accent-soft);border:1px solid transparent;border-radius:999px;padding:1px 9px;cursor:pointer;vertical-align:1px}
+.lvlup:hover{border-color:var(--accent)}
+.dlg-b.lu{gap:14px}
+.lu-sec{display:flex;flex-direction:column;gap:8px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+.lu-sec:last-child{border-bottom:0}
+.lu-h{display:flex;align-items:center;gap:8px;font-weight:700}
+.lu-n{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--accent);color:var(--on-accent);font-size:.8rem;flex:none}
+.lu-opts{display:flex;flex-direction:column;gap:4px}
+.lu-opt{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 10px;border:1px solid var(--line);border-radius:8px;cursor:pointer}
+.lu-opt.on{border-color:var(--accent);background:var(--accent-soft)}
+.lu-feats{display:flex;flex-direction:column;gap:4px}
+.lu-feats label{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.lu-slots{display:flex;flex-wrap:wrap;gap:6px}
+.lu-slot{border:1px solid var(--line);border-radius:6px;padding:2px 8px;font-size:.85rem}
+.lu-slot.chg{border-color:var(--accent);color:var(--accent)}
 .tray .fu{display:flex;gap:6px;flex-wrap:wrap;margin-top:3px}
 .badge{font-size:.7rem;letter-spacing:.08em;font-weight:700;padding:0 6px;border-radius:4px;background:var(--gold-soft);color:var(--gold)}
 .badge.red{background:var(--danger-soft);color:var(--danger)}
@@ -2467,7 +2482,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.8.0';
+const APP_VERSION = '1.9.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -3876,6 +3891,257 @@ function mergeSaveRes(list, d) {
   return list;
 }
 
+/* ---------- LEVEL UP ---------- */
+// Class tables for the SRD 5.2 classes: hit die, spellcasting, ability score levels, subclass level,
+// features by level and the SRD subclass. "Subclass feature" levels are filled from the subclass.
+const ASI_STD = [4, 8, 12, 16];
+const CLASSES = {
+  Barbarian: { hd: 12, cast: '', asi: ASI_STD, subAt: 3, sub: 'Path of the Berserker',
+    f: { 1: 'Rage, Unarmored Defense, Weapon Mastery', 2: 'Danger Sense, Reckless Attack', 3: 'Primal Knowledge', 5: 'Extra Attack, Fast Movement', 7: 'Feral Instinct, Instinctive Pounce', 9: 'Brutal Strike', 11: 'Relentless Rage', 13: 'Improved Brutal Strike', 15: 'Persistent Rage', 17: 'Improved Brutal Strike', 18: 'Indomitable Might', 20: 'Primal Champion' },
+    s: { 3: 'Frenzy', 6: 'Mindless Rage', 10: 'Retaliation', 14: 'Intimidating Presence' } },
+  Bard: { hd: 8, cast: 'full', ab: 'CHA', asi: ASI_STD, subAt: 3, sub: 'College of Lore',
+    f: { 1: 'Bardic Inspiration, Spellcasting', 2: 'Expertise, Jack of All Trades', 5: 'Font of Inspiration', 7: 'Countercharm', 9: 'Expertise', 10: 'Magical Secrets', 18: 'Superior Inspiration', 20: 'Words of Creation' },
+    s: { 3: 'Bonus Proficiencies, Cutting Words', 6: 'Magical Discoveries', 14: 'Peerless Skill' } },
+  Cleric: { hd: 8, cast: 'full', ab: 'WIS', asi: ASI_STD, subAt: 3, sub: 'Life Domain',
+    f: { 1: 'Spellcasting, Divine Order', 2: 'Channel Divinity', 5: 'Sear Undead', 7: 'Blessed Strikes', 10: 'Divine Intervention', 14: 'Improved Blessed Strikes', 20: 'Greater Divine Intervention' },
+    s: { 3: 'Disciple of Life, Life Domain Spells, Preserve Life', 6: 'Blessed Healer', 17: 'Supreme Healing' } },
+  Druid: { hd: 8, cast: 'full', ab: 'WIS', asi: ASI_STD, subAt: 3, sub: 'Circle of the Land',
+    f: { 1: 'Spellcasting, Druidic, Primal Order', 2: 'Wild Shape, Wild Companion', 5: 'Wild Resurgence', 7: 'Elemental Fury', 15: 'Improved Elemental Fury', 18: 'Beast Spells', 20: 'Archdruid' },
+    s: { 3: 'Circle of the Land Spells, Land\'s Aid', 6: 'Natural Recovery', 10: 'Nature\'s Ward', 14: 'Nature\'s Sanctuary' } },
+  Fighter: { hd: 10, cast: '', asi: [4, 6, 8, 12, 14, 16], subAt: 3, sub: 'Champion',
+    f: { 1: 'Fighting Style, Second Wind, Weapon Mastery', 2: 'Action Surge, Tactical Mind', 5: 'Extra Attack, Tactical Shift', 9: 'Indomitable, Tactical Master', 11: 'Two Extra Attacks', 13: 'Studied Attacks', 20: 'Three Extra Attacks' },
+    s: { 3: 'Improved Critical, Remarkable Athlete', 7: 'Additional Fighting Style', 10: 'Heroic Warrior', 15: 'Superior Critical', 18: 'Survivor' },
+    note: { 13: 'Indomitable now has 2 uses.', 17: 'Action Surge now has 2 uses and Indomitable 3.' } },
+  Monk: { hd: 8, cast: '', asi: ASI_STD, subAt: 3, sub: 'Warrior of the Open Hand',
+    f: { 1: 'Martial Arts, Unarmored Defense', 2: 'Monk\'s Focus, Unarmored Movement, Uncanny Metabolism', 3: 'Deflect Attacks', 4: 'Slow Fall', 5: 'Extra Attack, Stunning Strike', 6: 'Empowered Strikes', 7: 'Evasion', 9: 'Acrobatic Movement', 10: 'Heightened Focus, Self-Restoration', 13: 'Deflect Energy', 14: 'Disciplined Survivor', 15: 'Perfect Focus', 18: 'Superior Defense', 20: 'Body and Mind' },
+    s: { 3: 'Open Hand Technique', 6: 'Wholeness of Body', 11: 'Fleet Step', 17: 'Quivering Palm' } },
+  Paladin: { hd: 10, cast: 'half', ab: 'CHA', asi: ASI_STD, subAt: 3, sub: 'Oath of Devotion',
+    f: { 1: 'Lay On Hands, Spellcasting, Weapon Mastery', 2: 'Fighting Style, Paladin\'s Smite', 3: 'Channel Divinity', 5: 'Extra Attack, Faithful Steed', 6: 'Aura of Protection', 9: 'Abjure Foes', 10: 'Aura of Courage', 11: 'Radiant Strikes', 14: 'Restoring Touch', 18: 'Aura Expansion' },
+    s: { 3: 'Oath of Devotion Spells, Sacred Weapon', 7: 'Aura of Devotion', 15: 'Smite of Protection', 20: 'Holy Nimbus' } },
+  Ranger: { hd: 10, cast: 'half', ab: 'WIS', asi: ASI_STD, subAt: 3, sub: 'Hunter',
+    f: { 1: 'Spellcasting, Favored Enemy, Weapon Mastery', 2: 'Deft Explorer, Fighting Style', 5: 'Extra Attack', 6: 'Roving', 9: 'Expertise', 10: 'Tireless', 13: 'Relentless Hunter', 14: 'Nature\'s Veil', 17: 'Precise Hunter', 18: 'Feral Senses', 20: 'Foe Slayer' },
+    s: { 3: 'Hunter\'s Lore, Hunter\'s Prey', 7: 'Defensive Tactics', 11: 'Superior Hunter\'s Prey', 15: 'Superior Hunter\'s Defense' } },
+  Rogue: { hd: 8, cast: '', asi: [4, 8, 10, 12, 16], subAt: 3, sub: 'Thief',
+    f: { 1: 'Expertise, Sneak Attack, Thieves\' Cant, Weapon Mastery', 2: 'Cunning Action', 3: 'Steady Aim', 5: 'Cunning Strike, Uncanny Dodge', 6: 'Expertise', 7: 'Evasion, Reliable Talent', 11: 'Improved Cunning Strike', 14: 'Devious Strikes', 15: 'Slippery Mind', 18: 'Elusive', 20: 'Stroke of Luck' },
+    s: { 3: 'Fast Hands, Second-Story Work', 9: 'Supreme Sneak', 13: 'Use Magic Device', 17: 'Thief\'s Reflexes' } },
+  Sorcerer: { hd: 6, cast: 'full', ab: 'CHA', asi: ASI_STD, subAt: 3, sub: 'Draconic Sorcery',
+    f: { 1: 'Spellcasting, Innate Sorcery', 2: 'Font of Magic, Metamagic', 5: 'Sorcerous Restoration', 7: 'Sorcery Incarnate', 10: 'Metamagic', 17: 'Metamagic', 20: 'Arcane Apotheosis' },
+    s: { 3: 'Draconic Resilience, Draconic Spells', 6: 'Elemental Affinity', 14: 'Dragon Wings', 18: 'Dragon Companion' } },
+  Warlock: { hd: 8, cast: 'pact', ab: 'CHA', asi: ASI_STD, subAt: 3, sub: 'Fiend Patron',
+    f: { 1: 'Eldritch Invocations, Pact Magic', 2: 'Magical Cunning', 9: 'Contact Patron', 11: 'Mystic Arcanum (level 6 spell)', 13: 'Mystic Arcanum (level 7 spell)', 15: 'Mystic Arcanum (level 8 spell)', 17: 'Mystic Arcanum (level 9 spell)', 20: 'Eldritch Master' },
+    s: { 3: 'Dark One\'s Blessing, Fiend Spells', 6: 'Dark One\'s Own Luck', 10: 'Fiendish Resilience', 14: 'Hurl Through Hell' } },
+  Wizard: { hd: 6, cast: 'full', ab: 'INT', asi: ASI_STD, subAt: 3, sub: 'Evoker',
+    f: { 1: 'Spellcasting, Ritual Adept, Arcane Recovery', 2: 'Scholar', 5: 'Memorize Spell', 18: 'Spell Mastery', 20: 'Signature Spells' },
+    s: { 3: 'Evocation Savant, Potent Cantrip', 6: 'Sculpt Spells', 10: 'Empowered Evocation', 14: 'Overchannel' } },
+};
+const EPIC_BOONS = [
+  ['Boon of Combat Prowess', 'When you miss with an attack roll, you can hit instead. Once per turn.'],
+  ['Boon of Dimensional Travel', 'After you take the Attack or Magic action, you can teleport up to 30 feet.'],
+  ['Boon of Fate', 'When you or a creature within 60 feet makes a d20 test, roll 2d4 and add or subtract it. Once per short or long rest.'],
+  ['Boon of Irresistible Offense', 'Your bludgeoning, piercing and slashing damage ignores resistance; a natural 20 adds damage equal to the raised score.'],
+  ['Boon of Spell Recall', 'Cast one of your level 1–4 spells without a slot. Once per long rest.'],
+  ['Boon of the Night Spirit', 'Become invisible in dim light or darkness as a bonus action, and resist most damage there.'],
+  ['Boon of Truesight', 'You have Truesight out to 60 feet.'],
+];
+const FULL_SLOTS = [[], [2], [3], [4, 2], [4, 3], [4, 3, 2], [4, 3, 3], [4, 3, 3, 1], [4, 3, 3, 2], [4, 3, 3, 3, 1], [4, 3, 3, 3, 2], [4, 3, 3, 3, 2, 1], [4, 3, 3, 3, 2, 1], [4, 3, 3, 3, 2, 1, 1], [4, 3, 3, 3, 2, 1, 1], [4, 3, 3, 3, 2, 1, 1, 1], [4, 3, 3, 3, 2, 1, 1, 1], [4, 3, 3, 3, 2, 1, 1, 1, 1], [4, 3, 3, 3, 3, 1, 1, 1, 1], [4, 3, 3, 3, 3, 2, 1, 1, 1], [4, 3, 3, 3, 3, 2, 2, 1, 1]];
+const classKey = name => Object.keys(CLASSES).find(k => String(name || '').toLowerCase().startsWith(k.toLowerCase())) || null;
+const classInfo = cl => CLASSES[classKey(cl.name)] || { hd: cl.hd || 8, cast: cl.cast || '', ab: '', asi: ASI_STD, subAt: 3, f: {}, s: {}, homebrew: true };
+// "Paladin (Oath of Devotion)", "Fighter 3 / Wizard 2"
+function classesOf(c) {
+  if (Array.isArray(c.classes) && c.classes.length && c.classes.reduce((a, x) => a + (+x.level || 0), 0) === (+c.level || 1)) return c.classes;
+  const parts = String(c.cls || '').split(/\s*(?:\/|,|;|&|\+)\s*/).filter(Boolean);
+  const out = parts.map(p => {
+    const m = p.match(/^(.*?)(?:\s+(\d+))?$/), base = m[1].trim(), sub = (base.match(/\(([^)]*)\)/) || [])[1] || '';
+    return { name: base.replace(/\s*\([^)]*\)\s*/, '').trim() || 'Adventurer', sub, level: m[2] ? +m[2] : 0 };
+  });
+  if (!out.length) out.push({ name: 'Adventurer', sub: '', level: 0 });
+  const known = out.reduce((a, x) => a + x.level, 0), missing = Math.max(0, (+c.level || 1) - known);
+  const blank = out.filter(x => !x.level); if (blank.length) blank[0].level = missing || 1; out.forEach(x => { if (!x.level) x.level = 1; });
+  return out;
+}
+function classString(list) {
+  if (list.length === 1) return list[0].name + (list[0].sub ? ' (' + list[0].sub + ')' : '');
+  return list.map(x => x.name + (x.sub ? ' (' + x.sub + ')' : '') + ' ' + x.level).join(' / ');
+}
+// spell slots for all classes together (half casters count half, rounded up) plus pact slots
+function slotsFor(list) {
+  let lv = 0, pact = null;
+  for (const x of list) {
+    const i = classInfo(x);
+    if (i.cast === 'full') lv += x.level; else if (i.cast === 'half') lv += Math.ceil(x.level / 2); else if (i.cast === 'third') lv += Math.floor(x.level / 3);
+    else if (i.cast === 'pact') pact = { n: x.level >= 17 ? 4 : x.level >= 11 ? 3 : x.level >= 2 ? 2 : 1, lvl: Math.min(5, Math.ceil(x.level / 2)) };
+  }
+  const caster = list.some(x => classInfo(x).cast);
+  if (!caster) return null;
+  const s = {}; for (let l = 1; l <= 9; l++) s[l] = (FULL_SLOTS[Math.min(20, lv)] || [])[l - 1] || 0;
+  if (pact) s[pact.lvl] += pact.n;
+  return s;
+}
+function newFeatures(cl, lvl, sub) {
+  const i = classInfo(cl), out = [];
+  const add = (str, from) => String(str || '').split(/,\s*/).filter(Boolean).forEach(n => out.push({ name: n.trim(), from }));
+  add(i.f[lvl], cl.name);
+  if (lvl === i.subAt) out.push({ name: cl.name + ' Subclass', from: cl.name, subPick: true });
+  if (i.s && i.s[lvl]) add(i.s[lvl], sub || i.sub || 'Subclass');
+  return out;
+}
+function srdFeature(name) {
+  const n = name.toLowerCase().replace(/[’']/g, "'");
+  return SRD.items.findIndex(it => it.kind === 'feature' && it.name.toLowerCase().replace(/[’']/g, "'") === n);
+}
+// "your hit point maximum increases by 1 … whenever you gain a level" (Dwarven Toughness, Tough…)
+function hpPerLevel(c) {
+  let n = 0; const out = [];
+  allEntries(c).forEach(({ e }) => {
+    const m = String(e.text + ' ' + e.short).toLowerCase().match(/hit point maximum increases by (\d+|one|two)[^.]*?(?:whenever you gain a level|for each (?:level|of your levels)|every level)/);
+    if (m) { const k = { one: 1, two: 2 }[m[1]] || +m[1]; n += k; out.push(e.name + ' +' + k); }
+  });
+  return { n, out };
+}
+const conMod = c => Math.floor(((c.abilities.find(a => a.key === 'CON') || { score: 10 }).score - 10) / 2);
+
+/* ---- the dialog ---- */
+function openLevelUp() {
+  const c = C(); if (ui.viewing) return;
+  if ((+c.level || 1) >= 20) { toast(c.name + ' is already level 20.'); return; }
+  const list = classesOf(c);
+  openModal('levelup', { list, ci: 0, hp: 'avg', roll: null, asi: 'two', a1: '', a2: '', feat: '', boonAb: '', off: {}, sub: '', subOther: '', nc: { name: '', hd: 8, cast: '' } });
+}
+function luPlan(md) {
+  const c = C(), list = clone(md.list);
+  let cl, isNew = md.ci === 'new';
+  if (isNew) { const k = classKey(md.nc.name) || ''; cl = { name: k || md.nc.name.trim() || 'New class', sub: '', level: 0, hd: k ? CLASSES[k].hd : +md.nc.hd || 8, cast: k ? CLASSES[k].cast : md.nc.cast }; list.push(cl); }
+  else cl = list[md.ci];
+  cl.level++;
+  const info = classInfo(cl), lvl = cl.level;
+  const needSub = lvl === info.subAt && !cl.sub;
+  const sub = needSub ? (md.sub === 'other' ? md.subOther.trim() : md.sub) : cl.sub;
+  if (sub) cl.sub = sub;
+  const feats = newFeatures(cl, lvl, sub).filter(f => !f.subPick);
+  const hd = info.hd, avg = Math.floor(hd / 2) + 1, con = conMod(c), extra = hpPerLevel(c);
+  const first = (+c.level || 1) === 0;
+  const base = md.hp === 'roll' && md.roll != null ? md.roll : avg;
+  const gain = Math.max(1, base + con) + extra.n;
+  const asiAt = lvl === 19 ? 'boon' : (info.asi || ASI_STD).includes(lvl) ? 'asi' : null;
+  const slots = slotsFor(list);
+  return { c, list, cl, isNew, info, lvl, needSub, sub, feats, hd, avg, con, extra, gain, asiAt, slots, first };
+}
+function levelUpHtml(md) {
+  const P = luPlan(md), c = P.c, abil = c.abilities;
+  const sec = (n, t, body) => `<div class="lu-sec"><div class="lu-h"><span class="lu-n">${n}</span>${t}</div>${body}</div>`;
+  let n = 1, h = dlgHead(`Level up: ${esc(c.name)}, level ${c.level} → ${+c.level + 1}`) + '<div class="dlg-b lu">';
+  // 1. class
+  h += sec(n++, 'Which class gains the level?', `<div class="lu-opts">${md.list.map((x, i) => `<label class="lu-opt ${md.ci === i ? 'on' : ''}"><input type="radio" name="lu-ci" data-luci="${i}" ${md.ci === i ? 'checked' : ''}> <b>${esc(x.name)}</b>${x.sub ? ' <span class="muted">(' + esc(x.sub) + ')</span>' : ''} <span class="mono muted">${x.level} → ${x.level + 1}</span>${classKey(x.name) ? '' : ' <span class="chip">homebrew</span>'}</label>`).join('')}
+    <label class="lu-opt ${md.ci === 'new' ? 'on' : ''}"><input type="radio" name="lu-ci" data-luci="new" ${md.ci === 'new' ? 'checked' : ''}> A new class <span class="muted">(multiclass)</span></label></div>
+    ${md.ci === 'new' ? `<div class="frow"><label class="fld"><span>Class</span><input id="lu-ncn" data-lunc="name" list="lu-classes" value="${esc(md.nc.name)}" placeholder="Wizard, or your own"></label>
+      ${classKey(md.nc.name) ? '' : `<label class="fld"><span>Hit die</span><select id="lu-nchd" data-lunc="hd">${[6, 8, 10, 12].map(d => `<option value="${d}" ${+md.nc.hd === d ? 'selected' : ''}>d${d}</option>`).join('')}</select></label>
+      <label class="fld"><span>Spellcasting</span><select id="lu-ncc" data-lunc="cast">${[['', 'None'], ['full', 'Full caster'], ['half', 'Half caster'], ['third', 'Third caster'], ['pact', 'Pact magic']].map(([v, l]) => `<option value="${v}" ${md.nc.cast === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`}</div>
+      <datalist id="lu-classes">${Object.keys(CLASSES).map(k => `<option value="${k}">`).join('')}</datalist>` : ''}`);
+  // 2. hit points
+  const rolled = md.hp === 'roll' && md.roll != null;
+  h += sec(n++, 'Hit points', `<div class="lu-opts"><label class="lu-opt ${md.hp === 'avg' ? 'on' : ''}"><input type="radio" name="lu-hp" data-luhp="avg" ${md.hp === 'avg' ? 'checked' : ''}> Take the average: <b class="mono">${P.avg}</b></label>
+      <label class="lu-opt ${md.hp === 'roll' ? 'on' : ''}"><input type="radio" name="lu-hp" data-luhp="roll" ${md.hp === 'roll' ? 'checked' : ''}> Roll d${P.hd}${rolled ? `: <b class="mono">${md.roll}</b>` : ''} <button class="btn small" data-act="luroll">${rolled ? 'Roll again' : 'Roll'}</button></label></div>
+    <div class="muted">${md.hp === 'roll' && !rolled ? 'Roll first, or take the average.' : `${md.hp === 'roll' ? md.roll : P.avg} ${P.con >= 0 ? '+' : '−'} ${Math.abs(P.con)} CON${P.extra.n ? ' + ' + esc(P.extra.out.join(', ')) : ''} = <b>+${P.gain} HP</b>. Maximum ${c.hp.max} → <b>${c.hp.max + P.gain}</b>.`}</div>`);
+  // 3. features
+  const scaling = allEntries(c).filter(({ e }) => /LEVEL/.test(JSON.stringify([e.counter && e.counter.max, e.damage, e.effect, e.attack]))).map(({ e }) => e.name);
+  const subList = Object.values(CLASSES).map(x => x.sub);
+  h += sec(n++, `New features: ${esc(P.cl.name)} level ${P.lvl}`, `${P.needSub ? `<label class="fld"><span>Choose your subclass</span><select id="lu-sub" data-lusub="1"><option value="">Pick one…</option>${P.info.sub ? `<option value="${esc(P.info.sub)}" ${md.sub === P.info.sub ? 'selected' : ''}>${esc(P.info.sub)} (SRD)</option>` : ''}<option value="other" ${md.sub === 'other' ? 'selected' : ''}>Another subclass…</option></select></label>
+      ${md.sub === 'other' ? `<label class="fld"><span>Subclass name</span><input id="lu-subo" data-lusubo="1" value="${esc(md.subOther)}" placeholder="Oath of Vengeance"></label>` : ''}` : ''}
+    ${P.feats.length ? `<div class="lu-feats">${P.feats.map((f, i) => { const k = srdFeature(f.name); const key = f.name; return `<label><input type="checkbox" id="luf-${i}" data-luf="${esc(key)}" ${md.off[key] ? '' : 'checked'}> <b>${esc(f.name)}</b> <span class="muted">${esc(f.from)}${k >= 0 ? ' · full text from the SRD' : ' · added as a note to fill in'}</span></label>`; }).join('')}</div>`
+      : `<div class="muted">${P.info.homebrew ? 'Grimsheet doesn\'t know this class\'s features. Add them from your library or by pasting their text after levelling up.' : 'No new class features at this level.'}</div>`}
+    ${P.needSub && md.sub === 'other' ? '<div class="muted">Add your subclass features from your library or by pasting their text.</div>' : ''}
+    ${P.info.note && P.info.note[P.lvl] ? `<div class="muted">${esc(P.info.note[P.lvl])}</div>` : ''}
+    ${scaling.length ? `<div class="muted">These update by themselves: ${esc(scaling.slice(0, 8).join(', '))}${scaling.length > 8 ? '…' : ''}.</div>` : ''}`);
+  // 4. ability scores / feat / epic boon
+  if (P.asiAt) {
+    const abOpts = (v, max) => abil.map(a => `<option value="${a.key}" ${v === a.key ? 'selected' : ''} ${a.score >= max ? 'disabled' : ''}>${a.name} (${a.score})</option>`).join('');
+    const feats = SRD.items.map((it, i) => ({ it, i })).filter(({ it }) => it.kind === 'feature' && /feat/i.test(it.group));
+    if (P.asiAt === 'boon') h += sec(n++, 'Epic Boon', `<label class="fld"><span>Boon</span><select id="lu-boon" data-lufeat="1"><option value="">Pick one…</option>${EPIC_BOONS.map(([b]) => `<option ${md.feat === b ? 'selected' : ''}>${b}</option>`).join('')}<option value="other" ${md.feat === 'other' ? 'selected' : ''}>Another feat…</option></select></label>
+      ${md.feat === 'other' ? `<label class="fld"><span>Feat name</span><input id="lu-feato" data-lufeato="1" value="${esc(md.featOther || '')}"></label>` : ''}
+      <label class="fld"><span>+1 to (max 30)</span><select id="lu-boonab" data-luab="boonAb"><option value="">Pick an ability…</option>${abOpts(md.boonAb, 30)}</select></label>
+      ${md.feat && md.feat !== 'other' ? `<div class="muted">${esc((EPIC_BOONS.find(b => b[0] === md.feat) || ['', ''])[1])}</div>` : ''}`);
+    else h += sec(n++, 'Ability Score Improvement or a feat', `<div class="lu-opts">
+        <label class="lu-opt ${md.asi === 'two' ? 'on' : ''}"><input type="radio" name="lu-asi" data-luasi="two" ${md.asi === 'two' ? 'checked' : ''}> +2 to one ability</label>
+        <label class="lu-opt ${md.asi === 'split' ? 'on' : ''}"><input type="radio" name="lu-asi" data-luasi="split" ${md.asi === 'split' ? 'checked' : ''}> +1 to two abilities</label>
+        <label class="lu-opt ${md.asi === 'feat' ? 'on' : ''}"><input type="radio" name="lu-asi" data-luasi="feat" ${md.asi === 'feat' ? 'checked' : ''}> A feat</label></div>
+      ${md.asi === 'two' ? `<label class="fld"><span>+2 to (max 20)</span><select id="lu-a1" data-luab="a1"><option value="">Pick an ability…</option>${abOpts(md.a1, 19)}</select></label>` : ''}
+      ${md.asi === 'split' ? `<div class="frow"><label class="fld"><span>+1 to</span><select id="lu-a1" data-luab="a1"><option value="">Pick…</option>${abOpts(md.a1, 20)}</select></label><label class="fld"><span>and +1 to</span><select id="lu-a2" data-luab="a2"><option value="">Pick…</option>${abOpts(md.a2, 20)}</select></label></div>` : ''}
+      ${md.asi === 'feat' ? `<label class="fld"><span>Feat</span><select id="lu-feat" data-lufeat="1"><option value="">Pick one…</option>${feats.map(({ it }) => `<option ${md.feat === it.name ? 'selected' : ''}>${esc(it.name)}</option>`).join('')}<option value="other" ${md.feat === 'other' ? 'selected' : ''}>Another feat…</option></select></label>
+        ${md.feat === 'other' ? `<label class="fld"><span>Feat name</span><input id="lu-feato" data-lufeato="1" value="${esc(md.featOther || '')}" placeholder="Sentinel"></label>` : ''}` : ''}`);
+  }
+  // 5. spell slots
+  if (P.slots) {
+    const rows = []; for (let l = 1; l <= 9; l++) { const a = c.slots[l].max, b = P.slots[l]; if (a || b) rows.push(`<span class="lu-slot ${a !== b ? 'chg' : ''}">${E.ordinal(l)} <b class="mono">${a}${a !== b ? ' → ' + b : ''}</b></span>`); }
+    const newLvl = Object.keys(P.slots).find(l => P.slots[l] && !c.slots[l].max);
+    h += sec(n++, 'Spell slots', `<div class="lu-slots">${rows.join('')}</div>${newLvl ? `<div class="muted">New: ${E.ordinal(+newLvl)}-level spells. After levelling up you can add spells from the SRD.</div>` : ''}<div class="muted">Prepared spells and cantrips: check your class table and add or swap spells in the Spells module.</div>`);
+  }
+  // summary
+  const ready = luReady(md, P);
+  h += `</div><div class="dlg-f"><span class="muted" style="font-size:.85rem">${ready === true ? 'One undo puts everything back.' : esc(ready)}</span><span class="sp"></span><button class="btn" data-act="close">Cancel</button><button class="btn primary" data-act="ludo" ${ready === true ? '' : 'disabled'}>Level up to ${+c.level + 1}</button></div>`;
+  return h;
+}
+function luReady(md, P) {
+  if (md.ci === 'new' && !md.nc.name.trim()) return 'Name the new class.';
+  if (md.hp === 'roll' && md.roll == null) return 'Roll for hit points, or take the average.';
+  if (P.needSub && (!md.sub || (md.sub === 'other' && !md.subOther.trim()))) return 'Choose a subclass.';
+  if (P.asiAt === 'asi') {
+    if (md.asi === 'two' && !md.a1) return 'Pick the ability to raise.';
+    if (md.asi === 'split' && (!md.a1 || !md.a2 || md.a1 === md.a2)) return 'Pick two different abilities.';
+    if (md.asi === 'feat' && (!md.feat || (md.feat === 'other' && !(md.featOther || '').trim()))) return 'Pick a feat.';
+  }
+  if (P.asiAt === 'boon' && (!md.feat || !md.boonAb || (md.feat === 'other' && !(md.featOther || '').trim()))) return 'Pick a boon and the ability it raises.';
+  return true;
+}
+function applyLevelUp(md) {
+  const P = luPlan(md); if (luReady(md, P) !== true) return;
+  const c = P.c, snap = clone(c); delete snap.levelUndo;
+  const from = +c.level || 1, done = [];
+  c.classes = P.list; c.level = from + 1; c.cls = classString(P.list);
+  c.hp.max += P.gain; c.hp.cur += P.gain; done.push('+' + P.gain + ' HP');
+  if (P.isNew && P.list.length === 1) c.hitDie = 'd' + P.hd;
+  // features go to the Features module
+  let fm = c.modules.find(m => m.type === 'features');
+  if (!fm) { fm = mkModule('features'); c.modules.push(fm); }
+  c.hidden = c.hidden.filter(x => x !== fm.id);
+  const addFeature = (name, from, short, text) => {
+    const k = srdFeature(name);
+    const e = k >= 0 ? normalizeEntry(Object.assign(SRD.toEntry(SRD.items[k], 'features', CTX), { id: uid() }))
+      : normalizeEntry(newEntry({ name, short: short || `${from}, level ${P.lvl}.`, text: text || `Gained at ${from} level ${P.lvl}. Paste the full text here (Edit) and Grimsheet will pick up its dice and uses.` }));
+    fm.entries.push(e); done.push(name);
+  };
+  for (const f of P.feats) if (!md.off[f.name]) addFeature(f.name, f.from);
+  if (P.needSub && P.sub) done.push('subclass ' + P.sub);
+  const raise = (key, n, max) => { const a = c.abilities.find(x => x.key === key); if (a) { a.score = Math.min(max, a.score + n); done.push(key + ' ' + (a.score - n) + ' → ' + a.score); } };
+  if (P.asiAt === 'asi') {
+    if (md.asi === 'two') raise(md.a1, 2, 20);
+    else if (md.asi === 'split') { raise(md.a1, 1, 20); raise(md.a2, 1, 20); }
+    else addFeature(md.feat === 'other' ? md.featOther.trim() : md.feat, 'Feat');
+  }
+  if (P.asiAt === 'boon') {
+    const b = EPIC_BOONS.find(x => x[0] === md.feat);
+    addFeature(md.feat === 'other' ? md.featOther.trim() : md.feat, 'Epic Boon', b ? b[1] : '', b ? b[1] + ' (+1 to one ability score, up to 30.)' : '');
+    raise(md.boonAb, 1, 30);
+  }
+  if (P.slots) {
+    for (let l = 1; l <= 9; l++) { c.slots[l].max = P.slots[l]; c.slots[l].used = Math.min(c.slots[l].used, P.slots[l]); }
+    if (!c.spellAbility && P.info.ab) c.spellAbility = P.info.ab;
+  }
+  c.levelUndo = { at: Date.now(), from, to: c.level, done, snap };
+  closeModal(); save(); render(); publishStatus();
+  toast(`${c.name} is level ${c.level}: ${done.join(', ')}.`);
+}
+function undoLevelUp() {
+  const c = C(), u = c.levelUndo; if (!u || !u.snap) return;
+  const snap = u.snap; snap.id = c.id; normalize(snap);
+  store.chars[c.id] = snap; save(); render(); publishStatus();
+  toast(`Back to level ${u.from}.`);
+}
+function levelUndoBanner(c) {
+  const u = c.levelUndo; if (!u || u.dismissed || Date.now() - u.at > 7 * 864e5) return '';
+  const later = c.changedAt && c.changedAt > u.at + 5000;
+  return `<div class="banner"><span style="flex:1;min-width:200px">Level ${u.to}: ${esc(u.done.join(', '))}.${later ? ' Undoing also loses changes made since.' : ''}</span><button class="btn small" data-act="luundo">Undo level-up</button><button class="btn small ghost" data-act="ludismiss">OK</button></div>`;
+}
+
 /* ---------- COMBAT PROMPTS: concentration, death saves, turn reminders ---------- */
 function addPrompt(p) { const q = readSaves(); if (q.some(x => x.id === p.id)) return; writeSaves([p].concat(q)); renderAtkQueue(); }
 function concOf(c = C()) { return c && c.conc && c.conc.name ? c.conc : null; }
@@ -4212,7 +4478,7 @@ function renderTop() {
       <input id="f-cls" data-bind="cls" value="${esc(c.cls)}" placeholder="Class" style="width:170px" aria-label="Class">
       <label class="muted">Lvl <input id="f-level" data-bind="level" data-num value="${esc(c.level)}" style="width:46px" aria-label="Level"></label>
       <label class="muted">Prof <input id="f-prof" data-bind="profOverride" value="${esc(c.profOverride)}" placeholder="+${profBonus(c)}" style="width:46px" title="Leave empty for automatic"></label></div>`
-      : `<span class="nm">${esc(c.name)}</span><span class="sub">${esc(sub)} · Proficiency ${signed(profBonus(c))}</span>`}
+      : `<span class="nm">${esc(c.name)}</span><span class="sub">${esc(sub)} · Proficiency ${signed(profBonus(c))}${!ui.viewing && (+c.level || 1) < 20 ? ' <button class="lvlup" data-act="levelup" title="Level up: hit points, new features, ability scores and spell slots">Level up</button>' : ''}</span>`}
     </div>
     <div class="tools">
       <div class="seg adv" role="group" aria-label="Advantage">
@@ -4239,6 +4505,7 @@ function renderBanner() {
     $('#banner').innerHTML = `<div class="banner" style="background:var(--accent-soft)"><span style="flex:1;min-width:200px">Viewing <b>${esc(ui.viewing.owner)}'s ${esc(c.name)}</b>, read-only, as of ${hhmm}. Rolls here stay on your screen.</span><button class="btn small" data-act="viewrefresh">Refresh</button><button class="btn small primary" data-act="viewend">Back to my sheet</button></div>`;
     return;
   }
+  h += levelUndoBanner(c);
   if (!storageOK) h += `<div class="banner warn">This browser view isn't saving changes. Use <b>Characters → Export</b> to keep a copy of your character.</div>`;
   const DAY = 864e5;
   if (!c.example && !ui.backupLater && c.changedAt && (c.lastBackup ? c.changedAt > c.lastBackup && Date.now() - c.lastBackup > 3 * DAY : Date.now() - (c.createdAt || Date.now()) > DAY)) {
@@ -4571,6 +4838,7 @@ function renderModal() {
   else if (m.type === 'settings') h = settingsHtml();
   else if (m.type === 'addmon') h = addMonHtml(m);
   else if (m.type === 'targets') h = targetsHtml(m);
+  else if (m.type === 'levelup') h = levelUpHtml(m);
   else if (m.type === 'viewwait') h = dlgHead('Opening ' + (m.name || 'sheet')) + `<div class="dlg-b">${m.failed ? `<div class="banner warn" style="margin:0">${esc(m.owner || 'The player')}'s Grimsheet didn't answer. They need to be in the room with Grimsheet 1.3 or newer installed.</div>` : `<div class="sugg"><h3>Asking ${esc(m.owner || 'the player')}'s Grimsheet…</h3><span>The sheet opens read-only in a moment.</span></div>`}</div><div class="dlg-f"><button class="btn" data-act="close">${m.failed ? 'Close' : 'Cancel'}</button></div>`;
   $('#ovl').innerHTML = `<div class="ovl" data-act="ovlbg"><div class="dlg" role="dialog" aria-modal="true">${h}</div></div>`;
   $('#ovl .ovl').scrollTop = keepScroll;
@@ -4883,7 +5151,7 @@ document.addEventListener('click', ev => {
   const c = C(); const ed = ui.mode === 'edit';
   const rerender = () => { save(); render(); };
   const f = id ? findEntry(id) : null;
-  if (act !== 'edel' && act !== 'delchar' && act !== 'mdel') ui.confirm = null;
+  if (!['edel', 'delchar', 'mdel', 'luundo', 'encclear', 'mondel'].includes(act)) ui.confirm = null;
   switch (act) {
     case 'mode': ui.mode = v; render(); break;
     case 'viewend': ui.viewing = null; ui.open.clear(); render(); if (IN_OBR) refreshLinks(); break;
@@ -5018,6 +5286,11 @@ document.addEventListener('click', ev => {
     case 'arearemove': { const x = readAtkQ().find(q => q.id === id); if (x) { deleteArea(x); updAtk(id, () => false); } break; }
     case 'saveroll': rollPromptedSave(id); break;
     case 'savedrop': writeSaves(readSaves().filter(x => x.id !== id)); renderAtkQueue(); break;
+    case 'levelup': openLevelUp(); break;
+    case 'luroll': { const md = ui.modal, P = luPlan(md); const en = roll('Hit points for level ' + (+c.level + 1) + ' (d' + P.hd + ')', [{ f: '1d' + P.hd }]); md.roll = en.total; md.hp = 'roll'; renderModal(); break; }
+    case 'ludo': applyLevelUp(ui.modal); break;
+    case 'luundo': if (ui.confirm !== 'luundo') { ui.confirm = 'luundo'; el.textContent = 'Tap again to undo'; el.classList.add('danger'); setTimeout(() => { if (ui.confirm === 'luundo') { ui.confirm = null; renderBanner(); } }, 4000); break; } ui.confirm = null; undoLevelUp(); break;
+    case 'ludismiss': if (c.levelUndo) c.levelUndo.dismissed = true; save(); renderBanner(); break;
     case 'rrgo': { const en = ui.log.find(x => x.id === id) || ui.log[0]; if (en) rrStart(en, v); break; }
     case 'rrdie': rrPickDie(v); break;
     case 'rrcancel': { const en = ui.rrPick && ui.rrPick.entry; ui.rrPick = null; renderTray(); if (en) paintDiceBox(en); break; }
@@ -5159,6 +5432,21 @@ function doImport(lib) {
 
 document.addEventListener('change', ev => {
   const t = ev.target;
+  if (ui.modal && ui.modal.type === 'levelup') {
+    const md = ui.modal, d = t.dataset; let hit = true;
+    if (d.luci != null) { md.ci = d.luci === 'new' ? 'new' : +d.luci; md.sub = ''; }
+    else if (d.luhp) md.hp = d.luhp;
+    else if (d.luasi) { md.asi = d.luasi; md.feat = ''; }
+    else if (d.lusub) md.sub = t.value;
+    else if (d.luab) md[d.luab] = t.value;
+    else if (d.lufeat) md.feat = t.value;
+    else if (d.luf != null) md.off[d.luf] = !t.checked;
+    else if (d.lunc) md.nc[d.lunc] = t.value;
+    else if (d.lusubo) md.subOther = t.value;
+    else if (d.lufeato) md.featOther = t.value;
+    else hit = false;
+    if (hit) { setTimeout(() => { if (ui.modal === md) renderModal(); }, 0); return; }
+  }
   if (t.dataset.qm === 'gmhp') {
     const raw = t.value.trim().replace(/−/g, '-'); const n = parseInt(raw, 10);
     if (!n) { toast('Type −12 for damage or +8 for healing.'); return; }
@@ -5207,6 +5495,11 @@ document.addEventListener('change', ev => {
 });
 document.addEventListener('input', ev => {
   const t = ev.target;
+  if (ui.modal && ui.modal.type === 'levelup' && (t.dataset.lunc === 'name' || t.dataset.lusubo || t.dataset.lufeato)) {
+    if (t.dataset.lunc) ui.modal.nc.name = t.value; else if (t.dataset.lusubo) ui.modal.subOther = t.value; else ui.modal.featOther = t.value;
+    const f = $('.dlg-f'); if (f) { const P = luPlan(ui.modal), r = luReady(ui.modal, P), b = f.querySelector('[data-act=ludo]'), m = f.querySelector('.muted'); if (b) b.disabled = r !== true; if (m) m.textContent = r === true ? 'One undo puts everything back.' : r; }
+    return;
+  }
   if (t.dataset.amq && ui.modal) { ui.modal.q = t.value; const pos = t.selectionStart; renderModal(); const n = $('#am-q'); if (n) { n.focus(); n.setSelectionRange(pos, pos); } return; }
   if (t.id === 'am-text' && ui.modal) { ui.modal.text = t.value; return; }
   if (t.dataset.srdq && ui.modal) { ui.modal.q = t.value; const l = $('#srd-list'); if (l) l.innerHTML = srdListHtml(ui.modal); return; }

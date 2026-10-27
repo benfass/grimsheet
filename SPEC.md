@@ -1,6 +1,6 @@
-# D&D Character Sheet App — Product Spec (v1.6)
+# D&D Character Sheet App — Product Spec (v1.7)
 
-*Working name: Grimsheet. v0.2 recorded the platform decision and first build; v0.3 added the SRD 5.2 content pack and locked skill proficiency to Edit mode; v0.4 expanded the pack; v0.5 added PDF import and documented the saved character format; v0.6 replaced the grid with a row-and-column layout; v0.7 added dice animation and a Settings panel; v0.8 added the Owlbear Rodeo extension and a backup reminder; v0.9 added panel sizes and compact mode; v1.0 added the background page and token linking; v1.1 added GM tools; v1.2 added monsters, the Encounter view and initiative; v1.3 added attacks against a target on the map; v1.4 added rerolls; v1.5 added spell areas on the map; v1.6 adds combat prompts.*
+*Working name: Grimsheet. v0.2 recorded the platform decision and first build; v0.3 added the SRD 5.2 content pack and locked skill proficiency to Edit mode; v0.4 expanded the pack; v0.5 added PDF import and documented the saved character format; v0.6 replaced the grid with a row-and-column layout; v0.7 added dice animation and a Settings panel; v0.8 added the Owlbear Rodeo extension and a backup reminder; v0.9 added panel sizes and compact mode; v1.0 added the background page and token linking; v1.1 added GM tools; v1.2 added monsters, the Encounter view and initiative; v1.3 added attacks against a target on the map; v1.4 added rerolls; v1.5 added spell areas on the map; v1.6 added combat prompts; v1.7 adds the level-up wizard.*
 
 ## 1. Vision
 
@@ -302,6 +302,12 @@ Decisions: monster HP visibility is a GM setting; Grimsheet's tracker is primary
 - **Turn reminders**: players get "Your turn!" with what to remember (down, concentrating, effects that are on, conditions) in the notification and the turn bar. The GM's tracker shows a note under the current row: monster conditions, a player who is down or concentrating, and any lasting area (Spirit Guardians, Cloudkill…) the creature starts its turn in.
 - Prompt cards share the save-request queue (`grimsheet.saves.<room>`, kinds `conc`, `death`, and the GM's save requests).
 
+### Built in v2.5: Level-up wizard
+- **Entry**: a "Level up" button next to the level in the header (play mode, below 20).
+- **Classes**: `c.classes = [{ name, sub, level, hd?, cast? }]`, read from the class line the first time ("Paladin (Oath of Devotion)", "Fighter 3 / Wizard 2") and written back to it. Built-in table for the 12 SRD 5.2 classes: hit die, spellcasting (full, half, pact) and ability, ability score levels (Fighter 6 and 14, Rogue 10 too), subclass level, class features by level, the SRD subclass's features, and notes (Fighter's extra uses). Homebrew classes ask for hit die and spellcasting.
+- **One dialog, numbered steps**: (1) which class gains the level, or a new class (multiclass); (2) hit points: average or a roll (the roll goes through the dice and is shared like any roll), plus CON and per-level bonuses found in the sheet's text (Dwarven Toughness, Tough); (3) new features, each added to Features with its SRD text when there is one, otherwise as a note to fill in; subclass choice at the subclass level; features that scale with LEVEL are listed as updating themselves; (4) Ability Score Improvement (+2 / +1 +1, capped at 20) or a feat (SRD feats or any name), and at 19 an Epic Boon (SRD boons, +1 up to 30); (5) spell slots before → after, from all caster classes together (half casters rounded up) plus pact slots; sets the spellcasting ability if empty. The button stays disabled until every choice is made.
+- **Undo**: the whole level is one change: a snapshot is kept (`c.levelUndo`), and a banner offers "Undo level-up" (tap twice) for 7 days or until dismissed; undoing also drops changes made after the level-up, and says so.
+
 ### Roadmap
 Ordered by when it gets built. Priority applies inside a goal.
 
@@ -313,7 +319,7 @@ Ordered by when it gets built. Priority applies inside a goal.
 - *Low:* **Shared homebrew.** The GM shares a homebrew pack (items, spells, monsters) with the room and players add it in one click.
 
 **Mid goals**
-- **Level-up wizard.** Pick the class gaining a level, then step through HP (roll or average), new features from the content library, spell slot and prepared spell changes, and ability score improvements or feats. One undo for the whole level.
+- *Done (v2.5):* **Level-up wizard** (see above).
 - **Undo button.** A per-character change history (HP, slots, resources, edits) with an undo button and a short list of recent changes.
 
 **Mid to long goal**
