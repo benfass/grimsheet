@@ -321,6 +321,12 @@ select.ed-inline{width:auto}
 .btn.tgtmini span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .btn.tgtmini.on{border-color:var(--accent);color:var(--accent)}
 .mhead .btn.tgtmini{font-size:.75rem;min-height:24px}
+.inq{display:flex;flex-direction:column;gap:6px;margin:2px 0 4px}
+.inq[hidden]{display:none}
+.inq .atkc.mini{box-shadow:inset 3px 0 0 var(--accent);font-size:.85rem;padding:6px 8px}
+.inq .atkc.area.mini{box-shadow:inset 3px 0 0 #e8692c}
+.inq .atkc.save{box-shadow:inset 3px 0 0 var(--gold)}
+.mod-b > .inq{margin-bottom:8px}
 .tray .fu{display:flex;gap:6px;flex-wrap:wrap;margin-top:3px}
 .badge{font-size:.7rem;letter-spacing:.08em;font-weight:700;padding:0 6px;border-radius:4px;background:var(--gold-soft);color:var(--gold)}
 .badge.red{background:var(--danger-soft);color:var(--danger)}
@@ -2532,7 +2538,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.14.0';
+const APP_VERSION = '1.15.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -3340,7 +3346,7 @@ function actOf(m, ref) { const [list, i] = ref.split(':'); const t = tplOf(m); r
 function monAttack(m, ref) {
   const a = actOf(m, ref); if (!a) return;
   const key = 'm:' + m.id + '|' + ref, T = targetFor(monTokenIds(m), 'atk', key);
-  if (T) Object.assign(T, { part: 'atk', key, from: monTokenIds(m)[0], ri: rangeInfo(a.text), attacker: m.name }); else ui.lastAtk = null;
+  if (T) Object.assign(T, { part: 'atk', key, from: monTokenIds(m)[0], ri: rangeInfo(a.text), attacker: m.name, mon: m.id }); else ui.lastAtk = null;
   roll(m.name + ' · ' + a.name + ' to hit', [{ d20: true }, { src: 'Attack bonus', f: String(a.attack || 0) }], {
     noShare: !SETTINGS.monShare, target: T, mon: m.id, fu: a.damage.length ? [{ label: 'Damage', act: 'mondmg', id: m.id + '|' + ref }] : [],
     after: en => { if (en.crit && a.damage.length) en.fu = [{ label: 'Crit damage', act: 'mondmg', id: m.id + '|' + ref, crit: 1 }, ...en.fu]; },
@@ -3350,7 +3356,7 @@ function monDamage(m, ref, crit) {
   const a = actOf(m, ref); if (!a) return;
   const comps = []; a.damage.forEach(d => { if (d.dice) comps.push({ f: d.dice, suffix: d.type }); if (d.mod) comps.push({ f: d.mod, src: d.dice ? '' : d.type }); });
   const key = 'm:' + m.id + '|' + ref, T = targetFor(monTokenIds(m), 'dmg', key);
-  if (T) Object.assign(T, { part: 'dmg', key, attacker: m.name, save: a.save && a.attack == null ? { dc: a.save.dc, ability: a.save.ability } : null });
+  if (T) Object.assign(T, { part: 'dmg', key, attacker: m.name, mon: m.id, save: a.save && a.attack == null ? { dc: a.save.dc, ability: a.save.ability } : null });
   roll(m.name + ' · ' + a.name + ' damage' + (crit ? ' (crit)' : ''), comps, { crit, kind: 'dmg', minZero: true, noShare: !SETTINGS.monShare, target: T, mon: m.id, note: [...new Set(a.damage.map(d => d.type))].join(', ') });
 }
 function monCheck(m, ab, save) {
@@ -3425,6 +3431,7 @@ function monCard(m, cur) {
       <button class="ico" data-act="monedit" data-id="${m.id}" title="Edit name, HP, AC">${ICON.edit}</button>
       <button class="ico" data-act="monopen" data-id="${m.id}" title="${open ? 'Hide' : 'Show'} stat block">${open ? ICON.chev : ICON.chevR}</button>
       <button class="ico ${ui.confirm === 'mondel-' + m.id ? 'on' : ''}" data-act="mondel" data-id="${m.id}" title="${ui.confirm === 'mondel-' + m.id ? 'Tap again to remove' : 'Remove'}">${ICON.trash}</button></div>
+    <div class="inq" data-inq="mon:${m.id}" hidden></div>
     ${editRow}
     <div class="mhp"><span class="pool">${m.hp}<small>/${m.max}</small></span>${m.temp ? `<span class="temp">+${m.temp}</span>` : ''}${m.hp <= 0 ? '<span class="chip" style="color:var(--danger);border-color:var(--danger)">Down</span>' : m.hp <= m.max / 2 ? '<span class="chip" style="color:var(--gold);border-color:var(--gold)">Bloodied</span>' : ''}
       <span style="flex:1"></span><input class="qm" id="mq-${m.id}" data-qm="monhp" data-id="${m.id}" placeholder="−7 or +5" style="width:84px" aria-label="Damage or heal ${esc(m.name)}"></div>
@@ -3478,6 +3485,7 @@ function mergeAttack(list, d) {
   else if (d.part === 'atk') c.atk = { total: d.total, nat: d.nat, crit: !!d.crit, fumble: !!d.fumble, mode: d.mode || 'normal', rr: d.rr || '' };
   else c.dmg = { total: d.total, types: d.types || '', crit: !!d.isCrit, heal: d.part === 'heal', rr: d.rr || '' };
   if (d.save) c.save = d.save;
+  if (d.srcMon) c.srcMon = d.srcMon;
   if (d.dist) { c.dist = d.dist; c.range = d.range || ''; c.rangeOk = d.rangeOk; }
   c.at = Date.now();
   return list;
@@ -3604,7 +3612,7 @@ async function landTarget(entry, T) {
   const info = await entry.tgtP;
   if (T.part === 'atk') ui.lastAtk = { aid: entry.aid, key: T.key, tgt: T.tgt, at: Date.now() };
   if (T.area && ui.lastArea && ui.lastArea.aid === entry.aid) ui.lastArea = null;
-  const msg = { type: 'atk', v: 1, id: entry.aid, part: T.part, from: OBRX.me.id, who: OBRX.me.name, attacker: T.attacker, target: { id: info.id, name: info.name }, dist: info.dist || '', range: info.range || '', rangeOk: info.rangeOk, total: entry.total, nat: entry.nat, crit: entry.crit, fumble: entry.fumble, isCrit: entry.isCrit, types: entry.note || '', mode: entry.mode, save: T.save || null, rr: T.rr || '' };
+  const msg = { type: 'atk', v: 1, id: entry.aid, part: T.part, from: OBRX.me.id, who: OBRX.me.name, attacker: T.attacker, target: { id: info.id, name: info.name }, dist: info.dist || '', range: info.range || '', rangeOk: info.rangeOk, total: entry.total, nat: entry.nat, crit: entry.crit, fumble: entry.fumble, isCrit: entry.isCrit, types: entry.note || '', mode: entry.mode, save: T.save || null, rr: T.rr || '', srcMon: T.mon || null };
   if (OBRX.me.role === 'GM') { writeAtkQ(mergeAttack(readAtkQ(), msg)); renderAtkQueue(); return; }
   entry.tgt.sent = true; if (ui.log[0] === entry) renderTray();
   OBRX.api.broadcast.sendMessage(CH_GM, msg, { destination: 'REMOTE' }).catch(() => toast('Couldn\'t reach the GM.'));
@@ -3647,7 +3655,8 @@ function suggestVerdict(c, ac) {
   if (c.atk.nat === 1 || c.atk.fumble) return 'miss';
   return ac == null ? null : c.atk.total >= ac ? 'hit' : 'miss';
 }
-function renderAtkQueue() {
+function renderAtkQueue() { renderAtkQueueTop(); try { paintInline(); } catch (e) { } }
+function renderAtkQueueTop() {
   const n = document.getElementById('atkq'); if (!n) return;
   if (!IN_OBR || !OBRX.ready || ui.viewing) { n.innerHTML = ui.viewing ? '' : savePromptsHtml(); return; }
   if (OBRX.me.role !== 'GM') { n.innerHTML = savePromptsHtml(); return; }
@@ -3656,6 +3665,24 @@ function renderAtkQueue() {
   q.filter(c => c.kind === 'area' && !c.checked && !areaChecking.has(c.id)).forEach(c => { areaChecking.add(c.id); recheckArea(c.id, true); });
 }
 const areaChecking = new Set();
+// a copy of each card next to what it's about: the monster's card, the attacking monster, the player's party card,
+// and for players their own prompts in the Combat and Abilities modules
+function inlineKey(id) { const R = resolveTarget(id); return R.kind === 'mon' ? 'mon:' + R.m.id : R.kind === 'pc' ? 'pc:' + R.player : 'tok:' + id; }
+function inlineFor(key) {
+  if (key.startsWith('mod:')) {
+    if (ui.viewing) return '';
+    const which = key.slice(4), q = readSaves().filter(p => (!p.char || p.char === C().id) && (which === 'combat' ? p.kind === 'conc' || p.kind === 'death' : !p.kind));
+    return q.map(promptHtml).join('');
+  }
+  if (!IN_OBR || !OBRX.ready || OBRX.me.role !== 'GM') return '';
+  const out = [];
+  for (const c of readAtkQ()) {
+    if (c.kind === 'area') { for (const t of c.targets || []) if (inlineKey(t.id) === key) out.push(areaCard(c, t)); }
+    else if (c.target && (inlineKey(c.target.id) === key || (c.srcMon && 'mon:' + c.srcMon === key))) out.push(atkCard(c).replace('class="atkc"', 'class="atkc mini"'));
+  }
+  return out.join('');
+}
+function paintInline() { document.querySelectorAll('[data-inq]').forEach(n => { const h = inlineFor(n.dataset.inq); n.innerHTML = h; n.hidden = !h; }); }
 function atkCard(c) {
   const R = resolveTarget(c.target.id), sv = suggestVerdict(c, R.ac), heal = c.dmg && c.dmg.heal;
   const verdict = c.verdict || sv;
@@ -3666,8 +3693,8 @@ function atkCard(c) {
     lines.push(`<div><span class="chip dc">DC ${esc(c.save.dc)} ${esc(c.save.ability)} save</span> ${sr ? `<span class="muted">rolled</span> <b class="mono">${sr.total}</b> → ${sr.ok ? '<b class="ok">saved</b>' : '<b class="bad">failed</b>'}` : R.kind === 'mon' ? `<button class="btn small" data-act="atksave" data-id="${esc(c.id)}">Roll ${esc(R.m.name)}'s save</button>` : '<span class="muted">ask for the save, then choose full or half</span>'}</div>`);
   }
   if (c.dmg) lines.push(`<div><b class="mono">${c.dmg.total}</b> ${heal ? 'healing' : esc(c.dmg.types || 'damage') + (c.dmg.types ? ' damage' : '')}${c.dmg.crit ? ' <span class="badge">CRIT</span>' : ''}${c.dmg.rr ? ` <span class="warn" title="${esc(c.dmg.rr)}">↻ rerolled</span>` : ''}</div>`);
+  if (!c.dmg && c.atk && verdict !== 'miss') lines.push(`<div class="muted">${c.verdict ? 'Waiting for the damage roll…' : 'Damage not rolled yet.'}</div>`);
   const rrs = [c.atk && c.atk.rr, c.dmg && c.dmg.rr].filter(Boolean); if (rrs.length) lines.push(`<div class="atkc-m warn">↻ ${rrs.map(esc).join(' · ')}</div>`);
-  else if (c.atk && verdict !== 'miss') lines.push(`<div class="muted">${c.verdict ? 'Waiting for the damage roll…' : 'Damage not rolled yet.'}</div>`);
   const btns = [];
   if (c.dmg) {
     if (heal) btns.push(`<button class="btn small primary" data-act="atkapply" data-id="${esc(c.id)}" data-v="1">Heal ${c.dmg.total}</button>`);
@@ -3907,7 +3934,7 @@ async function placeArea(src) {
     try { await api.scene.items.addItems([item]); } catch (e) { toast('Couldn\'t draw on the map.'); return; }
   }
   const targets = await creaturesIn(item, a.self ? [casterId] : []);
-  const msg = { type: 'atk', v: 1, id: aid, part: 'area', from: OBRX.me.id, who: OBRX.me.name, attacker: src.attacker, target: { id: item.id, name: src.name }, name: src.name, areaLabel: areaLabel(a), itemId: item.id, half: a.half, keep: !!src.keep, save: src.save || null, heal: !!src.heal, targets, excl: a.self && casterId ? [casterId] : [] };
+  const msg = { type: 'atk', v: 1, id: aid, part: 'area', from: OBRX.me.id, who: OBRX.me.name, attacker: src.attacker, target: { id: item.id, name: src.name }, name: src.name, areaLabel: areaLabel(a), itemId: item.id, half: a.half, keep: !!src.keep, save: src.save || null, heal: !!src.heal, targets, excl: a.self && casterId ? [casterId] : [], srcMon: src.mon || null };
   ui.lastArea = { aid, key: src.key, at: Date.now(), tgt: { id: item.id, name: src.name + ' area' } };
   if (OBRX.me.role === 'GM') { writeAtkQ(mergeAttack(readAtkQ(), msg)); renderAtkQueue(); }
   else api.broadcast.sendMessage(CH_GM, msg, { destination: 'REMOTE' }).catch(() => toast('Couldn\'t reach the GM.'));
@@ -3925,7 +3952,7 @@ function placeMonsterArea(m, ref) {
   if (a0.recharge) m.rech[ref] = false;
   if (a0.uses) m.uses[ref] = Math.min(a0.uses, (m.uses[ref] || 0) + 1);
   saveEnc({ quiet: true });
-  placeArea({ area: a, name: a0.name, attacker: m.name, tokens: monTokenIds(m), key: 'm:' + m.id + '|' + ref,
+  placeArea({ area: a, name: a0.name, attacker: m.name, mon: m.id, tokens: monTokenIds(m), key: 'm:' + m.id + '|' + ref,
     save: a0.save ? { dc: a0.save.dc, ability: a0.save.ability } : null, roll: a0.damage.length ? () => monDamage(m, ref, false) : null });
   if (encView()) renderGrid();
 }
@@ -3938,9 +3965,9 @@ function areaOutcome(c, t) {
   if (!c.save || ok !== true) return { ok, amt: c.dmg.total };
   return { ok, amt: c.half ? Math.floor(c.dmg.total / 2) : 0 };
 }
-function areaCard(c) {
+function areaCard(c, only) {
   const heal = c.heal || (c.dmg && c.dmg.heal);
-  const rows = (c.targets || []).map(t => {
+  const rows = (c.targets || []).filter(t => !only || t.id === only.id).map(t => {
     const R = resolveTarget(t.id), r = c.res && c.res[t.id], o = areaOutcome(c, t);
     let save = '';
     if (c.save && !heal) {
@@ -3952,6 +3979,12 @@ function areaCard(c) {
     const amt = c.dmg ? `<b class="mono ${heal ? 'ok' : ''}">${o.amt}</b>${!heal && c.save && o.ok == null ? '<span class="muted">?</span>' : ''}` : '';
     return `<div class="arow"><span class="an">${esc(t.name)}${R.hp ? ` <span class="muted mono">${esc(R.hp)}</span>` : ''}</span><span class="as">${save}</span><span class="aa">${amt}</span><button class="ico" data-act="areadrop1" data-id="${esc(c.id)}" data-v="${esc(t.id)}" title="Leave out" aria-label="Leave ${esc(t.name)} out">✕</button></div>`;
   }).join('') || '<div class="muted">Nobody inside. Move the area on the map, then Recheck.</div>';
+  if (only) {
+    const n = (c.targets || []).length;
+    return `<div class="atkc area mini"><div class="atkc-h">${ICON.area}<b>${esc(c.name)}</b> <span class="muted">${esc(c.attacker)}${n > 1 ? ' · ' + n + ' creatures' : ''}</span></div>
+      <div class="atkc-m muted">${c.save ? `DC ${esc(c.save.dc)} ${esc(c.save.ability)}${c.half ? ', half on success' : ''} · ` : ''}${c.dmg ? `<b class="mono">${c.dmg.total}</b> ${heal ? 'healing' : esc(c.dmg.types || '') + ' damage'}` : 'no damage roll yet'}</div>
+      <div class="arows">${rows}</div>${c.dmg && n ? `<div class="fu"><button class="btn small primary" data-act="areaapply" data-id="${esc(c.id)}">${heal ? 'Heal all' : 'Apply to all ' + n}</button></div>` : ''}</div>`;
+  }
   const nMon = (c.targets || []).filter(t => resolveTarget(t.id).kind === 'mon' && !(c.res && c.res[t.id])).length;
   const nPc = (c.targets || []).filter(t => resolveTarget(t.id).kind === 'pc' && !(c.res && c.res[t.id]) && !(c.asked && c.asked[t.id])).length;
   const btns = [];
@@ -4027,7 +4060,10 @@ function readSaves() { const q = readJSON(savesKey()); return Array.isArray(q) ?
 function writeSaves(q) { writeJSON(savesKey(), q.slice(0, 10)); }
 function savePromptsHtml() {
   const q = readSaves().filter(p => !p.char || p.char === C().id); if (!q.length) return '';
-  return `<div class="atkq">${q.map(p => p.kind === 'rest' ? `<div class="atkc save"><div class="atkc-h">⛺&nbsp;<b>${esc(p.from)} calls a ${esc(p.rest)} rest</b><span style="flex:1"></span><button class="ico" data-act="savedrop" data-id="${esc(p.id)}" aria-label="Dismiss">✕</button></div>
+  return `<div class="atkq">${q.map(promptHtml).join('')}</div>`;
+}
+function promptHtml(p) {
+  return p.kind === 'rest' ? `<div class="atkc save"><div class="atkc-h">⛺&nbsp;<b>${esc(p.from)} calls a ${esc(p.rest)} rest</b><span style="flex:1"></span><button class="ico" data-act="savedrop" data-id="${esc(p.id)}" aria-label="Dismiss">✕</button></div>
     <div class="fu"><button class="btn small primary" data-act="restprompt" data-id="${esc(p.id)}" data-v="${esc(p.rest)}">Take a ${esc(p.rest)} rest</button><button class="btn small" data-act="savedrop" data-id="${esc(p.id)}">Not now</button></div></div>`
     : p.kind === 'conc' ? `<div class="atkc save"><div class="atkc-h">◉&nbsp;<b>Concentration check</b><span style="flex:1"></span><button class="ico" data-act="savedrop" data-id="${esc(p.id)}" title="Dismiss without rolling" aria-label="Dismiss">✕</button></div>
     <div><b>CON save</b> · DC ${esc(p.dc)} · to keep <b>${esc(p.what)}</b>${p.dmg ? ` <span class="muted">(took ${esc(p.dmg)} damage)</span>` : ''}</div>
@@ -4037,7 +4073,7 @@ function savePromptsHtml() {
     <div class="fu"><button class="btn small primary" data-act="deathprompt" data-id="${esc(p.id)}">Roll death save</button></div></div>`
     : `<div class="atkc save"><div class="atkc-h"><b>${esc(p.from)}</b>&nbsp;asks for a saving throw<span style="flex:1"></span><button class="ico" data-act="savedrop" data-id="${esc(p.id)}" aria-label="Dismiss">✕</button></div>
     <div><b>${esc(p.ability)} save</b> · DC ${esc(p.dc)} · against ${esc(p.what)}</div>
-    <div class="fu"><button class="btn small primary" data-act="saveroll" data-id="${esc(p.id)}">Roll ${esc(p.ability)} save</button></div></div>`).join('')}</div>`;
+    <div class="fu"><button class="btn small primary" data-act="saveroll" data-id="${esc(p.id)}">Roll ${esc(p.ability)} save</button></div></div>`;
 }
 function rollPromptedSave(id) {
   const p = readSaves().find(x => x.id === id); if (!p) return;
@@ -4259,6 +4295,7 @@ function renderGmParty() {
     const state = s.dead ? '<span class="chip bad">Dead</span>' : s.down ? `<span class="chip bad">Down</span><span class="muted mono" title="Death saves">✓${d.s} ✗${d.f}</span>` : s.hp <= s.max / 2 ? '<span class="chip warn">Bloodied</span>' : '';
     return `<section class="pcard ${s.down ? 'down' : ''}">
       <div class="pc-h"><b ${(OBRX.pcTokens[p.id] || []).length ? `data-dblfocus="pc|${esc(p.id)}" title="Double-click to find their token"` : ''}>${esc(s.char)}${(OBRX.pcTokens[p.id] || []).length ? ' ' + locateBtn('focus', `data-v="pc|${esc(p.id)}"`, 'Find their token on the map') : ''}</b><span class="muted">${esc(p.name)}${s.cls ? ' · ' + esc(s.cls) : ''}${s.level ? ' ' + esc(s.level) : ''}</span></div>
+      <div class="inq" data-inq="pc:${esc(p.id)}" hidden></div>
       <div class="inline"><span class="pool">${esc(s.hp)}<small>/${esc(s.max)}</small></span>${s.temp ? `<span class="temp">+${esc(s.temp)}</span>` : ''}<span class="chip">AC ${esc(s.ac)}</span>${state}</div>
       <div class="hpbar"><i class="${pct < 25 ? 'low' : pct < 55 ? 'mid' : ''}" style="width:${pct}%"></i></div>
       ${(s.cond || []).length || s.conc ? `<div class="inline">${(s.cond || []).map(k => `<span class="chip bad">${esc(k)}</span>`).join('')}${s.conc ? `<span class="chip conc">◉ ${esc(s.conc)}</span>` : ''}</div>` : ''}
@@ -5139,7 +5176,8 @@ function modHeader(m) {
   </div>`;
 }
 
-function renderGrid() {
+function renderGrid() { renderGridInner(); try { paintInline(); } catch (e) { } }
+function renderGridInner() {
   ui.view = isGM() && !ui.viewing ? (SETTINGS.view || 'sheet') : 'sheet';
   if (gmMode() && gmView() === 'party') { $('#grid').innerHTML = `<div class="encwrap">${renderGmParty()}</div>`; return; }
   if (notesView()) { $('#grid').innerHTML = `<div class="encwrap notes">${renderNotes()}</div>`; return; }
@@ -5161,9 +5199,9 @@ function renderGrid() {
 }
 function modBody(m) {
   switch (m.type) {
-    case 'abilities': return renderAbilities();
+    case 'abilities': return `<div class="inq" data-inq="mod:abilities" hidden></div>` + renderAbilities();
     case 'skills': return renderSkills();
-    case 'combat': return renderCombat();
+    case 'combat': return `<div class="inq" data-inq="mod:combat" hidden></div>` + renderCombat();
     case 'actions': return renderActions(m);
     case 'spells': return renderSpells(m);
     case 'party': return renderParty();

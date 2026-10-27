@@ -1,7 +1,7 @@
 /* Grimsheet helpers shared by background.html and gm.html (the panel keeps its own copy). */
 window.GS = (function () {
   const GS = {
-    VERSION: '1.14.0',
+    VERSION: '1.15.0',
     CH_ROLL: 'com.grimsheet/roll',
     CH_GM: 'com.grimsheet/gm',        // GM ↔ player: hp changes, sheet requests and replies
     CH_LOCAL: 'com.grimsheet/local',  // same browser: GM menu → GM panel
@@ -51,6 +51,7 @@ window.GS = (function () {
     else if (d.part === 'atk') c.atk = { total: d.total, nat: d.nat, crit: !!d.crit, fumble: !!d.fumble, mode: d.mode || 'normal', rr: d.rr || '' };
     else c.dmg = { total: d.total, types: d.types || '', crit: !!d.isCrit, heal: d.part === 'heal', rr: d.rr || '' };
     if (d.save) c.save = d.save;
+    if (d.srcMon) c.srcMon = d.srcMon;
     if (d.dist) { c.dist = d.dist; c.range = d.range || ''; c.rangeOk = d.rangeOk; }
     c.at = Date.now();
     return list.slice(0, 30);

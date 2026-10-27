@@ -1,6 +1,6 @@
-# D&D Character Sheet App — Product Spec (v1.12)
+# D&D Character Sheet App — Product Spec (v1.13)
 
-*Working name: Grimsheet. v0.2 recorded the platform decision and first build; v0.3 added the SRD 5.2 content pack and locked skill proficiency to Edit mode; v0.4 expanded the pack; v0.5 added PDF import and documented the saved character format; v0.6 replaced the grid with a row-and-column layout; v0.7 added dice animation and a Settings panel; v0.8 added the Owlbear Rodeo extension and a backup reminder; v0.9 added panel sizes and compact mode; v1.0 added the background page and token linking; v1.1 added GM tools; v1.2 added monsters, the Encounter view and initiative; v1.3 added attacks against a target on the map; v1.4 added rerolls; v1.5 added spell areas on the map; v1.6 added combat prompts; v1.7 added the level-up wizard; v1.8 added undo; v1.9 added campaign notes; v1.10 added GM mode; v1.11 added several encounters; v1.12 adds finding tokens, fog-aware targets and target buttons.*
+*Working name: Grimsheet. v0.2 recorded the platform decision and first build; v0.3 added the SRD 5.2 content pack and locked skill proficiency to Edit mode; v0.4 expanded the pack; v0.5 added PDF import and documented the saved character format; v0.6 replaced the grid with a row-and-column layout; v0.7 added dice animation and a Settings panel; v0.8 added the Owlbear Rodeo extension and a backup reminder; v0.9 added panel sizes and compact mode; v1.0 added the background page and token linking; v1.1 added GM tools; v1.2 added monsters, the Encounter view and initiative; v1.3 added attacks against a target on the map; v1.4 added rerolls; v1.5 added spell areas on the map; v1.6 added combat prompts; v1.7 added the level-up wizard; v1.8 added undo; v1.9 added campaign notes; v1.10 added GM mode; v1.11 added several encounters; v1.12 added finding tokens, fog-aware targets and target buttons; v1.13 shows prompts next to what they're about.*
 
 ## 1. Vision
 
@@ -342,6 +342,12 @@ Decisions: a party journal anyone can edit; its own view; typed entries.
 - **Find on the map**: a ◎ button (and double-clicking the name) pans and zooms Owlbear to the linked token(s) and selects them: your character (header and Combat module), monster cards, initiative rows, party members (Party module and the GM's Party view). Uses `viewport.animateToBounds` around the tokens' bounds.
 - **Fog of war**: for players, tokens under fog are left out of the target list, can't become the target by selecting them, and aren't counted or named in an area's "inside" list. A token is fogged when its centre is inside a visible item on the Fog layer (curves, shapes, and paths with cut-outs, even-odd); with the scene's fog "fill" on, it's the other way round (shapes reveal). Hidden tokens were already left out; the GM sees everything. Fog drawn by other extensions (dynamic fog) can't be read.
 - **Target buttons**: entries with an attack, a damage save or an area show a small target button next to their dice ("◎ Goblin 1" / "◎ Target"); monster cards show one in their header. It opens the target list and updates with the current target.
+
+### Built in v2.11: Prompts next to what they're about
+- Cards still appear at the top, and now also inside the card they relate to, with the same buttons (whichever copy is used, both update):
+  - **GM**: an attack card inside the target monster's card and the attacking monster's card (`srcMon` is sent with monster attacks and areas); a player target's attack card inside that player's card in the Party view; for an area or group save, a one-creature version (that creature's save controls and damage, plus Apply to all) inside each affected monster's or player's card.
+  - **Players**: concentration checks and death save prompts inside the Combat module; the GM's save requests inside the Abilities module.
+- Fixed: an attack card no longer shows "Waiting for the damage roll" once the damage has arrived.
 
 ### Roadmap
 Ordered by when it gets built. Priority applies inside a goal.
