@@ -1,7 +1,7 @@
 /* Grimsheet helpers shared by background.html and gm.html (the panel keeps its own copy). */
 window.GS = (function () {
   const GS = {
-    VERSION: '1.10.0',
+    VERSION: '1.11.0',
     CH_ROLL: 'com.grimsheet/roll',
     CH_GM: 'com.grimsheet/gm',        // GM ↔ player: hp changes, sheet requests and replies
     CH_LOCAL: 'com.grimsheet/local',  // same browser: GM menu → GM panel
@@ -62,6 +62,17 @@ window.GS = (function () {
     for (const t of c.targets || []) if (t.player === d.from && (!d.char || !t.char || t.char === d.char)) c.res[t.id] = { total: d.total, ok: d.total >= +c.save.dc, nat: d.nat, by: 'player' };
     return list;
   };
+  // campaign notes (same rules as the panel): newest edit wins, deletions are remembered
+  GS.CAMP = 'grimsheet.campaign.v1'; GS.CH_NOTES = 'com.grimsheet/notes';
+  GS.mergeNote = (c, n) => {
+    if (!n || !n.id) return false;
+    if (c.gone[n.id] && c.gone[n.id] >= n.updated) return false;
+    const i = c.notes.findIndex(x => x.id === n.id);
+    if (i >= 0 && c.notes[i].updated >= n.updated) return false;
+    if (i >= 0) c.notes[i] = n; else c.notes.push(n);
+    return true;
+  };
+  GS.dropNote = (c, id, at) => { c.notes = c.notes.filter(x => x.id !== id || x.updated > at); c.gone[id] = Math.max(c.gone[id] || 0, at); };
   GS.chunks = (s, n = 12000) => { const out = []; for (let i = 0; i < s.length; i += n) out.push(s.slice(i, i + n)); return out.length ? out : ['']; };
   GS.load = src => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
   GS.sdk = async () => { if (window.GrimsheetOBR) return window.GrimsheetOBR; await GS.load('vendor/owlbear-sdk-3.1.0.js'); return window.OwlbearSDK; };

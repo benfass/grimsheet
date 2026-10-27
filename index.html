@@ -277,6 +277,29 @@ select.ed-inline{width:auto}
 .pop .hist{display:flex;flex-direction:column;max-height:320px;overflow:auto;margin-top:4px}
 .pop .hist .opt{display:flex;justify-content:space-between;gap:10px;text-align:left}
 .pop .hist .opt .muted{white-space:nowrap;font-size:.78rem}
+.camp-name{background:none;border:0;padding:0;font:inherit;cursor:pointer;color:inherit}
+.camp-name:hover b{text-decoration:underline dotted}
+.notes-bar{display:flex;flex-direction:column;gap:8px;margin:10px 0}
+.notes-bar .tabs{flex-wrap:wrap}
+.ntags{display:flex;flex-wrap:wrap;gap:4px}
+.ntags .chip{font-size:.75rem;min-height:22px;padding:0 7px;cursor:pointer}
+.ntags .chip.on{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
+.notes-quests{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 10px;padding:8px 12px;border-radius:8px;background:var(--gold-soft)}
+.notes-quests .chip{cursor:pointer}
+.notes-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;align-items:start}
+.notes-grp{grid-column:1/-1;margin-top:6px}
+.ncard{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:10px 12px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.ncard.open{grid-column:1/-1;border-color:var(--accent)}
+.nhead{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}
+.ntitle{flex:1;min-width:0;text-align:left;background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer;overflow:hidden;text-overflow:ellipsis}
+.ntype{font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-right:2px}
+.ncard.t-npc .ntype{color:var(--accent)}.ncard.t-quest .ntype{color:var(--gold)}.ncard.t-place .ntype{color:#4f7cac}.ncard.t-item .ntype{color:#8a5ca8}
+.nst{cursor:pointer}.nst.ok{color:var(--ok);border-color:var(--ok)}.nst.bad{color:var(--danger);border-color:var(--danger)}
+.nfirst{font-size:.88rem;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.nbody{font-size:.95rem;line-height:1.5;overflow-wrap:anywhere}
+.nlink{background:none;border:0;padding:0;font:inherit;color:var(--accent);text-decoration:underline;cursor:pointer}
+.nlink.missing{color:var(--muted);text-decoration:underline dotted;cursor:default}
+.nfoot{display:flex;align-items:center;gap:6px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:8px;font-size:.82rem}
 .tray .fu{display:flex;gap:6px;flex-wrap:wrap;margin-top:3px}
 .badge{font-size:.7rem;letter-spacing:.08em;font-weight:700;padding:0 6px;border-radius:4px;background:var(--gold-soft);color:var(--gold)}
 .badge.red{background:var(--danger-soft);color:var(--danger)}
@@ -2488,7 +2511,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.10.0';
+const APP_VERSION = '1.11.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -2831,6 +2854,7 @@ async function startOwlbear() {
       OBRX.room = OBR.room && OBR.room.id ? OBR.room.id : 'room';
       OBR.broadcast.onMessage(CH_ROLL, ev => receiveRoll(ev.data));
       OBR.broadcast.onMessage(CH_GM, ev => receiveGm(ev.data));
+      OBR.broadcast.onMessage(CH_NOTES, ev => notesReceive(ev.data));
       OBR.broadcast.onMessage(CH_LOCAL, ev => {
         const d = ev.data; if (!d) return;
         if (d.type === 'view') requestSheet(d.player, d.char, d.name, d.owner);
@@ -2848,7 +2872,7 @@ async function startOwlbear() {
       } catch (e) { }
       const setParty = players => { OBRX.party = (players || []).map(p => ({ id: p.id, name: p.name, role: p.role, s: p.metadata && p.metadata[META] })).filter(p => p.s); refreshParty(); };
       setParty(await OBR.party.getPlayers()); OBR.party.onChange(setParty);
-      publishStatus(); renderAtkQueue(); paintTarget(); checkMyTurn();
+      publishStatus(); renderAtkQueue(); paintTarget(); checkMyTurn(); setTimeout(notesHello, 800);
       if (concOf() && C().hp.cur <= 0) endConc(concOf().name + ' ends: you dropped to 0 HP.');
       applyPanelSize();
       ensurePartyModule();
@@ -3898,6 +3922,168 @@ function mergeSaveRes(list, d) {
   return list;
 }
 
+/* ---------- CAMPAIGN NOTES: a party journal for each Owlbear room ---------- */
+// Notes are typed (NPC, place, quest, item, note), tagged and searchable. "Party" notes are shared with
+// everyone in the room and anyone can edit them (last edit wins); "only me" notes stay in this browser
+// (for the GM: hidden from players, revealable later). Links between notes: [[Title]].
+const CAMPKEY = 'grimsheet.campaign.v1', CH_NOTES = 'com.grimsheet/notes', NOTE_MAX = 8000;
+const NOTE_TYPES = { npc: 'NPC', place: 'Place', quest: 'Quest', item: 'Item', note: 'Note' };
+const NOTE_PLURAL = { npc: 'NPCs', place: 'Places', quest: 'Quests', item: 'Items', note: 'Notes' };
+const NOTE_STATUS = { npc: ['', 'Friendly', 'Neutral', 'Hostile', 'Dead'], quest: ['Open', 'Done', 'Failed'] };
+const campKey = () => (IN_OBR ? (OBRX.room || 'room') : 'local');
+function campAll() { return readJSON(CAMPKEY) || {}; }
+function camp() { const a = campAll(), k = campKey(); const c = a[k] || { name: '', notes: [], gone: {} }; c.notes = c.notes || []; c.gone = c.gone || {}; return c; }
+function saveCamp(c) { const a = campAll(); a[campKey()] = c; writeJSON(CAMPKEY, a); }
+// same rules as GS.mergeNote in shared.js: newest edit wins, deletions are remembered
+function mergeNote(c, n) {
+  if (!n || !n.id) return false;
+  if (c.gone[n.id] && c.gone[n.id] >= n.updated) return false;
+  const i = c.notes.findIndex(x => x.id === n.id);
+  if (i >= 0 && c.notes[i].updated >= n.updated) return false;
+  if (i >= 0) c.notes[i] = n; else c.notes.push(n);
+  return true;
+}
+function dropNote(c, id, at) { c.notes = c.notes.filter(x => x.id !== id || x.updated > at); c.gone[id] = Math.max(c.gone[id] || 0, at); }
+const notesView = () => SETTINGS.view === 'campaign' && !ui.viewing;
+function notesAuthor() { return { id: IN_OBR ? OBRX.me.id : 'me', name: IN_OBR ? (OBRX.me.name || 'Someone') : 'Me', char: C().name }; }
+function sendNotes(d) { if (IN_OBR && OBRX.ready) OBRX.api.broadcast.sendMessage(CH_NOTES, d, { destination: 'REMOTE' }).catch(() => toast('Couldn\'t share that note right now.')); }
+function noteSaved(n) {
+  const c = camp(); n.updated = Date.now(); mergeNote(c, n); saveCamp(c);
+  if (n.vis === 'party') sendNotes({ type: 'up', note: n, by: OBRX.me.name });
+  if (notesView()) renderGrid();
+}
+function deleteNote(id) {
+  const c = camp(), n = c.notes.find(x => x.id === id); if (!n) return;
+  const at = Date.now(); dropNote(c, id, at); saveCamp(c);
+  if (n.vis === 'party') sendNotes({ type: 'del', id, at });
+  ui.noteOpen = null; if (notesView()) renderGrid(); toast('Deleted ' + n.title + '.');
+}
+/* ---- sync with the room ---- */
+// on opening: tell the room what we have; whoever has newer notes answers (the first answer wins)
+function notesHello() {
+  if (!IN_OBR || !OBRX.ready) return;
+  const c = camp(), have = c.notes.filter(n => n.vis === 'party').sort((a, b) => b.updated - a.updated).slice(0, 250).map(n => [n.id, n.updated]);
+  sendNotes({ type: 'hello', from: OBRX.me.id, have, gone: Object.entries(c.gone).slice(-200) });
+}
+const noteReplies = {};
+function notesReceive(d) {
+  if (!d) return;
+  if (d.type === 'up' || d.type === 'del') {
+    Object.values(noteReplies).forEach(r => r.skip.add(d.type === 'up' ? d.note.id : d.id));
+    if (bgAlive()) { setTimeout(() => { if (notesView()) renderGrid(); }, 200); if (d.type === 'up' && d.by) toast(`${d.by} updated “${d.note.title}”.`); return; }
+    const c = camp();
+    const changed = d.type === 'up' ? mergeNote(c, d.note) : (dropNote(c, d.id, d.at), true);
+    if (changed) { saveCamp(c); if (notesView()) renderGrid(); if (d.type === 'up' && d.by) toast(`${d.by} updated “${d.note.title}”.`); }
+    return;
+  }
+  if (d.type === 'hello' && d.from !== OBRX.me.id && !bgAlive()) answerHello(d, camp(), x => sendNotes(x));
+  if (d.type === 'name') { const c = camp(); if ((c.nameAt || 0) < d.at) { c.name = d.name; c.nameAt = d.at; saveCamp(c); if (notesView()) renderGrid(); } }
+}
+function answerHello(d, c, send) {
+  const have = new Map(d.have || []);
+  for (const [id, at] of d.gone || []) if (!c.gone[id] || c.gone[id] < at) dropNote(c, id, at);
+  const mine = c.notes.filter(n => n.vis === 'party' && (!have.has(n.id) || have.get(n.id) < n.updated));
+  const gone = Object.entries(c.gone).filter(([id]) => have.has(id));
+  if (!mine.length && !gone.length) return;
+  const key = d.from + Math.random(); const r = noteReplies[key] = { skip: new Set() };
+  setTimeout(() => {
+    delete noteReplies[key];
+    mine.filter(n => !r.skip.has(n.id)).forEach(n => send({ type: 'up', note: n }));
+    gone.filter(([id]) => !r.skip.has(id)).forEach(([id, at]) => send({ type: 'del', id, at }));
+    if (c.name) send({ type: 'name', name: c.name, at: c.nameAt || 0 });
+  }, 150 + Math.random() * 900);
+}
+window.addEventListener('storage', ev => { if (ev.key === CAMPKEY && notesView()) renderGrid(); });
+
+/* ---- the view ---- */
+function noteBody(n) {
+  const c = camp();
+  return esc(n.body || '').replace(/\[\[([^\]]{1,80})\]\]/g, (m, t) => {
+    const hit = c.notes.find(x => x.title.toLowerCase() === t.trim().toLowerCase().replace(/&amp;/g, '&'));
+    return hit ? `<button class="nlink" data-act="noteopen" data-id="${esc(hit.id)}">${t}</button>` : `<span class="nlink missing" title="No note with this title yet">${t}</span>`;
+  }).replace(/\n/g, '<br>');
+}
+function noteVisible(n) { return n.vis === 'party' || !n.author || n.author.id === (IN_OBR ? OBRX.me.id : 'me') || !IN_OBR; }
+function renderNotes() {
+  const c = camp(), q = (ui.noteQ || '').toLowerCase().trim(), f = ui.noteF || 'all';
+  let list = c.notes.filter(noteVisible);
+  const counts = {}; list.forEach(n => { counts[n.type] = (counts[n.type] || 0) + 1; });
+  if (f === 'pinned') list = list.filter(n => n.pinned);
+  else if (f !== 'all') list = list.filter(n => n.type === f);
+  if (q) list = list.filter(n => (n.title + ' ' + (n.body || '') + ' ' + (n.tags || []).join(' ') + ' ' + (n.status || '')).toLowerCase().includes(q));
+  const tagsAll = [...new Set(c.notes.filter(noteVisible).flatMap(n => n.tags || []))].sort();
+  const openQuests = c.notes.filter(n => noteVisible(n) && n.type === 'quest' && (n.status || 'Open') === 'Open');
+  const head = `<div class="enc-head notes-head">
+    <div class="enc-title">${ui.campName ? `<input class="ed-inline" id="camp-name" data-campname="1" value="${esc(c.name)}" placeholder="Campaign name" style="width:220px">` : `<button class="camp-name" data-act="campname" title="Rename the campaign"><b>${esc(c.name || 'Campaign notes')}</b></button>`}<span class="muted" style="font-size:.85rem">${c.notes.filter(noteVisible).length} notes${IN_OBR ? ' · shared with this room' : ''}</span></div>
+    <div class="enc-tools"><button class="btn small primary" data-act="noteadd">+ New note</button><button class="btn small" data-act="notesexport" title="Download all notes as a Markdown file">Export</button><button class="btn small ghost" data-act="notesbackup" title="Download a backup you can import again">Backup</button><label class="btn small ghost" title="Import a notes backup">Import<input type="file" accept=".json,application/json" id="notes-import" data-notesimport="1" hidden></label></div></div>
+    <div class="notes-bar"><input id="note-q" class="srd-q" data-noteq="1" value="${esc(ui.noteQ || '')}" placeholder="Search notes: names, places, tags…" aria-label="Search notes">
+      <div class="tabs" style="margin:0">${[['all', 'All'], ['pinned', 'Pinned'], ...Object.keys(NOTE_TYPES).map(k => [k, NOTE_PLURAL[k]])].map(([k, l]) => `<button class="${f === k ? 'on' : ''}" data-act="notef" data-v="${k}">${l}${counts[k] ? ' <span class="muted">' + counts[k] + '</span>' : ''}</button>`).join('')}</div>
+      ${tagsAll.length ? `<div class="ntags">${tagsAll.slice(0, 30).map(t => `<button class="chip ${q === t.toLowerCase() ? 'on' : ''}" data-act="notetag" data-v="${esc(t)}">#${esc(t)}</button>`).join('')}</div>` : ''}</div>`;
+  const quests = f === 'all' && !q && openQuests.length ? `<div class="notes-quests"><b>Open quests</b>${openQuests.map(n => `<button class="chip" data-act="noteopen" data-id="${esc(n.id)}">${esc(n.title)}</button>`).join('')}</div>` : '';
+  const order = Object.keys(NOTE_TYPES);
+  list.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || (f === 'all' ? order.indexOf(a.type) - order.indexOf(b.type) : 0) || b.updated - a.updated);
+  let last = '';
+  const cards = list.map(n => { const g = f === 'all' && !q && n.type !== last ? `<div class="lvl-h notes-grp">${NOTE_PLURAL[n.type]}</div>` : ''; last = n.type; return g + noteCard(n); }).join('');
+  const empty = !c.notes.filter(noteVisible).length ? `<div class="empty">No notes yet. Add the people you meet, places you visit and quests you take on.${IN_OBR ? ' Party notes are shared with everyone in this room, and anyone can edit them.' : ''}</div>` : !list.length ? '<div class="empty">No notes match.</div>' : '';
+  return head + quests + `<div class="notes-grid">${cards}</div>` + empty;
+}
+function noteCard(n) {
+  const open = ui.noteOpen === n.id, st = n.status || (n.type === 'quest' ? 'Open' : '');
+  const stCls = /dead|failed|hostile/i.test(st) ? 'bad' : /done|friendly/i.test(st) ? 'ok' : '';
+  const first = (n.body || '').split('\n').find(x => x.trim()) || '';
+  return `<section class="ncard ${open ? 'open' : ''} t-${n.type}" data-note="${esc(n.id)}">
+    <div class="nhead"><button class="ntitle" data-act="noteopen" data-id="${esc(n.id)}"><span class="ntype">${NOTE_TYPES[n.type]}</span> <b>${esc(n.title)}</b></button>
+      ${st ? `<button class="chip nst ${stCls}" data-act="notestat" data-id="${esc(n.id)}" title="Change status">${esc(st)}</button>` : ''}
+      ${n.vis !== 'party' ? `<span class="chip" title="${isGM() && IN_OBR ? 'Hidden from players' : 'Only you can see this'}">🔒 ${isGM() && IN_OBR ? 'Hidden' : 'Only me'}</span>` : ''}
+      ${n.pinned ? '<span class="chip">★</span>' : ''}</div>
+    ${open ? `<div class="nbody">${noteBody(n) || '<span class="muted">No text yet.</span>'}</div>` : first ? `<div class="nfirst muted">${esc(first.length > 140 ? first.slice(0, 137) + '…' : first)}</div>` : ''}
+    ${(n.tags || []).length ? `<div class="ntags">${n.tags.map(t => `<button class="chip" data-act="notetag" data-v="${esc(t)}">#${esc(t)}</button>`).join('')}</div>` : ''}
+    ${open ? `<div class="nfoot"><span class="muted">${n.author ? esc(n.author.name) + (n.author.char ? ' (' + esc(n.author.char) + ')' : '') + ' · ' : ''}${ago(n.updated)}</span><span style="flex:1"></span>
+      ${n.vis !== 'party' ? `<button class="btn small" data-act="noteshare" data-id="${esc(n.id)}">${isGM() && IN_OBR ? 'Reveal to players' : 'Share with the party'}</button>` : ''}
+      <button class="btn small" data-act="notepin" data-id="${esc(n.id)}">${n.pinned ? 'Unpin' : 'Pin'}</button>
+      <button class="btn small" data-act="noteedit" data-id="${esc(n.id)}">Edit</button>
+      <button class="btn small ${ui.confirm === 'notedel-' + n.id ? 'danger' : 'ghost'}" data-act="notedel" data-id="${esc(n.id)}">${ui.confirm === 'notedel-' + n.id ? 'Delete for everyone?' : 'Delete'}</button></div>` : ''}
+  </section>`;
+}
+function noteEditorHtml(md) {
+  const d = md.draft, st = NOTE_STATUS[d.type];
+  return dlgHead(md.isNew ? 'New note' : 'Edit note') + `<div class="dlg-b">
+    <div class="frow"><label class="fld"><span>Type</span><select id="nd-type" data-nd="type">${Object.entries(NOTE_TYPES).map(([k, l]) => `<option value="${k}" ${d.type === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      <label class="fld" style="grid-column:span 2"><span>Title</span><input id="nd-title" data-nd="title" value="${esc(d.title)}" placeholder="${{ npc: 'Ferryman Oskar', place: 'The Drowned Mill', quest: 'Find the missing miller', item: 'Brass key with a fish', note: 'Session 3' }[d.type]}"></label>
+      ${st ? `<label class="fld"><span>Status</span><select id="nd-status" data-nd="status">${st.map(s => `<option value="${s}" ${(d.status || '') === s ? 'selected' : ''}>${s || '—'}</option>`).join('')}</select></label>` : ''}</div>
+    <label class="fld"><span>Notes</span><textarea id="nd-body" data-nd="body" maxlength="${NOTE_MAX}" style="min-height:180px" placeholder="What you know. Link other notes with [[their title]].">${esc(d.body || '')}</textarea><span class="hint">Link to another note with [[its title]].</span></label>
+    <div class="frow"><label class="fld" style="grid-column:span 2"><span>Tags</span><input id="nd-tags" data-nd="tags" value="${esc((d.tags || []).join(', '))}" placeholder="Saltmarsh, smugglers"></label>
+      <label class="fld"><span>Who can see it</span><select id="nd-vis" data-nd="vis"><option value="party" ${d.vis === 'party' ? 'selected' : ''}>The party${IN_OBR ? ' (shared)' : ''}</option><option value="me" ${d.vis !== 'party' ? 'selected' : ''}>${isGM() && IN_OBR ? 'Only me (hidden from players)' : 'Only me'}</option></select></label></div>
+  </div><div class="dlg-f"><button class="btn" data-act="close">Cancel</button><button class="btn primary" data-act="notesave">Save</button></div>`;
+}
+function openNoteEditor(id, type) {
+  const c = camp(), n = id ? c.notes.find(x => x.id === id) : null;
+  const draft = n ? clone(n) : { id: uid() + uid(), type: type || (['npc', 'place', 'quest', 'item'].includes(ui.noteF) ? ui.noteF : 'note'), title: '', body: '', tags: [], status: '', vis: 'party', pinned: false, author: notesAuthor(), created: Date.now(), updated: 0 };
+  if (!n && draft.type === 'quest') draft.status = 'Open';
+  openModal('noteedit', { draft, isNew: !n });
+}
+function noteFromEditor() {
+  const md = ui.modal, d = md.draft;
+  const val = id => { const x = document.getElementById(id); return x ? x.value : ''; };
+  d.type = val('nd-type') || d.type; d.title = val('nd-title').trim(); d.body = val('nd-body').slice(0, NOTE_MAX);
+  d.tags = val('nd-tags').split(',').map(t => t.trim().replace(/^#/, '')).filter(Boolean).slice(0, 12);
+  if (NOTE_STATUS[d.type]) d.status = val('nd-status'); else d.status = '';
+  const vis = val('nd-vis') === 'party' ? 'party' : 'me';
+  const wasParty = !md.isNew && camp().notes.find(x => x.id === d.id && x.vis === 'party');
+  d.vis = vis;
+  return { d, unshare: wasParty && vis !== 'party' };
+}
+function notesMarkdown() {
+  const c = camp(), list = c.notes.filter(noteVisible);
+  let s = `# ${c.name || 'Campaign notes'}\n`;
+  for (const t of Object.keys(NOTE_TYPES)) {
+    const ns = list.filter(n => n.type === t); if (!ns.length) continue;
+    s += `\n## ${NOTE_PLURAL[t]}\n`;
+    for (const n of ns) s += `\n### ${n.title}${n.status ? ' (' + n.status + ')' : ''}\n${(n.tags || []).length ? n.tags.map(x => '#' + x).join(' ') + '\n' : ''}${n.body ? '\n' + n.body + '\n' : ''}`;
+  }
+  return s;
+}
+
 /* ---------- UNDO: per-character change history ---------- */
 // Every save is compared with the last known state of the character; what changed is kept as a step
 // (path, old, new). Quick repeats of the same change (typing, tapping a pool) become one step.
@@ -4647,7 +4833,7 @@ function renderTop() {
       ${undoHtml()}
       <div class="seg" role="group" aria-label="Mode"><button data-act="mode" data-v="play" class="${!ed ? 'on' : ''}">Play</button><button data-act="mode" data-v="edit" class="${ed ? 'on' : ''}">Edit</button></div>
       <button class="btn" data-act="modal" data-v="chars">Characters</button>
-      ${isGM() && !ui.viewing ? `<div class="seg" role="group" aria-label="View"><button data-act="setview" data-v="sheet" class="${SETTINGS.view !== 'encounter' ? 'on' : ''}">Sheet</button><button data-act="setview" data-v="encounter" class="${SETTINGS.view === 'encounter' ? 'on' : ''}">Encounter</button></div>` : ''}
+      ${!ui.viewing ? `<div class="seg" role="group" aria-label="View"><button data-act="setview" data-v="sheet" class="${!['encounter', 'campaign'].includes(SETTINGS.view) || (SETTINGS.view === 'encounter' && !isGM()) ? 'on' : ''}">Sheet</button>${isGM() ? `<button data-act="setview" data-v="encounter" class="${SETTINGS.view === 'encounter' ? 'on' : ''}">Encounter</button>` : ''}<button data-act="setview" data-v="campaign" class="${SETTINGS.view === 'campaign' ? 'on' : ''}">Notes</button></div>` : ''}
       ${IN_OBR ? '<button class="btn" data-act="sizemenu" title="Panel size and compact mode">Size</button>' : ''}
       <button class="btn" data-act="modal" data-v="settings" aria-label="Settings" title="Settings">Settings</button>
       ${ed ? `<button class="btn" data-act="modal" data-v="addModule">+ Module</button>` : ''}
@@ -4685,6 +4871,7 @@ function modHeader(m) {
 
 function renderGrid() {
   ui.view = isGM() && !ui.viewing ? (SETTINGS.view || 'sheet') : 'sheet';
+  if (notesView()) { $('#grid').innerHTML = `<div class="encwrap notes">${renderNotes()}</div>`; return; }
   if (encView()) { $('#grid').innerHTML = `<div class="encwrap">${renderEncounter()}</div>`; return; }
   const c = C(), L = ensureLayout(c), hid = new Set(c.hidden), ed = ui.mode === 'edit';
   const byId = id => c.modules.find(m => m.id === id);
@@ -4996,6 +5183,7 @@ function renderModal() {
   else if (m.type === 'addmon') h = addMonHtml(m);
   else if (m.type === 'targets') h = targetsHtml(m);
   else if (m.type === 'levelup') h = levelUpHtml(m);
+  else if (m.type === 'noteedit') h = noteEditorHtml(m);
   else if (m.type === 'viewwait') h = dlgHead('Opening ' + (m.name || 'sheet')) + `<div class="dlg-b">${m.failed ? `<div class="banner warn" style="margin:0">${esc(m.owner || 'The player')}'s Grimsheet didn't answer. They need to be in the room with Grimsheet 1.3 or newer installed.</div>` : `<div class="sugg"><h3>Asking ${esc(m.owner || 'the player')}'s Grimsheet…</h3><span>The sheet opens read-only in a moment.</span></div>`}</div><div class="dlg-f"><button class="btn" data-act="close">${m.failed ? 'Close' : 'Cancel'}</button></div>`;
   $('#ovl').innerHTML = `<div class="ovl" data-act="ovlbg"><div class="dlg" role="dialog" aria-modal="true">${h}</div></div>`;
   $('#ovl .ovl').scrollTop = keepScroll;
@@ -5308,7 +5496,7 @@ document.addEventListener('click', ev => {
   const c = C(); const ed = ui.mode === 'edit';
   const rerender = () => { save(); render(); };
   const f = id ? findEntry(id) : null;
-  if (!['edel', 'delchar', 'mdel', 'luundo', 'encclear', 'mondel'].includes(act)) ui.confirm = null;
+  if (!['edel', 'delchar', 'mdel', 'luundo', 'encclear', 'mondel', 'notedel'].includes(act)) ui.confirm = null;
   switch (act) {
     case 'mode': ui.mode = v; render(); break;
     case 'viewend': ui.viewing = null; ui.open.clear(); render(); if (IN_OBR) refreshLinks(); break;
@@ -5444,6 +5632,24 @@ document.addEventListener('click', ev => {
     case 'saveroll': rollPromptedSave(id); break;
     case 'savedrop': writeSaves(readSaves().filter(x => x.id !== id)); renderAtkQueue(); break;
     case 'levelup': openLevelUp(); break;
+    case 'noteadd': openNoteEditor(null); break;
+    case 'noteopen': { const cc = camp(), n = cc.notes.find(x => x.id === id); if (!n) break; if (!notesView()) { SETTINGS.view = 'campaign'; saveSettings(); render(); } if (ui.noteOpen === id && el.classList.contains('ntitle')) ui.noteOpen = null; else { ui.noteOpen = id; if (!el.classList.contains('ntitle')) { ui.noteQ = ''; ui.noteF = 'all'; } } renderGrid(); const nd = document.querySelector(`[data-note="${id}"]`); if (nd && nd.scrollIntoView) nd.scrollIntoView({ block: 'nearest' }); break; }
+    case 'noteedit': openNoteEditor(id); break;
+    case 'notedel': if (ui.confirm !== 'notedel-' + id) { ui.confirm = 'notedel-' + id; renderGrid(); break; } ui.confirm = null; deleteNote(id); break;
+    case 'notepin': { const n = camp().notes.find(x => x.id === id); if (n) { n.pinned = !n.pinned; noteSaved(n); } break; }
+    case 'noteshare': { const n = camp().notes.find(x => x.id === id); if (n) { n.vis = 'party'; noteSaved(n); toast(n.title + ' is shared with the party.'); } break; }
+    case 'notestat': { const n = camp().notes.find(x => x.id === id), opts = n && NOTE_STATUS[n.type]; if (!opts) break; const cur = opts.indexOf(n.status || (n.type === 'quest' ? 'Open' : '')); n.status = opts[(cur + 1) % opts.length]; noteSaved(n); break; }
+    case 'notef': ui.noteF = v; renderGrid(); break;
+    case 'notetag': ui.noteQ = ui.noteQ === v ? '' : v; ui.noteF = 'all'; renderGrid(); break;
+    case 'campname': ui.campName = true; renderGrid(); { const x = $('#camp-name'); if (x) { x.focus(); x.select(); } } break;
+    case 'notesave': {
+      const { d, unshare } = noteFromEditor();
+      if (!d.title) { toast('Give the note a title.'); break; }
+      if (unshare) sendNotes({ type: 'del', id: d.id, at: Date.now() });
+      closeModal(); ui.noteOpen = d.id; noteSaved(d); break;
+    }
+    case 'notesexport': { const cc = camp(); downloadExport(notesMarkdown(), ((cc.name || 'campaign-notes').replace(/[^\w-]+/g, '-').toLowerCase()) + '.md'); break; }
+    case 'notesbackup': { const cc = camp(); downloadExport(JSON.stringify({ grimsheetNotes: 1, name: cc.name, notes: cc.notes.filter(noteVisible) }, null, 1), ((cc.name || 'campaign-notes').replace(/[^\w-]+/g, '-').toLowerCase()) + '.notes.json'); break; }
     case 'undo': histStep(-1); break;
     case 'redo': hidePop(); histStep(1); break;
     case 'histmenu': showPop(el, histMenuHtml()); break;
@@ -5593,6 +5799,18 @@ function doImport(lib) {
 
 document.addEventListener('change', ev => {
   const t = ev.target;
+  if (t.dataset.campname) { const cc = camp(); cc.name = t.value.trim(); cc.nameAt = Date.now(); saveCamp(cc); ui.campName = false; sendNotes({ type: 'name', name: cc.name, at: cc.nameAt }); setTimeout(renderGrid, 0); return; }
+  if (t.dataset.nd === 'type' && ui.modal && ui.modal.type === 'noteedit') { const { d } = noteFromEditor(); if (d.type === 'quest' && !d.status) d.status = 'Open'; setTimeout(renderModal, 0); return; }
+  if (t.dataset.notesimport && t.files && t.files[0]) {
+    t.files[0].text().then(txt => {
+      let data; try { data = JSON.parse(txt); } catch (e) { toast('That file isn\'t a notes backup.'); return; }
+      if (!data || !Array.isArray(data.notes)) { toast('That file isn\'t a notes backup.'); return; }
+      const cc = camp(); let n = 0;
+      for (const x of data.notes) if (x && x.id && x.title && NOTE_TYPES[x.type]) { if (mergeNote(cc, x)) { n++; if (x.vis === 'party') sendNotes({ type: 'up', note: x }); } }
+      if (!cc.name && data.name) cc.name = data.name;
+      saveCamp(cc); renderGrid(); toast(n ? 'Imported ' + n + ' notes.' : 'Nothing new in that backup.');
+    }); t.value = ''; return;
+  }
   if (ui.modal && ui.modal.type === 'levelup') {
     const md = ui.modal, d = t.dataset; let hit = true;
     if (d.luci != null) { md.ci = d.luci === 'new' ? 'new' : +d.luci; md.sub = ''; }
@@ -5656,6 +5874,7 @@ document.addEventListener('change', ev => {
 });
 document.addEventListener('input', ev => {
   const t = ev.target;
+  if (t.dataset.noteq) { ui.noteQ = t.value; const pos = t.selectionStart; renderGrid(); const n = $('#note-q'); if (n) { n.focus(); n.setSelectionRange(pos, pos); } return; }
   if (ui.modal && ui.modal.type === 'levelup' && (t.dataset.lunc === 'name' || t.dataset.lusubo || t.dataset.lufeato)) {
     if (t.dataset.lunc) ui.modal.nc.name = t.value; else if (t.dataset.lusubo) ui.modal.subOther = t.value; else ui.modal.featOther = t.value;
     const f = $('.dlg-f'); if (f) { const P = luPlan(ui.modal), r = luReady(ui.modal, P), b = f.querySelector('[data-act=ludo]'), m = f.querySelector('.muted'); if (b) b.disabled = r !== true; if (m) m.textContent = r === true ? 'One undo puts everything back.' : r; }

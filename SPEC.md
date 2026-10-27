@@ -1,6 +1,6 @@
-# D&D Character Sheet App — Product Spec (v1.8)
+# D&D Character Sheet App — Product Spec (v1.9)
 
-*Working name: Grimsheet. v0.2 recorded the platform decision and first build; v0.3 added the SRD 5.2 content pack and locked skill proficiency to Edit mode; v0.4 expanded the pack; v0.5 added PDF import and documented the saved character format; v0.6 replaced the grid with a row-and-column layout; v0.7 added dice animation and a Settings panel; v0.8 added the Owlbear Rodeo extension and a backup reminder; v0.9 added panel sizes and compact mode; v1.0 added the background page and token linking; v1.1 added GM tools; v1.2 added monsters, the Encounter view and initiative; v1.3 added attacks against a target on the map; v1.4 added rerolls; v1.5 added spell areas on the map; v1.6 added combat prompts; v1.7 added the level-up wizard; v1.8 adds undo.*
+*Working name: Grimsheet. v0.2 recorded the platform decision and first build; v0.3 added the SRD 5.2 content pack and locked skill proficiency to Edit mode; v0.4 expanded the pack; v0.5 added PDF import and documented the saved character format; v0.6 replaced the grid with a row-and-column layout; v0.7 added dice animation and a Settings panel; v0.8 added the Owlbear Rodeo extension and a backup reminder; v0.9 added panel sizes and compact mode; v1.0 added the background page and token linking; v1.1 added GM tools; v1.2 added monsters, the Encounter view and initiative; v1.3 added attacks against a target on the map; v1.4 added rerolls; v1.5 added spell areas on the map; v1.6 added combat prompts; v1.7 added the level-up wizard; v1.8 added undo; v1.9 adds campaign notes.*
 
 ## 1. Vision
 
@@ -314,6 +314,15 @@ Decisions: monster HP visibility is a GM setting; Grimsheet's tracker is primary
 - **Toolbar**: Undo button (tooltip names the change; Ctrl/Cmd+Z, Ctrl+Shift+Z or Ctrl+Y to redo outside text fields) and ▾ Recent changes: the last 12 with how long ago; tapping one undoes it and everything after it; Redo at the top. A level-up undone this way also clears its banner.
 - **Kept** in the browser (`grimsheet.history.v1`, 40 steps per character, about 400 kB in all); a new change clears redo.
 
+### Built in v2.7: Campaign notes
+Decisions: a party journal anyone can edit; its own view; typed entries.
+- **Notes view** for everyone: Sheet / (Encounter) / Notes in the toolbar. One campaign per Owlbear room (or one locally outside Owlbear), with a name anyone can change.
+- **Typed notes**: NPC (status Friendly / Neutral / Hostile / Dead), Place, Quest (Open / Done / Failed), Item, Note; title, text (up to 8,000 characters), tags, pin. Links between notes with `[[Title]]`; a link to a missing title shows dotted.
+- **Finding things**: search across titles, text, tags and status; filters by type and Pinned with counts; tag chips; an "Open quests" bar; cards grouped by type, newest first; a card opens full width with author, time and actions. Tapping a status chip moves it to the next status.
+- **Sharing**: "The party" notes go to everyone in the room (`com.grimsheet/notes`: `up`, `del`, `name`, `hello`); anyone can edit; the newest edit wins; deletions are remembered (tombstones). "Only me" notes stay in that browser; for the GM they are "hidden from players" and can be revealed later ("Share with the party" for players). A player opening Grimsheet sends what they have; others (panel or background page) send anything newer after a short random wait, skipping what someone else already sent, so people who missed a session catch up.
+- **Storage**: `grimsheet.campaign.v1` per room; background pages keep the journal up to date while panels are closed.
+- **Export**: Markdown of all visible notes, a JSON backup, and import of a backup (shared notes in it are sent to the room).
+
 ### Roadmap
 Ordered by when it gets built. Priority applies inside a goal.
 
@@ -329,7 +338,7 @@ Ordered by when it gets built. Priority applies inside a goal.
 - *Done (v2.6):* **Undo button** (see above).
 
 **Mid to long goal**
-- **Campaign notes and session log.** Notes per campaign and per session, and an automatic log of rolls, damage, conditions and loot during a session, giving a recap at the end.
+- *Done (v2.7):* **Campaign notes** (see above). The automatic session log and recap were dropped from the plan.
 
 **Long goal**
 - **Keep characters safe across devices.** Characters are kept on a sync service instead of only in one browser, so they survive a new device, a cleared browser, or Owlbear keeping its own browser storage. Works offline and syncs when back online; existing characters move over on first sign-in.
