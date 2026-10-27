@@ -1,6 +1,6 @@
 {
   "name": "Grimsheet",
-  "version": "1.13.0",
+  "version": "1.14.0",
   "manifest_version": 1,
   "author": "Ben",
   "description": "Modular D&D 5e sheet with monsters and initiative. Rolls, party HP, token Stat Bubbles and turn order stay in sync.",

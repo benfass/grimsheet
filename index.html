@@ -312,6 +312,15 @@ select.ed-inline{width:auto}
 .etab .dot{width:8px;height:8px;border-radius:50%;background:var(--ok);flex:none}
 .etab.add{border-style:dashed;color:var(--muted)}
 .enc-manage{display:inline-flex;align-items:center;gap:4px;margin-left:6px}
+.nm-row{display:flex;align-items:center;gap:4px;min-width:0}
+.ico.locate{width:26px;height:26px;padding:4px;color:var(--accent);vertical-align:middle}
+.ico.locate svg{width:16px;height:16px}
+[data-dblfocus]{cursor:zoom-in}
+.btn.tgtmini{display:inline-flex;align-items:center;gap:4px;max-width:150px;padding-inline:8px}
+.btn.tgtmini svg{width:13px;height:13px;flex:none}
+.btn.tgtmini span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.btn.tgtmini.on{border-color:var(--accent);color:var(--accent)}
+.mhead .btn.tgtmini{font-size:.75rem;min-height:24px}
 .tray .fu{display:flex;gap:6px;flex-wrap:wrap;margin-top:3px}
 .badge{font-size:.7rem;letter-spacing:.08em;font-weight:700;padding:0 6px;border-radius:4px;background:var(--gold-soft);color:var(--gold)}
 .badge.red{background:var(--danger-soft);color:var(--danger)}
@@ -2523,7 +2532,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.13.0';
+const APP_VERSION = '1.14.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -2540,6 +2549,7 @@ function applyPanelSize() {
 }
 
 const ICON = {
+  locate: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="4.5"/><path d="M8 1v2.5M8 12.5V15M1 8h2.5M12.5 8H15"/><circle cx="8" cy="8" r="1.2" fill="currentColor" stroke="none"/></svg>',
   undo: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4 2.5 7l3 3"/><path d="M2.5 7h7a4 4 0 0 1 0 8H7"/></svg>',
   area: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6" stroke-dasharray="2.2 1.6"/><circle cx="8" cy="8" r="1.6" fill="currentColor" stroke="none"/></svg>',
   target: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="2"/><path d="M8 0.5v3M8 12.5v3M0.5 8h3M12.5 8h3"/></svg>',
@@ -2922,7 +2932,7 @@ async function refreshLinks(items) {
   const before = OBRX.links.length, cid = C().id;
   OBRX.otherLinks = items.filter(it => it.metadata && it.metadata[LINK] && it.metadata[LINK].player === OBRX.me.id && it.metadata[LINK].char !== cid).map(it => it.metadata[LINK].name || 'another character');
   OBRX.links = items.filter(it => it.metadata && it.metadata[LINK] && it.metadata[LINK].player === OBRX.me.id && it.metadata[LINK].char === cid).map(it => ({ id: it.id, name: it.name, b: it.metadata[BUBBLES] || null }));
-  paintLink();
+  paintLink(); if (OBRX.links.length !== before && !gmMode()) renderTop();
   if (ui.target) { clearTimeout(OBRX.distT); OBRX.distT = setTimeout(updateTargetDistance, 300); }
   if (OBRX.links.length > before) syncTokens(statusOf(C()));
 }
@@ -2931,7 +2941,7 @@ function linkHtml() {
   if (!OBRX.ready) return '<span class="muted">Connecting to Owlbear…</span>';
   const n = OBRX.links.length;
   if (!n && (OBRX.otherLinks || []).length) return `<span class="muted">Your token in this scene is linked to <b>${esc(OBRX.otherLinks[0])}</b>, not to ${esc(C().name)}. Switch to that character in Characters, or link the token again.</span>`;
-  return n ? `<span class="chip tag-action">Token linked</span> <span class="muted">${n > 1 ? n + ' tokens in this scene follow' : 'Your token follows'} your HP, AC and initiative.</span>`
+  return n ? `<span class="chip tag-action">Token linked</span> ${locateBtn('focus', 'data-v="me"', 'Find my token on the map')} <span class="muted">${n > 1 ? n + ' tokens in this scene follow' : 'Your token follows'} your HP, AC and initiative.</span>`
     : OBRX.me.role === 'GM' ? '<span class="muted">As GM, right-click any character token and choose <b>Grimsheet</b> to link it to a player, deal damage or healing, or open their sheet.</span>'
     : '<span class="muted">Not linked to a token. Right-click your token in Owlbear and choose <b>Link to my Grimsheet character</b>.</span>';
 }
@@ -2984,7 +2994,8 @@ function partyMembers() {
   if (!others.length) return '<div class="empty">Nobody else in this room has Grimsheet open yet. Party members appear here as soon as they do.</div>';
   return others.map(p => {
     const s = p.s, pct = s.max ? Math.max(0, Math.min(100, s.hp / s.max * 100)) : 0;
-    return `<div class="entry"><div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap"><b>${esc(s.char)}</b><span class="muted" style="font-size:.85rem">${esc(p.name)}${p.role === 'GM' ? ' · GM' : ''}${s.cls ? ' · ' + esc(s.cls) : ''}${s.level ? ' ' + esc(s.level) : ''}</span></div>
+    const ptok = (OBRX.pcTokens[p.id] || []).length;
+    return `<div class="entry"><div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap"><b ${ptok ? `data-dblfocus="pc|${esc(p.id)}" title="Double-click to find their token"` : ''}>${esc(s.char)}</b>${ptok ? locateBtn('focus', `data-v="pc|${esc(p.id)}"`, 'Find their token on the map') : ''}<span class="muted" style="font-size:.85rem">${esc(p.name)}${p.role === 'GM' ? ' · GM' : ''}${s.cls ? ' · ' + esc(s.cls) : ''}${s.level ? ' ' + esc(s.level) : ''}</span></div>
       <div class="inline" style="margin-top:4px"><span class="pool">${esc(s.hp)}<small>/${esc(s.max)} HP</small></span>${s.temp ? `<span class="temp">+${esc(s.temp)}</span>` : ''}<span class="chip">AC ${esc(s.ac)}</span>${s.dead ? '<span class="chip" style="color:var(--danger);border-color:var(--danger)">Dead</span>' : s.down ? '<span class="chip" style="color:var(--danger);border-color:var(--danger)">Down</span>' : ''}${(s.cond || []).map(k => `<span class="chip" style="color:var(--danger);border-color:var(--danger)">${esc(k)}</span>`).join('')}${s.conc ? `<span class="chip conc">◉ ${esc(s.conc)}</span>` : ''}</div>
       <div class="hpbar" style="margin-top:6px"><i class="${pct < 25 ? 'low' : pct < 55 ? 'mid' : ''}" style="width:${pct}%"></i></div>
       ${OBRX.me.role === 'GM' && s.charId ? `<div class="inline" style="margin-top:6px"><input class="qm" id="gmhp-${esc(p.id)}" data-qm="gmhp" data-player="${esc(p.id)}" data-char="${esc(s.charId)}" data-name="${esc(s.char)}" style="width:104px" placeholder="−12 or +8" aria-label="Damage or heal ${esc(s.char)}"><button class="btn small" data-act="gmview" data-player="${esc(p.id)}" data-char="${esc(s.charId)}" data-name="${esc(s.char)}" data-owner="${esc(p.name)}">View sheet</button></div>` : ''}</div>`;
@@ -3369,7 +3380,7 @@ function renderEncounter() {
     return `<div class="irow ${r.k === cur ? 'cur' : ''} ${r.kind === 'mon' && r.members.every(m => m.hp <= 0) ? 'down' : ''}" data-row="${esc(r.k)}">
       <input class="ed-inline ini" id="ini-${esc(r.k)}" data-ini="${esc(r.k)}" value="${r.init ?? ''}" placeholder="–" aria-label="Initiative for ${esc(r.name)}" inputmode="numeric">
       <button class="iname" data-act="turnto" data-v="${esc(r.k)}" title="Make it this one's turn">${r.kind === 'pc' ? '<span class="chip tag-action">PC</span> ' : ''}${esc(r.name)}${r.kind === 'pc' && r.pc.owner ? ` <span class="muted">${esc(r.pc.owner)}</span>` : ''}</button>
-      <span class="ihp mono muted">${esc(hp)}</span>
+      <span class="ihp mono muted">${esc(hp)}</span>${IN_OBR && rowTokenIds(r).length ? locateBtn('focus', `data-v="row|${esc(r.k)}"`, 'Find on the map') : ''}
       ${r.kind === 'pc' ? `<button class="ico" data-act="pcdel" data-v="${esc(r.k)}" title="Remove from initiative">✕</button>` : ''}
     </div>${r.k === cur && ui.turnNote && ui.turnNote.k === r.k ? `<div class="iturn">${esc(ui.turnNote.text)}</div>` : ''}`;
   }).join('')}</div>` : '<div class="empty">Add monsters with “+ Monsters”' + (IN_OBR ? ', or right-click tokens on the map and choose Grimsheet → make them monsters.' : '.') + ' Players are added from the Party when combat starts.</div>';
@@ -3409,7 +3420,7 @@ function monCard(m, cur) {
       ${t.hpDice ? `<button class="btn small" data-act="monrollhp" data-id="${m.id}">Roll HP (${esc(t.hpDice)})</button>` : ''}
     </div>` : '';
   return `<section class="mcard ${isCur ? 'cur' : ''} ${m.hp <= 0 ? 'down' : ''} ${ui.monFocus === m.id ? 'focus' : ''}" data-inst="${m.id}">
-    <div class="mhead"><b class="mtitle">${esc(m.name)}</b><span class="chip">AC ${m.ac}</span>${tok ? `<span class="chip tag-action" title="Linked to ${tok} token${tok > 1 ? 's' : ''}">Token</span>` : ''}
+    <div class="mhead"><b class="mtitle" data-dblfocus="mon|${m.id}" title="${tok ? 'Double-click to find its token' : ''}">${esc(m.name)}</b><span class="chip">AC ${m.ac}</span>${tok ? `<span class="chip tag-action" title="Linked to ${tok} token${tok > 1 ? 's' : ''}">Token</span>${locateBtn('focus', `data-v="mon|${m.id}"`, 'Find its token on the map')}` : ''}${IN_OBR ? tgtMini() : ''}
       <span style="flex:1"></span>
       <button class="ico" data-act="monedit" data-id="${m.id}" title="Edit name, HP, AC">${ICON.edit}</button>
       <button class="ico" data-act="monopen" data-id="${m.id}" title="${open ? 'Hide' : 'Show'} stat block">${open ? ICON.chev : ICON.chevR}</button>
@@ -3487,6 +3498,7 @@ async function onSelection(sel) {
   if (OBRX.me.role !== 'GM' && myTokenIds().includes(id)) return;
   let it; try { [it] = await OBRX.api.scene.items.getItems([id]); } catch (e) { return; }
   if (!isCreature(it)) return;
+  if (OBRX.me.role !== 'GM') { const fogged = await fogTest(); let c = it.position; try { c = (await OBRX.api.scene.items.getItemBounds([it.id])).center; } catch (e) { } if (fogged(c)) return; }
   setTarget(it);
 }
 function setTarget(it) {
@@ -3506,11 +3518,11 @@ function targetChipHtml() {
   return t ? `<button class="btn tgt on" data-act="tgtpick" title="Attacks and damage go against this token. Select another token on the map to change it.">${ICON.target}<span class="tg-n">${esc(t.name)}</span>${t.dist ? `<span class="tg-d">${esc(t.dist)}</span>` : ''}</button><button class="ico" data-act="tgtclear" title="Clear target" aria-label="Clear target">✕</button>`
     : `<button class="btn tgt" data-act="tgtpick" title="Select a token on the map, or pick one here, and your attacks go against it">${ICON.target}<span class="tg-n">No target</span></button>`;
 }
-function paintTarget() { const n = document.getElementById('tgtwrap'); if (n) n.innerHTML = targetChipHtml(); }
+function paintTarget() { const n = document.getElementById('tgtwrap'); if (n) n.innerHTML = targetChipHtml(); document.querySelectorAll('.tgtmini').forEach(b => { b.outerHTML = tgtMini(); }); }
 async function openTargetPicker() {
   openModal('targets', { loading: true });
   let items = [];
-  try { items = (await OBRX.api.scene.items.getItems(isCreature)).filter(it => OBRX.me.role === 'GM' || !myTokenIds().includes(it.id)); } catch (e) { }
+  try { items = OBRX.me.role === 'GM' ? await OBRX.api.scene.items.getItems(isCreature) : await visibleCreatures(myTokenIds()); } catch (e) { }
   const from = myTokenIds()[0];
   const rows = await Promise.all(items.map(async it => { OBRX.tokCache[it.id] = it; const d = from && OBRX.me.role !== 'GM' ? await tokenDistance(from, it.id) : null; return { id: it.id, name: tokenLabel(it), dist: d ? d.label : '', ft: d ? d.ft : 1e9, kind: it.metadata && it.metadata[MONLINK] ? 'Monster' : it.metadata && it.metadata[LINK] ? 'Character' : '' }; }));
   rows.sort((a, b) => a.ft - b.ft || a.name.localeCompare(b.name));
@@ -3708,6 +3720,90 @@ function rollQueuedSave(id) {
   });
 }
 
+/* ---------- FIND TOKENS and FOG OF WAR ---------- */
+// Double-click a name (or use the ◎ button) to pan the map to that creature's token and select it.
+async function focusTokens(ids, select = true) {
+  if (!IN_OBR || !OBRX.ready) return;
+  if (!ids || !ids.length) { toast('No token on the map is linked to that yet.'); return; }
+  const api = OBRX.api, bs = (await Promise.all(ids.map(id => api.scene.items.getItemBounds([id]).catch(() => null)))).filter(Boolean);
+  if (!bs.length) { toast('That token isn\'t in this scene.'); return; }
+  let dpi = 150; try { dpi = await api.scene.grid.getDpi(); } catch (e) { }
+  const pad = dpi * 4, min = { x: Math.min(...bs.map(b => b.min.x)) - pad, y: Math.min(...bs.map(b => b.min.y)) - pad }, max = { x: Math.max(...bs.map(b => b.max.x)) + pad, y: Math.max(...bs.map(b => b.max.y)) + pad };
+  const B = { min, max, width: max.x - min.x, height: max.y - min.y, center: { x: (min.x + max.x) / 2, y: (min.y + max.y) / 2 } };
+  try { await api.viewport.animateToBounds(B); } catch (e) { }
+  if (select) api.player.select(ids).catch(() => { });
+}
+const locateBtn = (act, attrs, title) => `<button class="ico locate" data-act="${act}" ${attrs} title="${esc(title)}" aria-label="${esc(title)}">${ICON.locate}</button>`;
+function focusRef(ref) {
+  const [k, v] = String(ref).split('|');
+  if (k === 'me') return focusTokens(myTokenIds());
+  if (k === 'mon') return focusTokens((OBRX.monTokens[v] || []).map(i => i.id), OBRX.me.role === 'GM');
+  if (k === 'pc') return focusTokens((OBRX.pcTokens[v] || []).map(i => i.id), OBRX.me.role === 'GM' || v === OBRX.me.id);
+  if (k === 'row') { const r = initRows().find(x => x.k === v); if (r) return focusTokens(rowTokenIds(r), true); }
+  if (k === 'tok') return focusTokens([v], OBRX.me.role === 'GM');
+}
+document.addEventListener('dblclick', ev => {
+  const el = ev.target.closest && ev.target.closest('[data-dblfocus]'); if (!el || !IN_OBR) return;
+  if (/^(input|textarea|select)$/i.test(ev.target.tagName)) return;
+  ev.preventDefault(); const sel = window.getSelection && window.getSelection(); if (sel) sel.removeAllRanges();
+  focusRef(el.dataset.dblfocus);
+});
+// tokens a player can't see: hidden by the GM, or under the scene's fog (drawn fog shapes and their cut-outs)
+function pathPolys(it) {
+  if (it.type === 'CURVE' || it.type === 'LINE') return [it.points || [it.startPosition, it.endPosition]];
+  if (it.type === 'SHAPE') {
+    const w = it.width || 0, h = it.height || 0;
+    if (it.shapeType === 'CIRCLE' || it.shapeType === 'HEXAGON') return [Array.from({ length: 24 }, (_, i) => ({ x: w / 2 * Math.cos(Math.PI * i / 12), y: h / 2 * Math.sin(Math.PI * i / 12) }))];
+    return [[{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }]];
+  }
+  if (it.type === 'PATH') {
+    const polys = []; let cur = null;
+    for (const c of it.commands || []) {
+      const op = c[0], a = c.slice(1);
+      if (op === 0) { cur = [{ x: a[0], y: a[1] }]; polys.push(cur); }
+      else if (op === 5) cur = null;
+      else if (cur && a.length >= 2) cur.push({ x: a[a.length - 2], y: a[a.length - 1] }); // the end point of lines and curves
+    }
+    return polys.filter(p => p.length > 2);
+  }
+  return [];
+}
+function inPolys(it, p, polys) {
+  const r = -(it.rotation || 0) * Math.PI / 180, sc = it.scale || { x: 1, y: 1 };
+  const dx = p.x - it.position.x, dy = p.y - it.position.y;
+  const x = (dx * Math.cos(r) - dy * Math.sin(r)) / (sc.x || 1), y = (dx * Math.sin(r) + dy * Math.cos(r)) / (sc.y || 1);
+  let inside = false;
+  for (const P of polys) for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const a = P[i], b = P[j]; if (((a.y > y) !== (b.y > y)) && x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) inside = !inside; }
+  return inside;
+}
+async function fogTest() {
+  if (!IN_OBR || !OBRX.ready || OBRX.me.role === 'GM') return () => false;
+  try {
+    const api = OBRX.api, fog = await api.scene.items.getItems(it => it.layer === 'FOG' && it.visible !== false);
+    let filled = false; try { filled = !!(api.scene.fog && await api.scene.fog.getFilled()); } catch (e) { }
+    if (!fog.length && !filled) return () => false;
+    const shapes = fog.map(it => ({ it, polys: pathPolys(it) }));
+    // with "fill" on, the whole map is fogged and the shapes reveal; otherwise the shapes hide
+    return p => { const inside = shapes.some(s => inPolys(s.it, p, s.polys)); return filled ? !inside : inside; };
+  } catch (e) { return () => false; }
+}
+async function visibleCreatures(exclude = []) {
+  const api = OBRX.api, toks = (await api.scene.items.getItems(isCreature)).filter(t => !exclude.includes(t.id));
+  const fogged = await fogTest();
+  const out = [];
+  await Promise.all(toks.map(async t => {
+    let c = t.position;
+    try { c = (await api.scene.items.getItemBounds([t.id])).center; } catch (e) { }
+    if (!fogged(c)) out.push(t);
+  }));
+  return out;
+}
+function tgtMini() {
+  if (!IN_OBR || !OBRX.ready || ui.viewing) return '';
+  const t = ui.target;
+  return `<button class="btn small tgtmini ${t ? 'on' : ''}" data-act="tgtpick" title="${t ? 'Target: ' + esc(t.name) + '. Tap to change.' : 'Choose a target: tap here, or select a token on the map'}">${ICON.target}<span>${t ? esc(t.name) : 'Target'}</span></button>`;
+}
+
 /* ---------- AREAS: spell and breath templates on the map ---------- */
 // "Place area" draws the shape (sphere, cube, cone, line, emanation) on the map from the caster's token
 // toward the target, lists the creatures inside and sends a card to the GM. The damage roll joins the
@@ -3772,7 +3868,7 @@ function inArea(item, p, tol) {
 // creatures whose space (any grid square of it) has its centre inside the area
 async function creaturesIn(item, exclude = []) {
   const api = OBRX.api, dpi = await api.scene.grid.getDpi();
-  const toks = (await api.scene.items.getItems(isCreature)).filter(t => !exclude.includes(t.id));
+  const toks = OBRX.me.role === 'GM' ? (await api.scene.items.getItems(isCreature)).filter(t => !exclude.includes(t.id)) : await visibleCreatures(exclude);
   const out = [];
   await Promise.all(toks.map(async t => {
     let b; try { b = await api.scene.items.getItemBounds([t.id]); } catch (e) { return; }
@@ -4162,7 +4258,7 @@ function renderGmParty() {
     const s = p.s, pct = s.max ? Math.max(0, Math.min(100, s.hp / s.max * 100)) : 0, d = s.death || { s: 0, f: 0 };
     const state = s.dead ? '<span class="chip bad">Dead</span>' : s.down ? `<span class="chip bad">Down</span><span class="muted mono" title="Death saves">✓${d.s} ✗${d.f}</span>` : s.hp <= s.max / 2 ? '<span class="chip warn">Bloodied</span>' : '';
     return `<section class="pcard ${s.down ? 'down' : ''}">
-      <div class="pc-h"><b>${esc(s.char)}</b><span class="muted">${esc(p.name)}${s.cls ? ' · ' + esc(s.cls) : ''}${s.level ? ' ' + esc(s.level) : ''}</span></div>
+      <div class="pc-h"><b ${(OBRX.pcTokens[p.id] || []).length ? `data-dblfocus="pc|${esc(p.id)}" title="Double-click to find their token"` : ''}>${esc(s.char)}${(OBRX.pcTokens[p.id] || []).length ? ' ' + locateBtn('focus', `data-v="pc|${esc(p.id)}"`, 'Find their token on the map') : ''}</b><span class="muted">${esc(p.name)}${s.cls ? ' · ' + esc(s.cls) : ''}${s.level ? ' ' + esc(s.level) : ''}</span></div>
       <div class="inline"><span class="pool">${esc(s.hp)}<small>/${esc(s.max)}</small></span>${s.temp ? `<span class="temp">+${esc(s.temp)}</span>` : ''}<span class="chip">AC ${esc(s.ac)}</span>${state}</div>
       <div class="hpbar"><i class="${pct < 25 ? 'low' : pct < 55 ? 'mid' : ''}" style="width:${pct}%"></i></div>
       ${(s.cond || []).length || s.conc ? `<div class="inline">${(s.cond || []).map(k => `<span class="chip bad">${esc(k)}</span>`).join('')}${s.conc ? `<span class="chip conc">◉ ${esc(s.conc)}</span>` : ''}</div>` : ''}
@@ -4993,7 +5089,7 @@ function renderTop() {
       <input id="f-cls" data-bind="cls" value="${esc(c.cls)}" placeholder="Class" style="width:170px" aria-label="Class">
       <label class="muted">Lvl <input id="f-level" data-bind="level" data-num value="${esc(c.level)}" style="width:46px" aria-label="Level"></label>
       <label class="muted">Prof <input id="f-prof" data-bind="profOverride" value="${esc(c.profOverride)}" placeholder="+${profBonus(c)}" style="width:46px" title="Leave empty for automatic"></label></div>`
-      : `<span class="nm">${esc(c.name)}</span><span class="sub">${esc(sub)} · Proficiency ${signed(profBonus(c))}${!ui.viewing && (+c.level || 1) < 20 ? ' <button class="lvlup" data-act="levelup" title="Level up: hit points, new features, ability scores and spell slots">Level up</button>' : ''}</span>`}
+      : `<span class="nm-row"><span class="nm" ${IN_OBR && OBRX.links.length ? 'data-dblfocus="me" title="Double-click to find your token"' : ''}>${esc(c.name)}</span>${IN_OBR && OBRX.links.length && !ui.viewing ? locateBtn('focus', 'data-v="me"', 'Find my token on the map') : ''}</span><span class="sub">${esc(sub)} · Proficiency ${signed(profBonus(c))}${!ui.viewing && (+c.level || 1) < 20 ? ' <button class="lvlup" data-act="levelup" title="Level up: hit points, new features, ability scores and spell slots">Level up</button>' : ''}</span>`}
     </div>
     <div class="tools">
       <div class="seg adv" role="group" aria-label="Advantage">
@@ -5228,6 +5324,7 @@ function entryRow(e, m, compact) {
   }
   if (e.spell && +e.spell.level > 0 && m.type === 'spells' && !compact) acts += `<button class="btn small primary" data-act="cast" data-id="${e.id}">Cast</button>`;
   else if (e.spell && +e.spell.level > 0 && compact) acts += `<button class="btn small primary" data-act="cast" data-id="${e.id}">Cast</button>`;
+  if (IN_OBR && !ui.viewing && (e.attack || (e.save && e.damage.length && !isHealing(e)) || areaOfEntry(e))) acts += tgtMini();
   if (e.attack) { const l = staticLabel(attackComps(e)); acts += `<button class="roll hit" data-act="atk" data-id="${e.id}" title="Roll to hit${+e.attack.crit < 20 ? ' · crits on ' + e.attack.crit + '–20' : ''}">${l.text} hit</button>`; }
   if (e.damage.length) { const heal = isHealing(e); acts += `<button class="roll ${heal ? 'heal' : 'dmg'}" data-act="dmg" data-id="${e.id}">${esc(dmgLabel(e))} ${esc(heal ? 'heal' : (e.damage.map(p => p.type).filter(Boolean).join('/') || 'dmg'))}</button>`; }
   if (e.save) acts += `<button class="chip dc" data-act="explain" data-v="save" data-id="${e.id}" title="How the DC is worked out">DC ${dcValue(e)} ${esc(e.save.ability)}</button>`;
@@ -5811,6 +5908,7 @@ document.addEventListener('click', ev => {
     case 'saveroll': rollPromptedSave(id); break;
     case 'savedrop': writeSaves(readSaves().filter(x => x.id !== id)); renderAtkQueue(); break;
     case 'levelup': openLevelUp(); break;
+    case 'focus': focusRef(v); break;
     case 'encsel': ui.encSel = v === encs().active ? null : v; ui.encRen = null; renderGrid(); paintUndo(); break;
     case 'encnew': { const r = encs(), x = blankEnc(); x.id = uid(); x.name = 'Encounter ' + (r.order.length + 1); r.list[x.id] = x; r.order.push(x.id); ui.encSel = x.id; ui.encRen = x.id; saveEnc({ quiet: true }); renderGrid(); const n = $('#enc-name'); if (n) { n.focus(); n.select(); } break; }
     case 'encren': ui.encRen = enc().id; renderGrid(); { const n = $('#enc-name'); if (n) { n.focus(); n.select(); } } break;
