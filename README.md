@@ -26,6 +26,7 @@ Characters are saved in each player's own browser. Nothing is uploaded and this 
 ## Owlbear Rodeo features
 
 - **Level up** (button next to your level): pick the class (or multiclass into a new one), take average or roll hit points, get the new class and subclass features with their SRD text, choose an Ability Score Improvement, feat or Epic Boon, and see your spell slots update. One tap undoes the whole level. Works with homebrew classes too.
+- **Undo:** the Undo button (or Ctrl+Z) takes back the last change: HP, a spent slot or use, a condition, an edit, a whole level-up. ▾ shows recent changes in plain words; tap one to go back to before it. Redo is there too.
 - **Share rolls** with everyone, with the GM only, or not at all (Settings). Notifications arrive even while your Grimsheet panel is closed.
 - **Table** tab in roll history with everyone's shared rolls.
 - **Rerolls:** features like Lucky, Heroic Inspiration, Halfling Luck or Savage Attacker get a reroll tag (found automatically in pasted text, or set in the editor). After a matching roll, a reroll button appears on the dice and in the roll bar; it spends a use and recomputes the total. Rerolls are always announced, to the table or at least to the GM, and show up on the GM's attack cards.

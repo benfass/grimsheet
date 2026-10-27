@@ -271,6 +271,12 @@ select.ed-inline{width:auto}
 .lu-slots{display:flex;flex-wrap:wrap;gap:6px}
 .lu-slot{border:1px solid var(--line);border-radius:6px;padding:2px 8px;font-size:.85rem}
 .lu-slot.chg{border-color:var(--accent);color:var(--accent)}
+.seg.undo button{display:inline-flex;align-items:center;gap:5px}
+.seg.undo button svg{width:14px;height:14px}
+.seg.undo button:disabled{opacity:.45;cursor:default}
+.pop .hist{display:flex;flex-direction:column;max-height:320px;overflow:auto;margin-top:4px}
+.pop .hist .opt{display:flex;justify-content:space-between;gap:10px;text-align:left}
+.pop .hist .opt .muted{white-space:nowrap;font-size:.78rem}
 .tray .fu{display:flex;gap:6px;flex-wrap:wrap;margin-top:3px}
 .badge{font-size:.7rem;letter-spacing:.08em;font-weight:700;padding:0 6px;border-radius:4px;background:var(--gold-soft);color:var(--gold)}
 .badge.red{background:var(--danger-soft);color:var(--danger)}
@@ -2482,7 +2488,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.9.0';
+const APP_VERSION = '1.10.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -2499,6 +2505,7 @@ function applyPanelSize() {
 }
 
 const ICON = {
+  undo: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4 2.5 7l3 3"/><path d="M2.5 7h7a4 4 0 0 1 0 8H7"/></svg>',
   area: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6" stroke-dasharray="2.2 1.6"/><circle cx="8" cy="8" r="1.6" fill="currentColor" stroke="none"/></svg>',
   target: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="2"/><path d="M8 0.5v3M8 12.5v3M0.5 8h3M12.5 8h3"/></svg>',
   edit: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 2.5l2.5 2.5L6 12.5H3.5V10z"/></svg>',
@@ -2696,7 +2703,7 @@ function load() {
   const c = sampleChar(); return { chars: { [c.id]: c }, active: c.id };
 }
 let saveT = null;
-function save() { if (ui.viewing) return; const ch = store.chars[store.active]; if (ch) ch.changedAt = Date.now(); clearTimeout(saveT); saveT = setTimeout(() => { if (IN_OBR) publishStatus(); try { localStorage.setItem(KEY, JSON.stringify(store)); storageOK = true; } catch (e) { if (storageOK) { storageOK = false; renderBanner(); } } }, 250); }
+function save() { if (ui.viewing) return; const ch = store.chars[store.active]; if (ch) ch.changedAt = Date.now(); try { histRecord(); } catch (e) { } clearTimeout(saveT); saveT = setTimeout(() => { if (IN_OBR) publishStatus(); try { localStorage.setItem(KEY, JSON.stringify(store)); storageOK = true; } catch (e) { if (storageOK) { storageOK = false; renderBanner(); } } }, 250); }
 function loadLib() { try { return JSON.parse(localStorage.getItem(LIBKEY) || '[]'); } catch (e) { return []; } }
 function saveLib() { try { localStorage.setItem(LIBKEY, JSON.stringify(library)); } catch (e) { } }
 
@@ -2806,7 +2813,7 @@ window.addEventListener('storage', ev => {
     if (ui.modal && ui.modal.type === 'editor') { renderTop(); renderGrid(); } else render();
     if (IN_OBR) publishStatus();
     if (concOf() && C().hp.cur <= 0) endConc(concOf().name + ' ends: you dropped to 0 HP.');
-    renderAtkQueue();
+    renderAtkQueue(); try { histRecord(); } catch (e) { }
   } catch (e) { }
 });
 window.addEventListener('storage', ev => { if (ev.key && ev.key.startsWith('grimsheet.feed.') && ui.modal && ui.modal.type === 'log' && ui.logTab === 'table') renderModal(); });
@@ -3891,6 +3898,155 @@ function mergeSaveRes(list, d) {
   return list;
 }
 
+/* ---------- UNDO: per-character change history ---------- */
+// Every save is compared with the last known state of the character; what changed is kept as a step
+// (path, old, new). Quick repeats of the same change (typing, tapping a pool) become one step.
+const HISTKEY = 'grimsheet.history.v1', HIST_MAX = 40, GONE = { __gone: 1 };
+const HIST = (() => { const h = readJSON(HISTKEY); return { base: {}, undo: (h && h.undo) || {}, redo: (h && h.redo) || {}, t: null, pending: null }; })();
+const histSkip = p => /^(changedAt|lastBackup|levelUndo|createdAt|obrParty|example)$/.test(p[0]) || p[p.length - 1] === 'collapsed';
+const isObj = x => x && typeof x === 'object' && !Array.isArray(x);
+function deepDiff(a, b, path, out) {
+  if (path.length && histSkip(path)) return;
+  if (a === b) return;
+  if (path.length === 1 && path[0] === 'layout' && a == null) return; // the layout is created on first view
+  if (isObj(a) && isObj(b)) { for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) deepDiff(a[k], b[k], path.concat(k), out); return; }
+  if (Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => !(isObj(x) && isObj(b[i]) && x.id !== b[i].id))) { a.forEach((x, i) => deepDiff(x, b[i], path.concat(i), out)); return; }
+  if (JSON.stringify(a) === JSON.stringify(b)) return;
+  out.push([path, a === undefined ? GONE : clone(a), b === undefined ? GONE : clone(b)]);
+}
+function setAt(obj, path, v) {
+  let o = obj; for (let i = 0; i < path.length - 1; i++) { if (o[path[i]] == null) o[path[i]] = typeof path[i + 1] === 'number' ? [] : {}; o = o[path[i]]; }
+  const k = path[path.length - 1];
+  if (v && v.__gone) delete o[k]; else o[k] = clone(v);
+}
+function histLabel(c, ch) {
+  const out = [];
+  for (const [p, o, n] of ch) { const l = pathLabel(c, p, o, n); if (l && !out.includes(l)) out.push(l); }
+  const s = out.join(', '); return s.length > 90 ? s.slice(0, 87) + '…' : s || 'Change';
+}
+function pathLabel(c, p, o, n) {
+  const k = p.join('.'), num = x => (x && x.__gone ? '–' : x);
+  if (k === 'hp.cur') return `HP ${num(o)} → ${num(n)}`;
+  if (k === 'hp.temp') return `Temp HP ${num(o) || 0} → ${num(n) || 0}`;
+  if (k === 'hp.max') return `Max HP ${num(o)} → ${num(n)}`;
+  if (p[0] === 'slots') return p[2] === 'used' ? `${E.ordinal(+p[1])}-level slot ${n > o ? 'used' : 'back'}` : `${E.ordinal(+p[1])}-level slots ${num(o)} → ${num(n)}`;
+  if (p[0] === 'death') return 'Death saves';
+  if (p[0] === 'conditions') { const a = Array.isArray(o) ? o : [], b = Array.isArray(n) ? n : []; const add = b.filter(x => !a.includes(x)), rem = a.filter(x => !b.includes(x)); return [add.length ? '+' + add.join(', +') : '', rem.length ? '−' + rem.join(', −') : ''].filter(Boolean).join(' ') || 'Conditions'; }
+  if (k === 'exhaustion') return `Exhaustion ${num(o) || 0} → ${num(n) || 0}`;
+  if (p[0] === 'abilities') { const a = c.abilities[p[1]]; return p[2] === 'score' ? `${a ? a.key : 'Ability'} ${num(o)} → ${num(n)}` : p[2] === 'save' ? `${a ? a.key : ''} save proficiency` : 'Abilities'; }
+  if (p[0] === 'skills') { const s = c.skills[p[1]]; return `${s ? s.name : 'Skill'} proficiency`; }
+  if (p[0] === 'conc') { const nn = c.conc; return nn && nn.name ? `Concentrating on ${nn.name}` : 'Concentration ended'; }
+  if (k === 'level') return `Level ${num(o)} → ${num(n)}`;
+  if (k === 'hdUsed') return n > o ? 'Hit die spent' : 'Hit dice back';
+  if (p[0] === 'currency') return `${String(p[1]).toUpperCase()} ${num(o)} → ${num(n)}`;
+  if (p[0] === 'modules') {
+    if (p.length === 1) return 'Modules';
+    const m = c.modules[p[1]];
+    if (p[2] === 'entries') {
+      if (p.length === 3) {
+        const on = (Array.isArray(o) ? o : []).map(e => e.name), nn = (Array.isArray(n) ? n : []).map(e => e.name);
+        const add = nn.filter(x => !on.includes(x)), rem = on.filter(x => !nn.includes(x));
+        return add.length ? 'Added ' + add.join(', ') : rem.length ? 'Removed ' + rem.join(', ') : 'Reordered ' + (m ? m.title : 'entries');
+      }
+      const e = m && m.entries[p[3]], nm = e ? e.name : 'entry', f = p.slice(4).join('.');
+      if (f === 'counter.used') return `${nm} ${n > o ? 'used' : 'back'} (${num(o)} → ${num(n)})`;
+      if (f === 'effect.active') return `${nm} ${n ? 'on' : 'off'}`;
+      if (f === 'item.equipped') return `${nm} ${n ? 'equipped' : 'unequipped'}`;
+      if (f === 'item.qty') return `${nm} ×${num(o)} → ×${num(n)}`;
+      if (f === 'creature.hp') return `${nm} HP ${num(o)} → ${num(n)}`;
+      if (f === 'pinned') return `${nm} ${n ? 'pinned' : 'unpinned'}`;
+      return 'Edited ' + nm;
+    }
+    if (p[2] === 'title') return 'Renamed ' + (m ? m.title : 'module');
+    return m ? 'Edited ' + m.title : 'Modules';
+  }
+  if (p[0] === 'layout' || p[0] === 'hidden') return 'Layout';
+  if (p[0] === 'notes') return 'Notes';
+  if (p[0] === 'classes') return '';
+  const NAMES = { name: 'Name', cls: 'Class', species: 'Species', acFormula: 'AC', speed: 'Speed', spellAbility: 'Spellcasting ability', classes: 'Classes', hitDie: 'Hit die', initBonus: 'Initiative bonus', profOverride: 'Proficiency' };
+  return NAMES[p[0]] ? NAMES[p[0]] + ' changed' : 'Changed ' + p[0];
+}
+function histEnsure() { const c = store.chars[store.active]; if (c && !ui.viewing && !HIST.base[c.id]) HIST.base[c.id] = clone(c); }
+function histRecord() {
+  if (ui.viewing) return; const id = store.active; if (!id) return;
+  if (HIST.pending && HIST.pending !== id) histCommit(HIST.pending);
+  HIST.pending = id; clearTimeout(HIST.t); HIST.t = setTimeout(() => histCommit(id), 300);
+}
+function histCommit(id) {
+  if (HIST.pending === id) { clearTimeout(HIST.t); HIST.pending = null; }
+  const c = store.chars[id]; if (!c) return;
+  const base = HIST.base[id], cur = clone(c);
+  if (!base) { HIST.base[id] = cur; return; }
+  const ch = []; deepDiff(base, cur, [], ch);
+  HIST.base[id] = cur;
+  if (!ch.length) return;
+  const u = HIST.undo[id] = HIST.undo[id] || [], last = u[u.length - 1];
+  const keys = ch.map(x => x[0].join('.')).sort().join('|');
+  if (last && Date.now() - last.at < 1500 && last.keys === keys) {
+    last.ch = last.ch.map(x => { const y = ch.find(z => z[0].join('.') === x[0].join('.')); return [x[0], x[1], y ? y[2] : x[2]]; });
+    last.at = Date.now(); last.label = histLabel(c, last.ch);
+    if (last.ch.every(x => JSON.stringify(x[1]) === JSON.stringify(x[2]))) u.pop();
+  } else u.push({ at: Date.now(), keys, ch, label: histLabel(c, ch) });
+  while (u.length > HIST_MAX) u.shift();
+  HIST.redo[id] = [];
+  persistHist(); paintUndo();
+}
+function persistHist() {
+  const data = { undo: {}, redo: {} };
+  for (const id of Object.keys(HIST.undo)) if (store.chars[id]) { data.undo[id] = HIST.undo[id]; data.redo[id] = HIST.redo[id] || []; }
+  let s = JSON.stringify(data);
+  while (s.length > 400000) {
+    const id = Object.keys(data.undo).sort((a, b) => JSON.stringify(data.undo[b]).length - JSON.stringify(data.undo[a]).length)[0];
+    if (!id || !data.undo[id].length) break; data.undo[id].shift(); s = JSON.stringify(data);
+  }
+  try { localStorage.setItem(HISTKEY, s); } catch (e) { }
+}
+function histStep(dir, n = 1) {
+  const c = C(); if (!c || ui.viewing) return;
+  if (HIST.pending) histCommit(HIST.pending);
+  const from = dir < 0 ? (HIST.undo[c.id] || []) : (HIST.redo[c.id] || []);
+  const to = dir < 0 ? (HIST.redo[c.id] = HIST.redo[c.id] || []) : (HIST.undo[c.id] = HIST.undo[c.id] || []);
+  const labels = [];
+  for (let k = 0; k < n && from.length; k++) {
+    const step = from.pop();
+    const list = dir < 0 ? step.ch.slice().reverse() : step.ch;
+    for (const [p, o, nv] of list) setAt(c, p, dir < 0 ? o : nv);
+    if (step.ch.some(x => x[0][0] === 'level')) c.levelUndo = null;
+    to.push(step); labels.push(step.label);
+  }
+  if (!labels.length) return;
+  normalize(c); HIST.base[c.id] = clone(c);
+  clearTimeout(saveT); save(); clearTimeout(HIST.t); HIST.pending = null; HIST.base[c.id] = clone(c);
+  persistHist(); render(); if (IN_OBR) publishStatus();
+  toast((dir < 0 ? 'Undone: ' : 'Redone: ') + labels.join('; ') + '.');
+}
+function paintUndo() {
+  const c = store.chars[store.active], u = c ? HIST.undo[c.id] || [] : [], b = document.getElementById('undo-btn');
+  if (!b) return;
+  b.disabled = !u.length; b.title = u.length ? 'Undo: ' + u[u.length - 1].label + ' (Ctrl+Z)' : 'Nothing to undo';
+}
+function undoHtml() {
+  if (ui.viewing) return '';
+  const c = C(), u = HIST.undo[c.id] || [];
+  return `<div class="seg undo" role="group" aria-label="Undo"><button id="undo-btn" data-act="undo" ${u.length ? '' : 'disabled'} title="${u.length ? esc('Undo: ' + u[u.length - 1].label + ' (Ctrl+Z)') : 'Nothing to undo'}">${ICON.undo}<span>Undo</span></button><button data-act="histmenu" title="Recent changes" aria-label="Recent changes">▾</button></div>`;
+}
+function ago(t) { const s = Math.round((Date.now() - t) / 1000); return s < 60 ? 'just now' : s < 3600 ? Math.round(s / 60) + ' min ago' : s < 86400 ? Math.round(s / 3600) + ' h ago' : Math.round(s / 86400) + ' d ago'; }
+function histMenuHtml() {
+  const c = C(), u = (HIST.undo[c.id] || []).slice().reverse().slice(0, 12), r = HIST.redo[c.id] || [];
+  return `<b style="font-family:var(--f-display)">Recent changes</b>
+    ${r.length ? `<button class="opt" data-act="redo">↷ Redo: ${esc(r[r.length - 1].label)}</button>` : ''}
+    <div class="hist">${u.length ? u.map((s, i) => `<button class="opt" data-act="histto" data-v="${i + 1}" title="Undo this and everything after it"><span>${esc(s.label)}</span><span class="muted">${ago(s.at)}</span></button>`).join('') : '<div class="muted" style="padding:6px 2px">No changes yet.</div>'}</div>
+    <div class="muted" style="font-size:.78rem;margin-top:4px">Tap a change to undo it and everything after it. Kept for each character in this browser.</div>`;
+}
+document.addEventListener('keydown', ev => {
+  if (!(ev.ctrlKey || ev.metaKey) || ev.altKey) return;
+  const t = ev.target, k = ev.key.toLowerCase();
+  if (k !== 'z' && k !== 'y') return;
+  if (t && (t.isContentEditable || /^(input|textarea|select)$/i.test(t.tagName)) || ui.modal) return;
+  ev.preventDefault();
+  if (k === 'y' || ev.shiftKey) histStep(1); else histStep(-1);
+});
+
 /* ---------- LEVEL UP ---------- */
 // Class tables for the SRD 5.2 classes: hit die, spellcasting, ability score levels, subclass level,
 // features by level and the SRD subclass. "Subclass feature" levels are filled from the subclass.
@@ -4466,7 +4622,7 @@ function rollDamage(e, crit, lvl) {
 }
 
 /* ---------- rendering ---------- */
-function render() { CTX = ctxFor(C()); renderTop(); renderBanner(); renderGrid(); renderTray(); renderAtkQueue(); }
+function render() { CTX = ctxFor(C()); try { histEnsure(); } catch (e) { } renderTop(); renderBanner(); renderGrid(); renderTray(); renderAtkQueue(); }
 
 function renderTop() {
   const c = C(), ed = ui.mode === 'edit';
@@ -4488,6 +4644,7 @@ function renderTop() {
       </div>
       ${IN_OBR && !ui.viewing ? `<span id="tgtwrap" class="tgtwrap">${targetChipHtml()}</span>` : ''}
       <div class="restbar"><button class="btn" data-act="rest" data-v="short">Short rest</button><button class="btn" data-act="rest" data-v="long">Long rest</button><button class="btn" data-act="rest" data-v="dawn" title="Reset anything that recharges at dawn">Dawn</button></div>
+      ${undoHtml()}
       <div class="seg" role="group" aria-label="Mode"><button data-act="mode" data-v="play" class="${!ed ? 'on' : ''}">Play</button><button data-act="mode" data-v="edit" class="${ed ? 'on' : ''}">Edit</button></div>
       <button class="btn" data-act="modal" data-v="chars">Characters</button>
       ${isGM() && !ui.viewing ? `<div class="seg" role="group" aria-label="View"><button data-act="setview" data-v="sheet" class="${SETTINGS.view !== 'encounter' ? 'on' : ''}">Sheet</button><button data-act="setview" data-v="encounter" class="${SETTINGS.view === 'encounter' ? 'on' : ''}">Encounter</button></div>` : ''}
@@ -5287,6 +5444,10 @@ document.addEventListener('click', ev => {
     case 'saveroll': rollPromptedSave(id); break;
     case 'savedrop': writeSaves(readSaves().filter(x => x.id !== id)); renderAtkQueue(); break;
     case 'levelup': openLevelUp(); break;
+    case 'undo': histStep(-1); break;
+    case 'redo': hidePop(); histStep(1); break;
+    case 'histmenu': showPop(el, histMenuHtml()); break;
+    case 'histto': hidePop(); histStep(-1, +v); break;
     case 'luroll': { const md = ui.modal, P = luPlan(md); const en = roll('Hit points for level ' + (+c.level + 1) + ' (d' + P.hd + ')', [{ f: '1d' + P.hd }]); md.roll = en.total; md.hp = 'roll'; renderModal(); break; }
     case 'ludo': applyLevelUp(ui.modal); break;
     case 'luundo': if (ui.confirm !== 'luundo') { ui.confirm = 'luundo'; el.textContent = 'Tap again to undo'; el.classList.add('danger'); setTimeout(() => { if (ui.confirm === 'luundo') { ui.confirm = null; renderBanner(); } }, 4000); break; } ui.confirm = null; undoLevelUp(); break;

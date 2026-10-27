@@ -1,6 +1,6 @@
-# D&D Character Sheet App — Product Spec (v1.7)
+# D&D Character Sheet App — Product Spec (v1.8)
 
-*Working name: Grimsheet. v0.2 recorded the platform decision and first build; v0.3 added the SRD 5.2 content pack and locked skill proficiency to Edit mode; v0.4 expanded the pack; v0.5 added PDF import and documented the saved character format; v0.6 replaced the grid with a row-and-column layout; v0.7 added dice animation and a Settings panel; v0.8 added the Owlbear Rodeo extension and a backup reminder; v0.9 added panel sizes and compact mode; v1.0 added the background page and token linking; v1.1 added GM tools; v1.2 added monsters, the Encounter view and initiative; v1.3 added attacks against a target on the map; v1.4 added rerolls; v1.5 added spell areas on the map; v1.6 added combat prompts; v1.7 adds the level-up wizard.*
+*Working name: Grimsheet. v0.2 recorded the platform decision and first build; v0.3 added the SRD 5.2 content pack and locked skill proficiency to Edit mode; v0.4 expanded the pack; v0.5 added PDF import and documented the saved character format; v0.6 replaced the grid with a row-and-column layout; v0.7 added dice animation and a Settings panel; v0.8 added the Owlbear Rodeo extension and a backup reminder; v0.9 added panel sizes and compact mode; v1.0 added the background page and token linking; v1.1 added GM tools; v1.2 added monsters, the Encounter view and initiative; v1.3 added attacks against a target on the map; v1.4 added rerolls; v1.5 added spell areas on the map; v1.6 added combat prompts; v1.7 added the level-up wizard; v1.8 adds undo.*
 
 ## 1. Vision
 
@@ -308,6 +308,12 @@ Decisions: monster HP visibility is a GM setting; Grimsheet's tracker is primary
 - **One dialog, numbered steps**: (1) which class gains the level, or a new class (multiclass); (2) hit points: average or a roll (the roll goes through the dice and is shared like any roll), plus CON and per-level bonuses found in the sheet's text (Dwarven Toughness, Tough); (3) new features, each added to Features with its SRD text when there is one, otherwise as a note to fill in; subclass choice at the subclass level; features that scale with LEVEL are listed as updating themselves; (4) Ability Score Improvement (+2 / +1 +1, capped at 20) or a feat (SRD feats or any name), and at 19 an Epic Boon (SRD boons, +1 up to 30); (5) spell slots before → after, from all caster classes together (half casters rounded up) plus pact slots; sets the spellcasting ability if empty. The button stays disabled until every choice is made.
 - **Undo**: the whole level is one change: a snapshot is kept (`c.levelUndo`), and a banner offers "Undo level-up" (tap twice) for 7 days or until dismissed; undoing also drops changes made after the level-up, and says so.
 
+### Built in v2.6: Undo
+- **History per character**: every save is compared with the character's last known state; what changed is kept as one step of `[path, old, new]` (arrays of entries/modules compared by id; added or removed items keep the whole list). Bookkeeping fields (changedAt, lastBackup, collapsed modules, the level-up snapshot, layout creation) are ignored. Repeating the same change within 1.5 s merges into one step (typing, tapping a pool). Changes arriving from another page (the background applying the GM's damage) are recorded too.
+- **Labels** in plain words: "HP 37 → 30", "+Poisoned", "Emberblood used (0 → 2)", "1st-level slot used", "STR 17 → 18", "Bless on", "Added Fireball", "Level 5 → 6, …".
+- **Toolbar**: Undo button (tooltip names the change; Ctrl/Cmd+Z, Ctrl+Shift+Z or Ctrl+Y to redo outside text fields) and ▾ Recent changes: the last 12 with how long ago; tapping one undoes it and everything after it; Redo at the top. A level-up undone this way also clears its banner.
+- **Kept** in the browser (`grimsheet.history.v1`, 40 steps per character, about 400 kB in all); a new change clears redo.
+
 ### Roadmap
 Ordered by when it gets built. Priority applies inside a goal.
 
@@ -320,7 +326,7 @@ Ordered by when it gets built. Priority applies inside a goal.
 
 **Mid goals**
 - *Done (v2.5):* **Level-up wizard** (see above).
-- **Undo button.** A per-character change history (HP, slots, resources, edits) with an undo button and a short list of recent changes.
+- *Done (v2.6):* **Undo button** (see above).
 
 **Mid to long goal**
 - **Campaign notes and session log.** Notes per campaign and per session, and an automatic log of rolls, damage, conditions and loot during a session, giving a recap at the end.
