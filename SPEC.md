@@ -1,6 +1,6 @@
-# D&D Character Sheet App — Product Spec (v1.5)
+# D&D Character Sheet App — Product Spec (v1.6)
 
-*Working name: Grimsheet. v0.2 recorded the platform decision and first build; v0.3 added the SRD 5.2 content pack and locked skill proficiency to Edit mode; v0.4 expanded the pack; v0.5 added PDF import and documented the saved character format; v0.6 replaced the grid with a row-and-column layout; v0.7 added dice animation and a Settings panel; v0.8 added the Owlbear Rodeo extension and a backup reminder; v0.9 added panel sizes and compact mode; v1.0 added the background page and token linking; v1.1 added GM tools; v1.2 added monsters, the Encounter view and initiative; v1.3 added attacks against a target on the map; v1.4 added rerolls; v1.5 adds spell areas on the map.*
+*Working name: Grimsheet. v0.2 recorded the platform decision and first build; v0.3 added the SRD 5.2 content pack and locked skill proficiency to Edit mode; v0.4 expanded the pack; v0.5 added PDF import and documented the saved character format; v0.6 replaced the grid with a row-and-column layout; v0.7 added dice animation and a Settings panel; v0.8 added the Owlbear Rodeo extension and a backup reminder; v0.9 added panel sizes and compact mode; v1.0 added the background page and token linking; v1.1 added GM tools; v1.2 added monsters, the Encounter view and initiative; v1.3 added attacks against a target on the map; v1.4 added rerolls; v1.5 added spell areas on the map; v1.6 adds combat prompts.*
 
 ## 1. Vision
 
@@ -294,6 +294,14 @@ Decisions: monster HP visibility is a GM setting; Grimsheet's tracker is primary
 - **Area card for the GM** (same queue as attack cards): caster → area, DC and save, damage (the damage roll joins it, rerolls included), and a row per creature: Roll save (monsters, with their save bonus), Ask (players get a notification and a "Roll DEX save" card; a normal save roll of that ability answers it too), or mark ✗/✓ by hand; damage per row is full, half or none. Buttons: roll all monster saves, ask all players, Recheck, Apply to all (heal all for healing areas), Remove area. Applying updates monsters, players' sheets and HP bubbles, removes an instantaneous area from the map, and tells the caster (hidden creatures left out of what the caster sees).
 - **Messages**: `type: 'atk'` with `part: 'area'` (targets, item, save, half), `saveReq` (GM → player), `saveRes` (player → GM). The background pages keep save requests (`grimsheet.saves.<room>`) and answers while panels are closed.
 
+### Built in v2.4: Combat prompts
+- **Concentration** (`c.conc = { id, name, at }`): casting a spell tagged Concentration, or switching on a concentration effect, starts it; the Combat module shows "Concentrating on Bless" with End, and the party (and GM) see it. Starting another concentration spell ends the first. Ending it switches its effect off and removes its area from the map.
+- **Concentration checks**: taking damage while concentrating (typed into HP, from the GM, an attack or an area) adds a prompt card: CON save, DC 10 or half the damage (at most 30), with Roll and Let it end. A failed roll ends the spell; a plain CON save roll answers the prompt too. Dropping to 0 HP ends it at once. Without the panel open, the background page adds the prompt and says so in the damage notification.
+- **Monsters**: "Concentrating" can be set on a monster card; damage rolls its CON save automatically (toast and a note on the card) and clears it on a failure or at 0 HP.
+- **Death saves**: when a downed player's turn starts (not stable, not dead), their panel shows "Your turn: you're down" with a Roll death save button; the background notification says so too.
+- **Turn reminders**: players get "Your turn!" with what to remember (down, concentrating, effects that are on, conditions) in the notification and the turn bar. The GM's tracker shows a note under the current row: monster conditions, a player who is down or concentrating, and any lasting area (Spirit Guardians, Cloudkill…) the creature starts its turn in.
+- Prompt cards share the save-request queue (`grimsheet.saves.<room>`, kinds `conc`, `death`, and the GM's save requests).
+
 ### Roadmap
 Ordered by when it gets built. Priority applies inside a goal.
 
@@ -301,7 +309,7 @@ Ordered by when it gets built. Priority applies inside a goal.
 - *Done (v2.1):* **Attacks against a target** (see above).
 - *Done (v2.3):* **Spell areas on the map** (see above).
 - *Low:* **Conditions on tokens.** Small markers on tokens for conditions and concentration, kept in step with the sheet and the monster cards.
-- *Low:* **Combat prompts.** A concentration check when a concentrating creature takes damage (DC 10 or half the damage, whichever is higher), a death save prompt when a downed player's turn starts, and turn reminders.
+- *Done (v2.4):* **Combat prompts** (see above).
 - *Low:* **Shared homebrew.** The GM shares a homebrew pack (items, spells, monsters) with the room and players add it in one click.
 
 **Mid goals**

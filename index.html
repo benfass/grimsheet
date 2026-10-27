@@ -252,6 +252,10 @@ select.ed-inline{width:auto}
 .atkc .chip.on-bad{background:var(--danger);color:var(--on-accent);border-color:var(--danger)}
 .btn.areab{display:inline-flex;align-items:center;gap:5px}
 .btn.areab svg,.atkc-h svg{width:14px;height:14px;flex:none}
+.concrow{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px}
+.chip.conc{color:var(--accent);border-color:var(--accent)}
+.atkc.save.death{border-color:var(--danger);box-shadow:var(--shadow),inset 3px 0 0 var(--danger)}
+.init-list .iturn{padding:3px 10px 6px 64px;font-size:.8rem;color:var(--ink);background:var(--accent-soft);border-bottom:1px solid var(--line)}
 .tray .fu{display:flex;gap:6px;flex-wrap:wrap;margin-top:3px}
 .badge{font-size:.7rem;letter-spacing:.08em;font-weight:700;padding:0 6px;border-radius:4px;background:var(--gold-soft);color:var(--gold)}
 .badge.red{background:var(--danger-soft);color:var(--danger)}
@@ -2463,7 +2467,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.7.0';
+const APP_VERSION = '1.8.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -2786,6 +2790,8 @@ window.addEventListener('storage', ev => {
     if (!store.chars[store.active]) store.active = Object.keys(store.chars)[0];
     if (ui.modal && ui.modal.type === 'editor') { renderTop(); renderGrid(); } else render();
     if (IN_OBR) publishStatus();
+    if (concOf() && C().hp.cur <= 0) endConc(concOf().name + ' ends: you dropped to 0 HP.');
+    renderAtkQueue();
   } catch (e) { }
 });
 window.addEventListener('storage', ev => { if (ev.key && ev.key.startsWith('grimsheet.feed.') && ui.modal && ui.modal.type === 'log' && ui.logTab === 'table') renderModal(); });
@@ -2820,7 +2826,8 @@ async function startOwlbear() {
       } catch (e) { }
       const setParty = players => { OBRX.party = (players || []).map(p => ({ id: p.id, name: p.name, role: p.role, s: p.metadata && p.metadata[META] })).filter(p => p.s); refreshParty(); };
       setParty(await OBR.party.getPlayers()); OBR.party.onChange(setParty);
-      publishStatus(); renderAtkQueue(); paintTarget();
+      publishStatus(); renderAtkQueue(); paintTarget(); checkMyTurn();
+      if (concOf() && C().hp.cur <= 0) endConc(concOf().name + ' ends: you dropped to 0 HP.');
       applyPanelSize();
       ensurePartyModule();
       renderBanner();
@@ -2829,7 +2836,7 @@ async function startOwlbear() {
 }
 function statusOf(c) {
   const ac = (() => { try { return E.staticSum(acComps(), CTX).flat; } catch (e) { return '?'; } })();
-  return { charId: c.id, char: c.name, cls: [c.species, c.cls].filter(Boolean).join(' '), level: c.level, hp: c.hp.cur, max: c.hp.max, temp: c.hp.temp, ac, cond: c.conditions.concat(c.exhaustion ? ['Exhaustion ' + c.exhaustion] : []), dead: c.death.f >= 3, down: c.hp.cur <= 0 };
+  return { charId: c.id, char: c.name, cls: [c.species, c.cls].filter(Boolean).join(' '), level: c.level, hp: c.hp.cur, max: c.hp.max, temp: c.hp.temp, ac, cond: c.conditions.concat(c.exhaustion ? ['Exhaustion ' + c.exhaustion] : []), dead: c.death.f >= 3, down: c.hp.cur <= 0, conc: c.conc ? c.conc.name : '' };
 }
 let statusT = null;
 function publishStatus() {
@@ -2894,12 +2901,13 @@ function renderParty() {
   if (!IN_OBR) return '<div class="empty">Open Grimsheet inside Owlbear Rodeo to see your party here: everyone\'s HP, AC and conditions, live.</div>';
   return `<div data-party>${partyList()}</div>`;
 }
-function refreshInitView() { refreshParty(); renderBanner(); }
+function refreshInitView() { refreshParty(); renderBanner(); checkMyTurn(); }
 function initStrip() {
   const I = OBRX.init; if (!I || !I.active || !I.rows) return '';
   const i = I.rows.findIndex(r => r.k === I.turn), cur = I.rows[i], next = I.rows[(i + 1) % I.rows.length];
   const mine = cur && cur.pc === OBRX.me.id, soon = next && next.pc === OBRX.me.id;
-  return `<b>Round ${esc(I.round)}</b> · ${mine ? '<b style="color:var(--accent)">Your turn!</b>' : esc(cur ? cur.name : '') + "'s turn"}${soon && !mine ? ' · <b>you\'re next</b>' : ''}`;
+  const rem = mine ? turnReminders() : [];
+  return `<b>Round ${esc(I.round)}</b> · ${mine ? '<b style="color:var(--accent)">Your turn!</b>' : esc(cur ? cur.name : '') + "'s turn"}${soon && !mine ? ' · <b>you\'re next</b>' : ''}${rem.length ? ' · ' + esc(rem.join(' · ')) : ''}`;
 }
 function initOrderHtml() {
   const I = OBRX.init; if (!I || !I.active || !I.rows) return '';
@@ -2916,7 +2924,7 @@ function partyMembers() {
   return others.map(p => {
     const s = p.s, pct = s.max ? Math.max(0, Math.min(100, s.hp / s.max * 100)) : 0;
     return `<div class="entry"><div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap"><b>${esc(s.char)}</b><span class="muted" style="font-size:.85rem">${esc(p.name)}${p.role === 'GM' ? ' · GM' : ''}${s.cls ? ' · ' + esc(s.cls) : ''}${s.level ? ' ' + esc(s.level) : ''}</span></div>
-      <div class="inline" style="margin-top:4px"><span class="pool">${esc(s.hp)}<small>/${esc(s.max)} HP</small></span>${s.temp ? `<span class="temp">+${esc(s.temp)}</span>` : ''}<span class="chip">AC ${esc(s.ac)}</span>${s.dead ? '<span class="chip" style="color:var(--danger);border-color:var(--danger)">Dead</span>' : s.down ? '<span class="chip" style="color:var(--danger);border-color:var(--danger)">Down</span>' : ''}${(s.cond || []).map(k => `<span class="chip" style="color:var(--danger);border-color:var(--danger)">${esc(k)}</span>`).join('')}</div>
+      <div class="inline" style="margin-top:4px"><span class="pool">${esc(s.hp)}<small>/${esc(s.max)} HP</small></span>${s.temp ? `<span class="temp">+${esc(s.temp)}</span>` : ''}<span class="chip">AC ${esc(s.ac)}</span>${s.dead ? '<span class="chip" style="color:var(--danger);border-color:var(--danger)">Dead</span>' : s.down ? '<span class="chip" style="color:var(--danger);border-color:var(--danger)">Down</span>' : ''}${(s.cond || []).map(k => `<span class="chip" style="color:var(--danger);border-color:var(--danger)">${esc(k)}</span>`).join('')}${s.conc ? `<span class="chip conc">◉ ${esc(s.conc)}</span>` : ''}</div>
       <div class="hpbar" style="margin-top:6px"><i class="${pct < 25 ? 'low' : pct < 55 ? 'mid' : ''}" style="width:${pct}%"></i></div>
       ${OBRX.me.role === 'GM' && s.charId ? `<div class="inline" style="margin-top:6px"><input class="qm" id="gmhp-${esc(p.id)}" data-qm="gmhp" data-player="${esc(p.id)}" data-char="${esc(s.charId)}" data-name="${esc(s.char)}" style="width:104px" placeholder="−12 or +8" aria-label="Damage or heal ${esc(s.char)}"><button class="btn small" data-act="gmview" data-player="${esc(p.id)}" data-char="${esc(s.charId)}" data-name="${esc(s.char)}" data-owner="${esc(p.name)}">View sheet</button></div>` : ''}</div>`;
   }).join('');
@@ -2984,6 +2992,7 @@ async function receiveGm(d) {
   const ch = store.chars[d.char] || store.chars[store.active];
   if (d.type === 'hp' && ch) {
     const text = applyHpChange(ch, +d.amount || 0); save(); render();
+    if (ch === C() && d.amount < 0) concDamage(-d.amount, ch);
     OBRX.api.notification.show(`${d.from}: ${text} to ${ch.name}. HP ${ch.hp.cur}/${ch.hp.max}`, d.amount < 0 ? 'WARNING' : 'SUCCESS').catch(() => { });
   }
   if (d.type === 'sheetReq' && ch) {
@@ -3090,7 +3099,7 @@ function groupHpText(ms) {
   return ms.map(monHpText).join(', ');
 }
 function applyMonHp(m, amount) {
-  if (amount < 0) { let d = -amount; const t = Math.min(m.temp || 0, d); m.temp = (m.temp || 0) - t; d -= t; m.hp = Math.max(0, m.hp - d); }
+  if (amount < 0) { let d = -amount; const t = Math.min(m.temp || 0, d); m.temp = (m.temp || 0) - t; d -= t; m.hp = Math.max(0, m.hp - d); monConc(m, -amount); }
   else m.hp = Math.min(m.max, m.hp + amount);
 }
 
@@ -3161,6 +3170,7 @@ function endCombat() {
 }
 // start of a monster's turn: legendary actions come back and recharge abilities roll
 function onTurnStart(row) {
+  if (row) showTurnReminders(row);
   if (!row || row.kind !== 'mon') { selectRowTokens(row); return; }
   const msgs = [];
   for (const m of row.members) {
@@ -3173,6 +3183,15 @@ function onTurnStart(row) {
   saveEnc({ quiet: true });
   toast(row.name + "'s turn." + (msgs.length ? ' ' + msgs.join('; ') + '.' : ''));
   selectRowTokens(row);
+}
+function showTurnReminders(row) {
+  ui.turnNote = null;
+  rowReminders(row).then(r => {
+    const e = enc(); if (e.combat.turn !== row.k) return;
+    ui.turnNote = r.length ? { k: row.k, text: r.join(' · ') } : null;
+    if (r.length) toast(row.name + ': ' + r.join(' · ') + '.');
+    if (encView()) renderGrid();
+  });
 }
 function askInitiative() {
   if (!IN_OBR || !OBRX.ready) return;
@@ -3264,7 +3283,7 @@ function renderEncounter() {
       <button class="iname" data-act="turnto" data-v="${esc(r.k)}" title="Make it this one's turn">${r.kind === 'pc' ? '<span class="chip tag-action">PC</span> ' : ''}${esc(r.name)}${r.kind === 'pc' && r.pc.owner ? ` <span class="muted">${esc(r.pc.owner)}</span>` : ''}</button>
       <span class="ihp mono muted">${esc(hp)}</span>
       ${r.kind === 'pc' ? `<button class="ico" data-act="pcdel" data-v="${esc(r.k)}" title="Remove from initiative">✕</button>` : ''}
-    </div>`;
+    </div>${r.k === cur && ui.turnNote && ui.turnNote.k === r.k ? `<div class="iturn">${esc(ui.turnNote.text)}</div>` : ''}`;
   }).join('')}</div>` : '<div class="empty">Add monsters with “+ Monsters”' + (IN_OBR ? ', or right-click tokens on the map and choose Grimsheet → make them monsters.' : '.') + ' Players are added from the Party when combat starts.</div>';
   const cards = e.mons.length ? `<div class="mgrid">${e.mons.map(m => monCard(m, cur)).join('')}</div>` : '';
   return head + order + cards;
@@ -3312,7 +3331,8 @@ function monCard(m, cur) {
       <span style="flex:1"></span><input class="qm" id="mq-${m.id}" data-qm="monhp" data-id="${m.id}" placeholder="−7 or +5" style="width:84px" aria-label="Damage or heal ${esc(m.name)}"></div>
     <div class="hpbar"><i class="${pct < 25 ? 'low' : pct < 55 ? 'mid' : ''}" style="width:${pct}%"></i></div>
     <div class="cond" style="margin-top:6px">${m.cond.map(k => `<button class="on" data-act="moncond" data-id="${m.id}" data-v="${esc(k)}" title="Remove">${esc(k)} ✕</button>`).join('')}
-      <select class="ed-inline" id="mc-${m.id}" data-moncond="${m.id}" aria-label="Add a condition" style="width:auto;font-size:.78rem"><option value="">+ condition</option>${CONDITIONS.filter(k => !m.cond.includes(k)).map(k => `<option>${k}</option>`).join('')}</select></div>
+      ${m.concNote && m.cond.includes('Concentrating') ? `<span class="muted" style="font-size:.78rem">${esc(m.concNote)}</span>` : ''}
+      <select class="ed-inline" id="mc-${m.id}" data-moncond="${m.id}" aria-label="Add a condition" style="width:auto;font-size:.78rem"><option value="">+ condition</option>${CONDITIONS.concat(['Concentrating']).filter(k => !m.cond.includes(k)).map(k => `<option>${k}</option>`).join('')}</select></div>
     ${ab}${acts}${leg}${details}
   </section>`;
 }
@@ -3525,10 +3545,10 @@ function suggestVerdict(c, ac) {
 }
 function renderAtkQueue() {
   const n = document.getElementById('atkq'); if (!n) return;
-  if (!IN_OBR || !OBRX.ready) { n.innerHTML = ''; return; }
+  if (!IN_OBR || !OBRX.ready || ui.viewing) { n.innerHTML = ui.viewing ? '' : savePromptsHtml(); return; }
   if (OBRX.me.role !== 'GM') { n.innerHTML = savePromptsHtml(); return; }
   const q = readAtkQ();
-  n.innerHTML = q.length ? `<div class="atkq">${q.map(c => c.kind === 'area' ? areaCard(c) : atkCard(c)).join('')}</div>` : '';
+  n.innerHTML = savePromptsHtml() + (q.length ? `<div class="atkq">${q.map(c => c.kind === 'area' ? areaCard(c) : atkCard(c)).join('')}</div>` : '');
   q.filter(c => c.kind === 'area' && !c.checked && !areaChecking.has(c.id)).forEach(c => { areaChecking.add(c.id); recheckArea(c.id, true); });
 }
 const areaChecking = new Set();
@@ -3818,29 +3838,147 @@ async function applyToToken(tokId, delta, name) {
 function readSaves() { const q = readJSON(savesKey()); return Array.isArray(q) ? q : []; }
 function writeSaves(q) { writeJSON(savesKey(), q.slice(0, 10)); }
 function savePromptsHtml() {
-  const q = readSaves(); if (!q.length) return '';
-  return `<div class="atkq">${q.map(p => `<div class="atkc save"><div class="atkc-h"><b>${esc(p.from)}</b>&nbsp;asks for a saving throw<span style="flex:1"></span><button class="ico" data-act="savedrop" data-id="${esc(p.id)}" aria-label="Dismiss">✕</button></div>
+  const q = readSaves().filter(p => !p.char || p.char === C().id); if (!q.length) return '';
+  return `<div class="atkq">${q.map(p => p.kind === 'conc' ? `<div class="atkc save"><div class="atkc-h">◉&nbsp;<b>Concentration check</b><span style="flex:1"></span><button class="ico" data-act="savedrop" data-id="${esc(p.id)}" title="Dismiss without rolling" aria-label="Dismiss">✕</button></div>
+    <div><b>CON save</b> · DC ${esc(p.dc)} · to keep <b>${esc(p.what)}</b>${p.dmg ? ` <span class="muted">(took ${esc(p.dmg)} damage)</span>` : ''}</div>
+    <div class="fu"><button class="btn small primary" data-act="saveroll" data-id="${esc(p.id)}">Roll CON save</button><button class="btn small" data-act="concend">Let it end</button></div></div>`
+    : p.kind === 'death' ? `<div class="atkc save death"><div class="atkc-h">💀&nbsp;<b>Your turn: you're down</b><span style="flex:1"></span><button class="ico" data-act="savedrop" data-id="${esc(p.id)}" aria-label="Dismiss">✕</button></div>
+    <div>Roll a death saving throw. <span class="muted">${C().death.s} success${C().death.s === 1 ? '' : 'es'}, ${C().death.f} failure${C().death.f === 1 ? '' : 's'} so far.</span></div>
+    <div class="fu"><button class="btn small primary" data-act="deathprompt" data-id="${esc(p.id)}">Roll death save</button></div></div>`
+    : `<div class="atkc save"><div class="atkc-h"><b>${esc(p.from)}</b>&nbsp;asks for a saving throw<span style="flex:1"></span><button class="ico" data-act="savedrop" data-id="${esc(p.id)}" aria-label="Dismiss">✕</button></div>
     <div><b>${esc(p.ability)} save</b> · DC ${esc(p.dc)} · against ${esc(p.what)}</div>
     <div class="fu"><button class="btn small primary" data-act="saveroll" data-id="${esc(p.id)}">Roll ${esc(p.ability)} save</button></div></div>`).join('')}</div>`;
 }
 function rollPromptedSave(id) {
   const p = readSaves().find(x => x.id === id); if (!p) return;
   const a = C().abilities.find(x => x.key === p.ability);
-  roll((a ? a.name : p.ability) + ' save · ' + p.what, saveComps(p.ability), { onLand: en => answerSave(p, en) });
+  roll((a ? a.name : p.ability) + ' save · ' + (p.kind === 'conc' ? 'concentration (' + p.what + ')' : p.what), saveComps(p.ability), { onLand: en => answerSave(p, en) });
 }
 function answerSave(p, en) {
   writeSaves(readSaves().filter(x => x.id !== p.id)); renderAtkQueue();
+  if (p.kind === 'conc') {
+    const ok = en.total >= +p.dc;
+    en.note = (ok ? 'Kept ' : 'Lost ') + p.what + ` (DC ${p.dc}).`; if (ui.log[0] === en) renderTray();
+    if (ok) toast(`You keep concentrating on ${p.what}.`); else endConc(`Lost concentration: ${p.what} ends.`);
+    return;
+  }
+  if (!IN_OBR || !OBRX.ready) return;
   OBRX.api.broadcast.sendMessage(CH_GM, { type: 'saveRes', id: uid(), aid: p.aid, from: OBRX.me.id, char: C().id, total: en.total, nat: en.nat }, { destination: 'REMOTE' }).catch(() => { });
   en.tgt = { name: p.what, result: 'sent to the GM' }; if (ui.log[0] === en) renderTray();
 }
 // a plain save roll of the asked ability answers the request too
-function answerByRoll(ab, en) { const p = readSaves().find(x => x.ability === ab); if (p) answerSave(p, en); }
+function answerByRoll(ab, en) { const q = readSaves(), p = q.find(x => x.ability === ab && x.kind === 'conc' && (!x.char || x.char === C().id)) || q.find(x => x.ability === ab && !x.kind); if (p) answerSave(p, en); }
 // same as GS.mergeSaveRes in shared.js
 function mergeSaveRes(list, d) {
   const c = list.find(x => x.id === d.aid); if (!c || !c.save) return list;
   c.res = c.res || {};
   for (const t of c.targets || []) if (t.player === d.from && (!d.char || !t.char || t.char === d.char)) c.res[t.id] = { total: d.total, ok: d.total >= +c.save.dc, nat: d.nat, by: 'player' };
   return list;
+}
+
+/* ---------- COMBAT PROMPTS: concentration, death saves, turn reminders ---------- */
+function addPrompt(p) { const q = readSaves(); if (q.some(x => x.id === p.id)) return; writeSaves([p].concat(q)); renderAtkQueue(); }
+function concOf(c = C()) { return c && c.conc && c.conc.name ? c.conc : null; }
+function startConc(e) {
+  const c = C(), prev = concOf(c);
+  if (prev && prev.id === e.id) return;
+  if (prev) endConc(`You start concentrating on ${e.name}, so ${prev.name} ends.`, { keepAreas: false });
+  c.conc = { id: e.id, name: e.name, at: Date.now() }; save(); publishStatus(); render();
+}
+// ends the spell: its effect switches off and its area leaves the map
+function endConc(reason, opt = {}) {
+  const c = C(), k = concOf(c); if (!k) return;
+  c.conc = null;
+  const f = findEntry(k.id); if (f && f.e.effect && f.e.effect.active && !f.e.item) f.e.effect.active = false;
+  if (IN_OBR && OBRX.ready) OBRX.api.scene.items.getItems(it => !!(it.metadata && it.metadata[AREA] && it.metadata[AREA].owner === OBRX.me.id && it.metadata[AREA].name === k.name))
+    .then(its => its.length && OBRX.api.scene.items.deleteItems(its.map(i => i.id))).catch(() => { });
+  writeSaves(readSaves().filter(p => p.kind !== 'conc' || (p.char && p.char !== c.id)));
+  save(); publishStatus(); render(); renderAtkQueue();
+  toast(reason || k.name + ' ends.');
+}
+// after taking damage: DC 10 or half the damage, whichever is higher (at most 30)
+function concDamage(dmg, c = C()) {
+  if (!(dmg > 0)) return; const k = concOf(c); if (!k) return;
+  if (c.hp.cur <= 0) { endConc(`${k.name} ends: you dropped to 0 HP.`); return; }
+  const dc = Math.min(30, Math.max(10, Math.floor(dmg / 2)));
+  addPrompt({ id: uid(), kind: 'conc', ability: 'CON', dc, what: k.name, dmg, char: c.id });
+  toast(`Concentration check: CON save DC ${dc} to keep ${k.name}.`);
+}
+function concHtml(c) {
+  const k = concOf(c); if (!k) return '';
+  return `<div class="concrow"><span class="chip conc" title="Taking damage asks for a CON save; casting another concentration spell ends this one">◉ Concentrating on <b>${esc(k.name)}</b></span><button class="btn small ghost" data-act="concend">End</button></div>`;
+}
+function deathSave() {
+  const c = C();
+  roll('Death saving throw', [{ d20: true }], { after: en => {
+    const n = en.nat;
+    if (n === 20) { c.hp.cur = Math.max(1, c.hp.cur); c.death = { s: 0, f: 0 }; en.note = 'Natural 20: you regain 1 HP.'; }
+    else if (n === 1) { c.death.f = Math.min(3, c.death.f + 2); en.note = 'Natural 1: two failures.'; }
+    else if (en.total >= 10) { c.death.s = Math.min(3, c.death.s + 1); en.note = 'Success.'; }
+    else { c.death.f = Math.min(3, c.death.f + 1); en.note = 'Failure.'; }
+    if (c.death.s >= 3) en.note += ' Three successes: you are stable.'; if (c.death.f >= 3) en.note += ' Three failures.';
+  } });
+  writeSaves(readSaves().filter(p => p.kind !== 'death')); save(); render();
+}
+// what to remember at the start of your turn
+function turnReminders(c = C()) {
+  const out = [];
+  if (c.hp.cur <= 0 && c.death.s < 3 && c.death.f < 3) out.push('you\'re down: roll a death save');
+  const k = concOf(c); if (k) out.push('concentrating on ' + k.name);
+  allEntries(c).forEach(({ e }) => { if (e.effect && e.effect.active && !e.item && (!k || e.id !== k.id)) out.push(e.name + ' is on'); });
+  if (c.conditions.length) out.push(c.conditions.join(', '));
+  return out;
+}
+let lastTurnKey = null;
+function checkMyTurn() {
+  const I = OBRX.init;
+  if (!I || !I.active || !I.rows || ui.viewing) { lastTurnKey = null; return; }
+  const key = I.round + '|' + I.turn; if (key === lastTurnKey) return; lastTurnKey = key;
+  const cur = I.rows.find(r => r.k === I.turn); if (!cur || cur.pc !== OBRX.me.id) return;
+  const c = C();
+  if (c.hp.cur <= 0 && c.death.s < 3 && c.death.f < 3) addPrompt({ id: 'death:' + key, kind: 'death', char: c.id });
+  const rem = turnReminders(c);
+  if (rem.length) toast('Your turn: ' + rem.join(' · ') + '.');
+}
+/* ---- GM: monsters concentrating, and start-of-turn reminders ---- */
+function monConc(m, dmg) {
+  if (!(dmg > 0) || !m.cond.includes('Concentrating')) return;
+  if (m.hp <= 0) { m.cond = m.cond.filter(k => k !== 'Concentrating'); toast(`${m.name} drops to 0 HP and loses concentration.`); return; }
+  const t = tplOf(m), dc = Math.min(30, Math.max(10, Math.floor(dmg / 2)));
+  const bonus = t.saves.CON != null ? t.saves.CON : MONSTERS.mod(t.abilities.CON || 10), total = quickD20(bonus), ok = total >= dc;
+  if (!ok) m.cond = m.cond.filter(k => k !== 'Concentrating');
+  m.concNote = `Concentration: CON save ${total} vs DC ${dc}, ${ok ? 'kept' : 'lost'}`;
+  toast(`${m.name}: ${m.concNote}.`);
+}
+async function rowReminders(row) {
+  const out = [];
+  if (row.kind === 'mon') {
+    const conds = [...new Set(row.members.flatMap(m => m.cond))]; if (conds.length) out.push(conds.join(', '));
+  } else {
+    const p = (OBRX.party || []).find(x => x.id === row.pc.player), s = p && p.s;
+    if (s && s.down && !s.dead) out.push(row.name + ' is down: death save');
+    if (s && s.conc) out.push('concentrating on ' + s.conc);
+    if (s && s.cond && s.cond.length) out.push(s.cond.join(', '));
+  }
+  // lasting areas (Spirit Guardians, Cloudkill…) the creature starts its turn in
+  if (IN_OBR && OBRX.ready) try {
+    const ids = rowTokenIds(row);
+    const areas = ids.length ? await OBRX.api.scene.items.getItems(it => !!(it.metadata && it.metadata[AREA])) : [];
+    if (areas.length) {
+      const dpi = await OBRX.api.scene.grid.getDpi();
+      for (const a of areas) {
+        let inside = false;
+        for (const id of ids) {
+          const b = await OBRX.api.scene.items.getItemBounds([id]);
+          const nx = Math.max(1, Math.round(b.width / dpi)), ny = Math.max(1, Math.round(b.height / dpi));
+          for (let i = 0; i < nx && !inside; i++) for (let j = 0; j < ny && !inside; j++) inside = inArea(a, { x: b.min.x + (i + 0.5) * b.width / nx, y: b.min.y + (j + 0.5) * b.height / ny }, dpi * 0.05);
+          if (inside) break;
+        }
+        if (inside) out.push('starts in ' + (a.metadata[AREA].name || a.name));
+      }
+    }
+  } catch (e) { }
+  return out;
 }
 
 /* ---------- REROLLS: Lucky, Heroic Inspiration, Savage Attacker… ---------- */
@@ -4062,7 +4200,7 @@ function rollDamage(e, crit, lvl) {
 }
 
 /* ---------- rendering ---------- */
-function render() { CTX = ctxFor(C()); renderTop(); renderBanner(); renderGrid(); renderTray(); }
+function render() { CTX = ctxFor(C()); renderTop(); renderBanner(); renderGrid(); renderTray(); renderAtkQueue(); }
 
 function renderTop() {
   const c = C(), ed = ui.mode === 'edit';
@@ -4210,6 +4348,7 @@ function renderCombat() {
       &nbsp;✗ ${[0, 1, 2].map(i => `<button class="box f ${i < c.death.f ? 'used' : ''}" data-act="death" data-v="f" data-i="${i}" aria-label="Death save failure ${i + 1}"></button>`).join('')}</span>
       <button class="roll" data-act="deathroll">Roll</button>
     </div>
+    ${concHtml(c)}
     <div class="sub-h">Conditions</div>
     <div class="cond">${CONDITIONS.map(k => `<button class="${c.conditions.includes(k) ? 'on' : ''}" data-act="cond" data-v="${k}">${k}</button>`).join('')}
       <button class="${c.exhaustion ? 'on' : ''}" data-act="exh" title="Tap to raise, tap at 6 to clear">Exhaustion ${c.exhaustion || 0}</button></div>`;
@@ -4408,6 +4547,7 @@ function applyHp(v, raw) {
     const fromTemp = Math.min(c.hp.temp, dmg); c.hp.temp -= fromTemp; dmg -= fromTemp;
     c.hp.cur = Math.max(0, c.hp.cur - dmg);
     toast(`Took ${fromTemp + dmg} damage${fromTemp ? ' (' + fromTemp + ' from temp HP)' : ''}.${c.hp.cur === 0 ? ' You are down: roll death saves.' : ''}`);
+    setTimeout(() => concDamage(fromTemp + dmg, c), 0);
   } else if (raw[0] === '+') { const before = c.hp.cur; c.hp.cur = Math.min(c.hp.max, v); if (c.hp.cur > 0) c.death = { s: 0, f: 0 }; toast(`Healed ${c.hp.cur - before} HP.`); }
   else c.hp.cur = Math.max(0, Math.min(c.hp.max, v));
 }
@@ -4769,16 +4909,7 @@ document.addEventListener('click', ev => {
     case 'spellatk': roll('Spell attack', [{ d20: true }, { f: 'SPELL', src: 'Spellcasting' }, { f: 'PROF' }]); break;
     case 'slot': { const s = c.slots[v]; s.used = i < s.used ? i : i + 1; rerender(); break; }
     case 'death': { const k = v; c.death[k] = i < c.death[k] ? i : i + 1; rerender(); break; }
-    case 'deathroll': {
-      roll('Death saving throw', [{ d20: true }], { after: en => {
-        const n = en.nat;
-        if (n === 20) { c.hp.cur = Math.max(1, c.hp.cur); c.death = { s: 0, f: 0 }; en.note = 'Natural 20: you regain 1 HP.'; }
-        else if (n === 1) { c.death.f = Math.min(3, c.death.f + 2); en.note = 'Natural 1: two failures.'; }
-        else if (en.total >= 10) { c.death.s = Math.min(3, c.death.s + 1); en.note = 'Success.'; }
-        else { c.death.f = Math.min(3, c.death.f + 1); en.note = 'Failure.'; }
-        if (c.death.s >= 3) en.note += ' Three successes: you are stable.'; if (c.death.f >= 3) en.note += ' Three failures.';
-      } }); rerender(); break;
-    }
+    case 'deathroll': deathSave(); break;
     case 'hd': {
       const hdMax = +c.level || 1; if (c.hdUsed >= hdMax) break;
       const en = roll('Hit die', [{ f: '1' + c.hitDie.replace(/^\d*/, '') }, { f: 'CON' }], { minZero: true });
@@ -4798,13 +4929,18 @@ document.addEventListener('click', ev => {
     case 'ubox': { const ct = f.e.counter; ct.used = i < ct.used ? i : i + 1; rerender(); break; }
     case 'sf': { const ct = f.e.counter; ct[v] = i < (ct[v] || 0) ? i : i + 1; rerender(); break; }
     case 'creset': { const ct = f.e.counter; ct.used = 0; ct.s = 0; ct.f = 0; rerender(); toast(f.e.name + ' reset.'); break; }
-    case 'fx': f.e.effect.active = !f.e.effect.active; rerender(); if (f.e.effect.active) toast(f.e.name + ' is on: ' + fxSummary(f.e) + '.'); break;
+    case 'fx': f.e.effect.active = !f.e.effect.active; rerender(); if (f.e.effect.active) toast(f.e.name + ' is on: ' + fxSummary(f.e) + '.');
+      if (f.e.tags.conc && f.e.effect.active) startConc(f.e); else if (!f.e.effect.active && concOf(c) && concOf(c).id === f.e.id) endConc(f.e.name + ' ends.');
+      break;
+    case 'concend': endConc(); break;
+    case 'deathprompt': deathSave(); break;
     case 'equip': f.e.item.equipped = !f.e.item.equipped; rerender(); break;
     case 'useitem': { const e = f.e; if ((+e.item.qty || 0) < 1) break; e.item.qty = (+e.item.qty || 0) - 1; rollDamage(e); rerender(); break; }
     case 'cast': castMenu(el, f.e, c); break;
     case 'castat': {
       hidePop(); const e = f.e; const lvl = +v; const base = +e.spell.level || 1;
       if (lvl) c.slots[lvl].used++;
+      if (e.tags.conc) startConc(e);
       const fu = []; if (e.attack) fu.push({ label: 'Spell attack', act: 'atk', id: e.id });
       if (e.damage.length) fu.push({ label: isHealing(e) ? 'Roll healing' : 'Roll damage', act: 'dmg', id: e.id, lvl: lvl || base });
       const ar = IN_OBR && areaOfEntry(e); if (ar) fu.unshift({ label: 'Place ' + areaLabel(ar), act: 'area', id: e.id, lvl: lvl || base });

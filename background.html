@@ -56,7 +56,23 @@
           const items = await OBR.scene.items.getItems(it => !!(it.metadata && it.metadata[S.LINK] && it.metadata[S.LINK].player === me.id && it.metadata[S.LINK].char === ch.id));
           if (items.length) await OBR.scene.items.updateItems(items.map(i => i.id), drafts => { for (const it of drafts) it.metadata[S.BUBBLES] = Object.assign({}, it.metadata[S.BUBBLES] || {}, { health: r.hp, 'max health': r.max, 'temporary health': r.temp }); });
         } catch (e) { }
-        OBR.notification.show(`${d.from}: ${r.text} to ${ch.name}. HP ${r.hp}/${r.max}${r.temp ? ' (+' + r.temp + ' temp)' : ''}`, d.amount < 0 ? 'WARNING' : 'SUCCESS').catch(() => { });
+        // concentrating: a CON save to keep the spell (DC 10 or half the damage); at 0 HP it ends (the panel tidies up)
+        let conc = '';
+        if (ch.conc && ch.conc.name && d.amount < 0) {
+          if (r.hp <= 0) {
+            conc = ` ${ch.conc.name} ends.`; const name = ch.conc.name, id = ch.conc.id; ch.conc = null;
+            (ch.modules || []).forEach(m => (m.entries || []).forEach(e => { if (e.id === id && e.effect && !e.item) e.effect.active = false; }));
+            S.write(S.STORE, store);
+            OBR.scene.items.getItems(it => !!(it.metadata && it.metadata['com.grimsheet/area'] && it.metadata['com.grimsheet/area'].owner === me.id && it.metadata['com.grimsheet/area'].name === name))
+              .then(its => its.length && OBR.scene.items.deleteItems(its.map(i => i.id))).catch(() => { });
+          }
+          else {
+            const dc = Math.min(30, Math.max(10, Math.floor(-d.amount / 2))), key = 'grimsheet.saves.' + room, q = S.read(key) || [];
+            q.unshift({ id: S.uid(), kind: 'conc', ability: 'CON', dc, what: ch.conc.name, dmg: -d.amount, char: ch.id }); S.write(key, q.slice(0, 10));
+            conc = ` Concentration check: CON save DC ${dc} to keep ${ch.conc.name}.`;
+          }
+        }
+        OBR.notification.show(`${d.from}: ${r.text} to ${ch.name}. HP ${r.hp}/${r.max}${r.temp ? ' (+' + r.temp + ' temp)' : ''}.${conc}`, d.amount < 0 ? 'WARNING' : 'SUCCESS').catch(() => { });
       }
       if (d.type === 'sheetReq') {
         if (!ch) { OBR.broadcast.sendMessage(S.CH_GM, { type: 'sheet', id: d.id, to: d.from, error: 'no character' }, { destination: 'REMOTE' }).catch(() => { }); return; }
@@ -92,7 +108,22 @@
       const key = I.round + '|' + I.turn; if (key === lastTurn) return; lastTurn = key;
       const i = I.rows.findIndex(r => r.k === I.turn), cur = I.rows[i], next = I.rows[(i + 1) % I.rows.length];
       if (me.role === 'GM') return;
-      if (cur && cur.pc === me.id) OBR.notification.show(`Your turn! Round ${I.round}.`, 'SUCCESS').catch(() => { });
+      if (cur && cur.pc === me.id) {
+        // reminders from the character this player has open
+        const store = S.read(S.STORE), ch = store && store.chars && store.chars[store.active], rem = [];
+        if (ch) {
+          const down = ch.hp.cur <= 0 && ch.death && ch.death.s < 3 && ch.death.f < 3;
+          if (down) {
+            rem.push('You\'re down: roll a death saving throw');
+            const key = 'grimsheet.saves.' + room, q = S.read(key) || [], id = 'death:' + I.round + '|' + I.turn;
+            if (!q.some(x => x.id === id)) { q.unshift({ id, kind: 'death', char: ch.id }); S.write(key, q.slice(0, 10)); }
+          }
+          if (ch.conc && ch.conc.name) rem.push('concentrating on ' + ch.conc.name);
+          (ch.modules || []).forEach(m => (m.entries || []).forEach(e => { if (e.effect && e.effect.active && !e.item && !(ch.conc && ch.conc.id === e.id)) rem.push(e.name + ' is on'); }));
+          if ((ch.conditions || []).length) rem.push(ch.conditions.join(', '));
+        }
+        OBR.notification.show(`Your turn! Round ${I.round}.${rem.length ? ' ' + rem.join(' · ') + '.' : ''}`, rem.length && ch && ch.hp.cur <= 0 ? 'WARNING' : 'SUCCESS').catch(() => { });
+      }
       else if (next && next.pc === me.id && I.rows.length > 2) OBR.notification.show(`You're up next, after ${cur ? cur.name : 'this turn'}.`, 'INFO').catch(() => { });
     };
     try { onInit(await OBR.room.getMetadata()); OBR.room.onMetadataChange(onInit); } catch (e) { }
