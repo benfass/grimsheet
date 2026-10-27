@@ -123,6 +123,12 @@
         OBR.notification.show(`${d.attacker} → ${d.target.name}: ${what}. Confirm it in Grimsheet.`, d.crit ? 'SUCCESS' : 'DEFAULT').catch(() => { });
         return;
       }
+      if (d && d.type === 'restCall' && me.role !== 'GM') {
+        const key = 'grimsheet.saves.' + room, q = S.read(key) || [];
+        if (!q.some(x => x.id === d.id)) { q.unshift({ id: d.id, kind: 'rest', rest: d.kind, from: d.from }); S.write(key, q.slice(0, 10)); }
+        OBR.notification.show(`${d.from} calls a ${d.kind} rest. Take it in Grimsheet.`, 'INFO').catch(() => { });
+        return;
+      }
       if (d && d.type === 'saveRes' && me.role === 'GM') { const key = 'grimsheet.attacks.' + room; S.write(key, S.mergeSaveRes(S.read(key) || [], d)); return; }
       if (d && d.type === 'saveReq' && d.to === me.id) {
         const key = 'grimsheet.saves.' + room, q = S.read(key) || [];

@@ -1,6 +1,6 @@
-# D&D Character Sheet App — Product Spec (v1.9)
+# D&D Character Sheet App — Product Spec (v1.10)
 
-*Working name: Grimsheet. v0.2 recorded the platform decision and first build; v0.3 added the SRD 5.2 content pack and locked skill proficiency to Edit mode; v0.4 expanded the pack; v0.5 added PDF import and documented the saved character format; v0.6 replaced the grid with a row-and-column layout; v0.7 added dice animation and a Settings panel; v0.8 added the Owlbear Rodeo extension and a backup reminder; v0.9 added panel sizes and compact mode; v1.0 added the background page and token linking; v1.1 added GM tools; v1.2 added monsters, the Encounter view and initiative; v1.3 added attacks against a target on the map; v1.4 added rerolls; v1.5 added spell areas on the map; v1.6 added combat prompts; v1.7 added the level-up wizard; v1.8 added undo; v1.9 adds campaign notes.*
+*Working name: Grimsheet. v0.2 recorded the platform decision and first build; v0.3 added the SRD 5.2 content pack and locked skill proficiency to Edit mode; v0.4 expanded the pack; v0.5 added PDF import and documented the saved character format; v0.6 replaced the grid with a row-and-column layout; v0.7 added dice animation and a Settings panel; v0.8 added the Owlbear Rodeo extension and a backup reminder; v0.9 added panel sizes and compact mode; v1.0 added the background page and token linking; v1.1 added GM tools; v1.2 added monsters, the Encounter view and initiative; v1.3 added attacks against a target on the map; v1.4 added rerolls; v1.5 added spell areas on the map; v1.6 added combat prompts; v1.7 added the level-up wizard; v1.8 added undo; v1.9 added campaign notes; v1.10 adds GM mode.*
 
 ## 1. Vision
 
@@ -322,6 +322,14 @@ Decisions: a party journal anyone can edit; its own view; typed entries.
 - **Sharing**: "The party" notes go to everyone in the room (`com.grimsheet/notes`: `up`, `del`, `name`, `hello`); anyone can edit; the newest edit wins; deletions are remembered (tombstones). "Only me" notes stay in that browser; for the GM they are "hidden from players" and can be revealed later ("Share with the party" for players). A player opening Grimsheet sends what they have; others (panel or background page) send anything newer after a short random wait, skipping what someone else already sent, so people who missed a session catch up.
 - **Storage**: `grimsheet.campaign.v1` per room; background pages keep the journal up to date while panels are closed.
 - **Export**: Markdown of all visible notes, a JSON backup, and import of a backup (shared notes in it are sent to the room).
+
+### Built in v2.8: GM mode
+- **When**: in Owlbear, for a GM who isn't playing a character. "I'm also playing a character" (Settings, GM only) switches it; until set, it is on when the browser has no character of its own (only the example).
+- **Toolbar**: "Game Master", the campaign name and how many players have Grimsheet open; Adv/Dis, target, Undo, Encounter / Party / Notes, Size, Settings. No example character, no rests, Level up, Play/Edit or Characters; opens on Encounter. Nothing is published as the GM's status, so the GM never shows up in the party (an old status is cleared).
+- **Party view**: a card per player: character, player, class and level, HP bar, temp HP, AC, Bloodied / Down (with death saves) / Dead, conditions, concentration; damage/heal box, View sheet, Ask for a save. Players in the room without Grimsheet are listed. Header actions: Ask for a save, Call a short rest, Call a long rest, Ask for initiative.
+- **Group saving throw**: what it is, ability, DC, optional damage dice and type, half on success, which players. Each player gets the save prompt; a card (an area card without a map shape, targets `pc:<player>`) collects the results and applies full / half / none; the damage roll joins it.
+- **Rest call**: players get a prompt (and a notification) with "Take a short/long rest", which runs their normal rest.
+- **Encounter undo**: in GM mode Undo, Ctrl+Z and Recent changes work on the encounter (monsters added or removed, HP, conditions, initiative, turns, recharge and uses), including changes from the token menu.
 
 ### Roadmap
 Ordered by when it gets built. Priority applies inside a goal.

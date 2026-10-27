@@ -300,6 +300,11 @@ select.ed-inline{width:auto}
 .nlink{background:none;border:0;padding:0;font:inherit;color:var(--accent);text-decoration:underline;cursor:pointer}
 .nlink.missing{color:var(--muted);text-decoration:underline dotted;cursor:default}
 .nfoot{display:flex;align-items:center;gap:6px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:8px;font-size:.82rem}
+.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;margin-top:10px}
+.pcard{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:10px 12px;display:flex;flex-direction:column;gap:7px;min-width:0}
+.pcard.down{border-color:var(--danger)}
+.pc-h{display:flex;flex-direction:column;gap:1px}.pc-h .muted{font-size:.82rem}
+.chip.bad{color:var(--danger);border-color:var(--danger)}.chip.warn{color:var(--gold);border-color:var(--gold)}
 .tray .fu{display:flex;gap:6px;flex-wrap:wrap;margin-top:3px}
 .badge{font-size:.7rem;letter-spacing:.08em;font-weight:700;padding:0 6px;border-radius:4px;background:var(--gold-soft);color:var(--gold)}
 .badge.red{background:var(--danger-soft);color:var(--danger)}
@@ -2511,7 +2516,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.11.0';
+const APP_VERSION = '1.12.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -2870,9 +2875,10 @@ async function startOwlbear() {
         OBR.scene.onReadyChange(() => refreshLinks());
         refreshLinks();
       } catch (e) { }
-      const setParty = players => { OBRX.party = (players || []).map(p => ({ id: p.id, name: p.name, role: p.role, s: p.metadata && p.metadata[META] })).filter(p => p.s); refreshParty(); };
+      const setParty = players => { OBRX.players = (players || []).map(p => ({ id: p.id, name: p.name, role: p.role })); OBRX.party = (players || []).map(p => ({ id: p.id, name: p.name, role: p.role, s: p.metadata && p.metadata[META] })).filter(p => p.s); refreshParty(); if (gmMode()) { renderTop(); if (gmView() === 'party') renderGrid(); } };
       setParty(await OBR.party.getPlayers()); OBR.party.onChange(setParty);
-      publishStatus(); renderAtkQueue(); paintTarget(); checkMyTurn(); setTimeout(notesHello, 800);
+      if (gmMode()) clearMyStatus();
+      publishStatus(); renderAtkQueue(); paintTarget(); checkMyTurn(); setTimeout(notesHello, 800); render();
       if (concOf() && C().hp.cur <= 0) endConc(concOf().name + ' ends: you dropped to 0 HP.');
       applyPanelSize();
       ensurePartyModule();
@@ -2882,11 +2888,12 @@ async function startOwlbear() {
 }
 function statusOf(c) {
   const ac = (() => { try { return E.staticSum(acComps(), CTX).flat; } catch (e) { return '?'; } })();
-  return { charId: c.id, char: c.name, cls: [c.species, c.cls].filter(Boolean).join(' '), level: c.level, hp: c.hp.cur, max: c.hp.max, temp: c.hp.temp, ac, cond: c.conditions.concat(c.exhaustion ? ['Exhaustion ' + c.exhaustion] : []), dead: c.death.f >= 3, down: c.hp.cur <= 0, conc: c.conc ? c.conc.name : '' };
+  return { charId: c.id, char: c.name, cls: [c.species, c.cls].filter(Boolean).join(' '), level: c.level, hp: c.hp.cur, max: c.hp.max, temp: c.hp.temp, ac, cond: c.conditions.concat(c.exhaustion ? ['Exhaustion ' + c.exhaustion] : []), dead: c.death.f >= 3, down: c.hp.cur <= 0, conc: c.conc ? c.conc.name : '', death: c.death };
 }
 let statusT = null;
 function publishStatus() {
   if (!OBRX.ready || ui.viewing) return;
+  if (gmMode()) return;
   clearTimeout(statusT);
   statusT = setTimeout(() => {
     CTX = ctxFor(C()); const st = statusOf(C());
@@ -2936,6 +2943,7 @@ function sendInitiative(entry) {
     .then(() => toast('Initiative ' + entry.total + ' added to the initiative tracker.'), () => toast('Couldn\'t update the initiative tracker. You may not have permission to edit that token.'));
 }
 function ensurePartyModule() {
+  if (gmMode()) return;
   const c = C(); if (c.obrParty || c.modules.some(m => m.type === 'party')) return;
   const m = mkModule('party'); c.modules.push(m); c.obrParty = true;
   const L = ensureLayout(c), first = L.rows[0];
@@ -3019,6 +3027,11 @@ async function receiveGm(d) {
     if (d.to !== OBRX.me.id || gmSeen.has(d.id)) return; gmSeen.add(d.id);
     if (!bgAlive()) { writeSaves([{ id: d.id, aid: d.aid, from: d.from, ability: d.ability, dc: d.dc, what: d.what }].concat(readSaves())); OBRX.api.notification.show(`${d.from} asks for a ${d.ability} save (DC ${d.dc}) against ${d.what}.`, 'WARNING').catch(() => { }); }
     setTimeout(renderAtkQueue, 200); toast(`${d.from}: ${d.ability} save, DC ${d.dc}, against ${d.what}.`); return;
+  }
+  if (d.type === 'restCall') {
+    if (OBRX.me.role === 'GM' || gmSeen.has(d.id)) return; gmSeen.add(d.id);
+    if (!bgAlive()) { addPrompt({ id: d.id, kind: 'rest', rest: d.kind, from: d.from }); OBRX.api.notification.show(`${d.from} calls a ${d.kind} rest.`, 'INFO').catch(() => { }); }
+    setTimeout(renderAtkQueue, 200); toast(`${d.from} calls a ${d.kind} rest.`); return;
   }
   if (d.type === 'saveRes') {
     if (OBRX.me.role !== 'GM') return;
@@ -3108,10 +3121,11 @@ let ENC = null;
 function enc() { if (!ENC) ENC = loadEnc(); return ENC; }
 function saveEnc(opts = {}) {
   const all = readJSON(ENCKEY) || {}; all[roomKey()] = ENC; writeJSON(ENCKEY, all);
+  try { encHistRecord(); } catch (e) { }
   if (!opts.quiet) { publishInit(); syncMonTokens(); }
 }
 window.addEventListener('storage', ev => {
-  if (ev.key === ENCKEY) { ENC = null; enc(); if (encView()) renderGrid(); syncMonTokens(); publishInit(); }
+  if (ev.key === ENCKEY) { ENC = null; enc(); try { encHistRecord(); } catch (e) { } if (encView()) renderGrid(); syncMonTokens(); publishInit(); }
   if (ev.key === BESTKEY) { bestiary = readJSON(BESTKEY) || []; }
 });
 
@@ -3412,7 +3426,7 @@ function addMonHtml(md) {
 /* ---------- TARGETS: attacks against a token on the map ---------- */
 // Select a token on the map (or pick one from the list), then roll. The roll goes to the GM with the
 // distance and range, the GM sees hit or miss against the target's AC and confirms the damage.
-function encView() { return isGM() && SETTINGS.view === 'encounter'; }
+function encView() { return isGM() && !ui.viewing && (SETTINGS.view === 'encounter' || (gmMode() && gmView() === 'encounter')); }
 const atkKey = () => 'grimsheet.attacks.' + (OBRX.room || 'room');
 ui.target = null; ui.lastAtk = null; OBRX.tokCache = {};
 function readAtkQ() { const q = readJSON(atkKey()); return Array.isArray(q) ? q : []; }
@@ -3566,6 +3580,10 @@ function tgtLine(r) {
 
 /* ---- GM: attacks waiting for a decision ---- */
 function resolveTarget(tokId) {
+  if (String(tokId).startsWith('pc:')) {
+    const player = tokId.slice(3), p = (OBRX.party || []).find(x => x.id === player), s = p && p.s;
+    return { kind: 'pc', player, char: s ? s.charId : null, ac: s && typeof s.ac === 'number' ? s.ac : null, hp: s ? s.hp + '/' + s.max : '' };
+  }
   for (const [inst, its] of Object.entries(OBRX.monTokens || {})) if (its.some(i => i.id === tokId)) {
     const m = enc().mons.find(x => x.id === inst); if (m) return { kind: 'mon', m, ac: m.ac, hp: m.hp + '/' + m.max };
   }
@@ -3815,9 +3833,9 @@ function areaCard(c) {
   const btns = [];
   if (c.save && !heal && nMon) btns.push(`<button class="btn small" data-act="arearoll" data-id="${esc(c.id)}">Roll ${nMon} monster save${nMon > 1 ? 's' : ''}</button>`);
   if (c.save && !heal && nPc) btns.push(`<button class="btn small" data-act="areaask" data-id="${esc(c.id)}">Ask ${nPc} player${nPc > 1 ? 's' : ''}</button>`);
-  btns.push(`<button class="btn small" data-act="arearecheck" data-id="${esc(c.id)}" title="Look again at who is inside, after moving the area">Recheck</button>`);
+  if (c.itemId) btns.push(`<button class="btn small" data-act="arearecheck" data-id="${esc(c.id)}" title="Look again at who is inside, after moving the area">Recheck</button>`);
   if (c.dmg && (c.targets || []).length) btns.push(`<button class="btn small primary" data-act="areaapply" data-id="${esc(c.id)}">${heal ? 'Heal all' : 'Apply to all'}</button>`);
-  btns.push(`<button class="btn small ghost" data-act="arearemove" data-id="${esc(c.id)}">${c.dmg ? 'Remove area' : 'Remove'}</button>`);
+  btns.push(`<button class="btn small ghost" data-act="arearemove" data-id="${esc(c.id)}">${!c.itemId ? 'Close' : c.dmg ? 'Remove area' : 'Remove'}</button>`);
   const who = c.from === OBRX.me.id ? '' : esc(c.who);
   return `<div class="atkc area"><div class="atkc-h">${ICON.area}<b>${esc(c.attacker)}</b> <span class="muted">→</span> <b>${esc(c.name)}</b> <span class="muted">${esc(c.areaLabel || '')}</span><span style="flex:1"></span><button class="ico" data-act="atkdrop" data-id="${esc(c.id)}" title="Dismiss and leave the area on the map" aria-label="Dismiss">✕</button></div>
     <div class="atkc-m muted">${[who, c.save ? `DC ${esc(c.save.dc)} ${esc(c.save.ability)} save${c.half ? ', half on success' : ''}` : ''].filter(Boolean).join(' · ')}</div>
@@ -3885,7 +3903,9 @@ function readSaves() { const q = readJSON(savesKey()); return Array.isArray(q) ?
 function writeSaves(q) { writeJSON(savesKey(), q.slice(0, 10)); }
 function savePromptsHtml() {
   const q = readSaves().filter(p => !p.char || p.char === C().id); if (!q.length) return '';
-  return `<div class="atkq">${q.map(p => p.kind === 'conc' ? `<div class="atkc save"><div class="atkc-h">◉&nbsp;<b>Concentration check</b><span style="flex:1"></span><button class="ico" data-act="savedrop" data-id="${esc(p.id)}" title="Dismiss without rolling" aria-label="Dismiss">✕</button></div>
+  return `<div class="atkq">${q.map(p => p.kind === 'rest' ? `<div class="atkc save"><div class="atkc-h">⛺&nbsp;<b>${esc(p.from)} calls a ${esc(p.rest)} rest</b><span style="flex:1"></span><button class="ico" data-act="savedrop" data-id="${esc(p.id)}" aria-label="Dismiss">✕</button></div>
+    <div class="fu"><button class="btn small primary" data-act="restprompt" data-id="${esc(p.id)}" data-v="${esc(p.rest)}">Take a ${esc(p.rest)} rest</button><button class="btn small" data-act="savedrop" data-id="${esc(p.id)}">Not now</button></div></div>`
+    : p.kind === 'conc' ? `<div class="atkc save"><div class="atkc-h">◉&nbsp;<b>Concentration check</b><span style="flex:1"></span><button class="ico" data-act="savedrop" data-id="${esc(p.id)}" title="Dismiss without rolling" aria-label="Dismiss">✕</button></div>
     <div><b>CON save</b> · DC ${esc(p.dc)} · to keep <b>${esc(p.what)}</b>${p.dmg ? ` <span class="muted">(took ${esc(p.dmg)} damage)</span>` : ''}</div>
     <div class="fu"><button class="btn small primary" data-act="saveroll" data-id="${esc(p.id)}">Roll CON save</button><button class="btn small" data-act="concend">Let it end</button></div></div>`
     : p.kind === 'death' ? `<div class="atkc save death"><div class="atkc-h">💀&nbsp;<b>Your turn: you're down</b><span style="flex:1"></span><button class="ico" data-act="savedrop" data-id="${esc(p.id)}" aria-label="Dismiss">✕</button></div>
@@ -4084,6 +4104,129 @@ function notesMarkdown() {
   return s;
 }
 
+/* ---------- GM MODE: a GM who isn't playing a character ---------- */
+// In Owlbear, a GM without a character of their own gets GM tools instead of a sheet: Encounter, Party
+// and Notes, no example character, and nothing published to the party. "I'm also playing a character"
+// in Settings brings the sheet back.
+function gmPlays() { return SETTINGS.gmPlays != null ? !!SETTINGS.gmPlays : Object.values(store.chars).some(c => !c.example); }
+function gmMode() { return IN_OBR && OBRX.ready && OBRX.me.role === 'GM' && !gmPlays() && !ui.viewing; }
+function gmView() { const v = SETTINGS.view; return v === 'party' || v === 'campaign' ? v : 'encounter'; }
+function clearMyStatus() { if (OBRX.ready) OBRX.api.player.setMetadata({ [META]: undefined }).catch(() => { }); }
+function gmTopHtml() {
+  const cp = camp(), n = (OBRX.party || []).filter(p => p.role !== 'GM').length, v = gmView();
+  return `<div class="ident"><span class="nm">Game Master</span><span class="sub">${esc(cp.name || 'This room')} · ${n} player${n === 1 ? '' : 's'} with Grimsheet</span></div>
+    <div class="tools">
+      <div class="seg adv" role="group" aria-label="Advantage">
+        <button data-act="adv" data-v="dis" class="${ui.adv === 'dis' ? 'on dis' : ''}">Disadv.</button><button data-act="adv" data-v="normal" class="${ui.adv === 'normal' ? 'on' : ''}">Normal</button><button data-act="adv" data-v="adv" class="${ui.adv === 'adv' ? 'on' : ''}">Adv.</button></div>
+      <span id="tgtwrap" class="tgtwrap">${targetChipHtml()}</span>
+      ${undoHtml()}
+      <div class="seg" role="group" aria-label="View">${[['encounter', 'Encounter'], ['party', 'Party'], ['campaign', 'Notes']].map(([k, l]) => `<button data-act="setview" data-v="${k}" class="${v === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+      <button class="btn" data-act="sizemenu" title="Panel size and compact mode">Size</button>
+      <button class="btn" data-act="modal" data-v="settings" aria-label="Settings" title="Settings">Settings</button>
+    </div>`;
+}
+/* ---- Party view ---- */
+function renderGmParty() {
+  const ps = (OBRX.party || []).filter(p => p.role !== 'GM'), others = (OBRX.players || []).filter(p => p.role !== 'GM' && !ps.some(x => x.id === p.id));
+  const head = `<div class="enc-head"><div class="enc-title"><b>Party</b><span class="muted" style="font-size:.85rem">${ps.length} with Grimsheet open</span></div>
+    <div class="enc-tools"><button class="btn small primary" data-act="groupsave" ${ps.length ? '' : 'disabled'}>Ask for a save</button><button class="btn small" data-act="callrest" data-v="short" ${ps.length ? '' : 'disabled'}>Call a short rest</button><button class="btn small" data-act="callrest" data-v="long" ${ps.length ? '' : 'disabled'}>Call a long rest</button><button class="btn small" data-act="askinit" ${ps.length ? '' : 'disabled'}>Ask for initiative</button></div></div>`;
+  const cards = ps.map(p => {
+    const s = p.s, pct = s.max ? Math.max(0, Math.min(100, s.hp / s.max * 100)) : 0, d = s.death || { s: 0, f: 0 };
+    const state = s.dead ? '<span class="chip bad">Dead</span>' : s.down ? `<span class="chip bad">Down</span><span class="muted mono" title="Death saves">✓${d.s} ✗${d.f}</span>` : s.hp <= s.max / 2 ? '<span class="chip warn">Bloodied</span>' : '';
+    return `<section class="pcard ${s.down ? 'down' : ''}">
+      <div class="pc-h"><b>${esc(s.char)}</b><span class="muted">${esc(p.name)}${s.cls ? ' · ' + esc(s.cls) : ''}${s.level ? ' ' + esc(s.level) : ''}</span></div>
+      <div class="inline"><span class="pool">${esc(s.hp)}<small>/${esc(s.max)}</small></span>${s.temp ? `<span class="temp">+${esc(s.temp)}</span>` : ''}<span class="chip">AC ${esc(s.ac)}</span>${state}</div>
+      <div class="hpbar"><i class="${pct < 25 ? 'low' : pct < 55 ? 'mid' : ''}" style="width:${pct}%"></i></div>
+      ${(s.cond || []).length || s.conc ? `<div class="inline">${(s.cond || []).map(k => `<span class="chip bad">${esc(k)}</span>`).join('')}${s.conc ? `<span class="chip conc">◉ ${esc(s.conc)}</span>` : ''}</div>` : ''}
+      <div class="inline"><input class="qm" id="gmhp-${esc(p.id)}" data-qm="gmhp" data-player="${esc(p.id)}" data-char="${esc(s.charId)}" data-name="${esc(s.char)}" style="width:104px" placeholder="−12 or +8" aria-label="Damage or heal ${esc(s.char)}">
+        <button class="btn small" data-act="gmview" data-player="${esc(p.id)}" data-char="${esc(s.charId)}" data-name="${esc(s.char)}" data-owner="${esc(p.name)}">View sheet</button>
+        <button class="btn small" data-act="groupsave" data-v="${esc(p.id)}">Ask for a save</button></div>
+    </section>`;
+  }).join('');
+  const empty = ps.length ? '' : '<div class="empty">Nobody in this room has Grimsheet open yet. Players appear here as soon as they do.</div>';
+  const away = others.length ? `<div class="muted" style="margin-top:10px;font-size:.88rem">In the room without Grimsheet open: ${others.map(p => esc(p.name)).join(', ')}.</div>` : '';
+  return head + `<div class="pgrid">${cards}</div>` + empty + away;
+}
+/* ---- group saving throw (traps, effects that hit everyone) ---- */
+function groupSaveHtml(md) {
+  const ps = (OBRX.party || []).filter(p => p.role !== 'GM');
+  return dlgHead('Ask for a saving throw') + `<div class="dlg-b">
+    <div class="frow"><label class="fld" style="grid-column:span 2"><span>What is it</span><input id="gs-what" value="${esc(md.what || '')}" placeholder="Collapsing floor, Hold Person…"></label>
+      <label class="fld"><span>Save</span><select id="gs-ab">${['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA'].map(a => `<option ${md.ab === a ? 'selected' : ''}>${a}</option>`).join('')}</select></label>
+      <label class="fld"><span>DC</span><input id="gs-dc" value="${esc(md.dc || '13')}" inputmode="numeric"></label></div>
+    <div class="frow"><label class="fld"><span>Damage (optional)</span><input id="gs-dmg" value="${esc(md.dmg || '')}" placeholder="4d6"></label>
+      <label class="fld"><span>Type</span><input id="gs-type" value="${esc(md.type || '')}" list="dtypes2" placeholder="bludgeoning"></label>
+      <label class="fld" style="justify-content:end"><span>&nbsp;</span><label class="muted"><input type="checkbox" id="gs-half" ${md.half !== false ? 'checked' : ''}> Half damage on a success</label></label></div>
+    <datalist id="dtypes2">${DTYPES.map(t => `<option value="${t}">`).join('')}</datalist>
+    <div class="sub-h" style="margin:4px 0 0">Who</div>
+    <div class="lu-feats">${ps.map(p => `<label><input type="checkbox" class="gs-who" value="${esc(p.id)}" ${!md.only || md.only === p.id ? 'checked' : ''}> <b>${esc(p.s.char)}</b> <span class="muted">${esc(p.name)}</span></label>`).join('')}</div>
+    <div class="muted" style="font-size:.85rem">Each player gets a prompt to roll; results fill in on a card above the encounter, where you apply the damage.</div>
+  </div><div class="dlg-f"><button class="btn" data-act="close">Cancel</button><button class="btn primary" data-act="gsgo">Ask</button></div>`;
+}
+function startGroupSave() {
+  const val = id => (document.getElementById(id) || {}).value || '';
+  const what = val('gs-what').trim() || 'Saving throw', ab = val('gs-ab') || 'DEX', dc = parseInt(val('gs-dc'), 10) || 10;
+  const dice = val('gs-dmg').trim(), type = val('gs-type').trim(), half = !!(document.getElementById('gs-half') || {}).checked;
+  const who = [...document.querySelectorAll('.gs-who')].filter(x => x.checked).map(x => x.value);
+  const ps = (OBRX.party || []).filter(p => who.includes(p.id));
+  if (!ps.length) { toast('Pick at least one player.'); return; }
+  if (dice) { try { E.rollSimple(dice, CTX); } catch (e) { toast('Damage should be dice like 4d6 or 2d8+3.'); return; } }
+  const id = uid();
+  const card = { type: 'atk', v: 1, id, part: 'area', from: OBRX.me.id, who: OBRX.me.name, attacker: 'GM', target: { id: 'group', name: what }, name: what, areaLabel: 'group save', itemId: null, half, keep: false, save: { dc, ability: ab }, heal: false,
+    targets: ps.map(p => ({ id: 'pc:' + p.id, name: p.s.char, player: p.id, char: p.s.charId })), excl: [] };
+  const q = mergeAttack(readAtkQ(), card); const c = q.find(x => x.id === id); c.checked = true;
+  c.targets.forEach(t => askSave(c, t)); writeAtkQ(q);
+  closeModal(); if (gmMode() && gmView() !== 'encounter') { SETTINGS.view = 'encounter'; saveSettings(); render(); } else renderAtkQueue();
+  if (dice) roll(what + ' damage', [{ f: dice, suffix: type }], { kind: 'dmg', minZero: true, noShare: !SETTINGS.monShare, note: type, target: { tgt: { id: 'group', name: what }, aid: id, area: true, part: 'dmg', key: 'g:' + id, attacker: 'GM' } });
+  toast(`Asked ${ps.length} player${ps.length > 1 ? 's' : ''} for a ${ab} save (DC ${dc}).`);
+}
+function callRest(kind) {
+  OBRX.api.broadcast.sendMessage(CH_GM, { type: 'restCall', id: uid(), kind, from: OBRX.me.name }, { destination: 'REMOTE' }).catch(() => { });
+  toast(`Asked everyone to take a ${kind} rest.`);
+}
+/* ---- encounter undo (the GM's Undo button) ---- */
+const encHistId = () => 'enc:' + roomKey();
+function encHistRecord() { clearTimeout(HIST.te); HIST.te = setTimeout(encHistCommit, 300); }
+function encClean(e) { const x = clone(e); delete x.tpls; return x; }
+function encHistCommit() {
+  clearTimeout(HIST.te); const id = encHistId(), cur = encClean(enc()), base = HIST.base[id];
+  HIST.base[id] = cur; if (!base) return;
+  const ch = []; deepDiff(base, cur, [], ch); if (!ch.length) return;
+  const u = HIST.undo[id] = HIST.undo[id] || [], last = u[u.length - 1], keys = ch.map(x => x[0].join('.')).sort().join('|');
+  if (last && Date.now() - last.at < 1500 && last.keys === keys) { last.ch = last.ch.map(x => { const y = ch.find(z => z[0].join('.') === x[0].join('.')); return [x[0], x[1], y ? y[2] : x[2]]; }); last.at = Date.now(); last.label = encLabel(last.ch); }
+  else u.push({ at: Date.now(), keys, ch, label: encLabel(ch) });
+  while (u.length > HIST_MAX) u.shift();
+  HIST.redo[id] = []; persistHist(); paintUndo();
+}
+function encLabel(ch) {
+  const e = enc(), out = [];
+  const mon = i => (e.mons[i] || {}).name || 'Monster';
+  for (const [p, o, n] of ch) {
+    let l = '';
+    if (p[0] === 'mons' && p.length === 1) { const a = (Array.isArray(o) ? o : []).map(m => m.name), b = (Array.isArray(n) ? n : []).map(m => m.name); const add = b.filter(x => !a.includes(x)), rem = a.filter(x => !b.includes(x)); l = add.length ? 'Added ' + add.join(', ') : rem.length ? 'Removed ' + rem.join(', ') : 'Monsters'; }
+    else if (p[0] === 'mons') {
+      const f = p[2];
+      l = f === 'hp' ? `${mon(p[1])} HP ${o} → ${n}` : f === 'cond' ? `${mon(p[1])} conditions` : f === 'init' ? `${mon(p[1])} initiative` : f === 'rech' ? `${mon(p[1])} recharge` : f === 'uses' ? `${mon(p[1])} uses` : f === 'leg' ? `${mon(p[1])} legendary actions` : f === 'concNote' ? '' : 'Edited ' + mon(p[1]);
+    }
+    else if (p[0] === 'groupInit' || (p[0] === 'pcs' && p[2] === 'init')) l = 'Initiative';
+    else if (p[0] === 'pcs') l = 'Party in initiative';
+    else if (p[0] === 'combat') l = p[1] === 'active' ? (n ? 'Combat started' : 'Combat ended') : 'Turn';
+    else if (p[0] === 'seq') l = '';
+    else l = 'Encounter';
+    if (l && !out.includes(l)) out.push(l);
+  }
+  const s = out.join(', '); return s.length > 90 ? s.slice(0, 87) + '…' : s || 'Encounter';
+}
+function encHistStep(dir, n = 1) {
+  encHistCommit();
+  const id = encHistId(), from = dir < 0 ? (HIST.undo[id] || []) : (HIST.redo[id] || []), to = dir < 0 ? (HIST.redo[id] = HIST.redo[id] || []) : (HIST.undo[id] = HIST.undo[id] || []);
+  const e = enc(), labels = [];
+  for (let k = 0; k < n && from.length; k++) { const st = from.pop(); for (const [p, o, nv] of (dir < 0 ? st.ch.slice().reverse() : st.ch)) setAt(e, p, dir < 0 ? o : nv); to.push(st); labels.push(st.label); }
+  if (!labels.length) return;
+  saveEnc(); clearTimeout(HIST.te); HIST.base[id] = encClean(e); persistHist(); render();
+  toast((dir < 0 ? 'Undone: ' : 'Redone: ') + labels.join('; ') + '.');
+}
+
 /* ---------- UNDO: per-character change history ---------- */
 // Every save is compared with the last known state of the character; what changed is kept as a step
 // (path, old, new). Quick repeats of the same change (typing, tapping a pool) become one step.
@@ -4179,7 +4322,7 @@ function histCommit(id) {
 }
 function persistHist() {
   const data = { undo: {}, redo: {} };
-  for (const id of Object.keys(HIST.undo)) if (store.chars[id]) { data.undo[id] = HIST.undo[id]; data.redo[id] = HIST.redo[id] || []; }
+  for (const id of Object.keys(HIST.undo)) if (store.chars[id] || id.startsWith('enc:')) { data.undo[id] = HIST.undo[id]; data.redo[id] = HIST.redo[id] || []; }
   let s = JSON.stringify(data);
   while (s.length > 400000) {
     const id = Object.keys(data.undo).sort((a, b) => JSON.stringify(data.undo[b]).length - JSON.stringify(data.undo[a]).length)[0];
@@ -4188,6 +4331,7 @@ function persistHist() {
   try { localStorage.setItem(HISTKEY, s); } catch (e) { }
 }
 function histStep(dir, n = 1) {
+  if (gmMode()) return encHistStep(dir, n);
   const c = C(); if (!c || ui.viewing) return;
   if (HIST.pending) histCommit(HIST.pending);
   const from = dir < 0 ? (HIST.undo[c.id] || []) : (HIST.redo[c.id] || []);
@@ -4207,22 +4351,22 @@ function histStep(dir, n = 1) {
   toast((dir < 0 ? 'Undone: ' : 'Redone: ') + labels.join('; ') + '.');
 }
 function paintUndo() {
-  const c = store.chars[store.active], u = c ? HIST.undo[c.id] || [] : [], b = document.getElementById('undo-btn');
+  const hid = gmMode() ? encHistId() : store.active, u = hid ? HIST.undo[hid] || [] : [], b = document.getElementById('undo-btn');
   if (!b) return;
   b.disabled = !u.length; b.title = u.length ? 'Undo: ' + u[u.length - 1].label + ' (Ctrl+Z)' : 'Nothing to undo';
 }
 function undoHtml() {
   if (ui.viewing) return '';
-  const c = C(), u = HIST.undo[c.id] || [];
+  const u = HIST.undo[gmMode() ? encHistId() : C().id] || [];
   return `<div class="seg undo" role="group" aria-label="Undo"><button id="undo-btn" data-act="undo" ${u.length ? '' : 'disabled'} title="${u.length ? esc('Undo: ' + u[u.length - 1].label + ' (Ctrl+Z)') : 'Nothing to undo'}">${ICON.undo}<span>Undo</span></button><button data-act="histmenu" title="Recent changes" aria-label="Recent changes">▾</button></div>`;
 }
 function ago(t) { const s = Math.round((Date.now() - t) / 1000); return s < 60 ? 'just now' : s < 3600 ? Math.round(s / 60) + ' min ago' : s < 86400 ? Math.round(s / 3600) + ' h ago' : Math.round(s / 86400) + ' d ago'; }
 function histMenuHtml() {
-  const c = C(), u = (HIST.undo[c.id] || []).slice().reverse().slice(0, 12), r = HIST.redo[c.id] || [];
+  const hid = gmMode() ? encHistId() : C().id, u = (HIST.undo[hid] || []).slice().reverse().slice(0, 12), r = HIST.redo[hid] || [];
   return `<b style="font-family:var(--f-display)">Recent changes</b>
     ${r.length ? `<button class="opt" data-act="redo">↷ Redo: ${esc(r[r.length - 1].label)}</button>` : ''}
     <div class="hist">${u.length ? u.map((s, i) => `<button class="opt" data-act="histto" data-v="${i + 1}" title="Undo this and everything after it"><span>${esc(s.label)}</span><span class="muted">${ago(s.at)}</span></button>`).join('') : '<div class="muted" style="padding:6px 2px">No changes yet.</div>'}</div>
-    <div class="muted" style="font-size:.78rem;margin-top:4px">Tap a change to undo it and everything after it. Kept for each character in this browser.</div>`;
+    <div class="muted" style="font-size:.78rem;margin-top:4px">Tap a change to undo it and everything after it. ${gmMode() ? 'Covers the encounter: monsters, HP, initiative and turns.' : 'Kept for each character in this browser.'}</div>`;
 }
 document.addEventListener('keydown', ev => {
   if (!(ev.ctrlKey || ev.metaKey) || ev.altKey) return;
@@ -4811,6 +4955,7 @@ function rollDamage(e, crit, lvl) {
 function render() { CTX = ctxFor(C()); try { histEnsure(); } catch (e) { } renderTop(); renderBanner(); renderGrid(); renderTray(); renderAtkQueue(); }
 
 function renderTop() {
+  if (gmMode()) { $('#top').innerHTML = gmTopHtml(); return; }
   const c = C(), ed = ui.mode === 'edit';
   const sub = [c.species, c.cls, 'Level ' + c.level].filter(Boolean).join(' · ');
   $('#top').innerHTML = `
@@ -4841,6 +4986,7 @@ function renderTop() {
 }
 
 function renderBanner() {
+  if (gmMode()) { $('#banner').innerHTML = storageOK ? '' : '<div class="banner warn">This browser view isn\'t saving changes.</div>'; return; }
   const c = C(); let h = '';
   if (IN_OBR && OBRX.ready && OBRX.me.role !== 'GM' && OBRX.init && OBRX.init.active && !ui.viewing) h += `<div class="banner" style="background:var(--accent-soft)"><span>⚔ ${initStrip()}</span></div>`;
   if (ui.viewing) {
@@ -4871,7 +5017,9 @@ function modHeader(m) {
 
 function renderGrid() {
   ui.view = isGM() && !ui.viewing ? (SETTINGS.view || 'sheet') : 'sheet';
+  if (gmMode() && gmView() === 'party') { $('#grid').innerHTML = `<div class="encwrap">${renderGmParty()}</div>`; return; }
   if (notesView()) { $('#grid').innerHTML = `<div class="encwrap notes">${renderNotes()}</div>`; return; }
+  if (encView() && !HIST.base[encHistId()]) HIST.base[encHistId()] = encClean(enc());
   if (encView()) { $('#grid').innerHTML = `<div class="encwrap">${renderEncounter()}</div>`; return; }
   const c = C(), L = ensureLayout(c), hid = new Set(c.hidden), ed = ui.mode === 'edit';
   const byId = id => c.modules.find(m => m.id === id);
@@ -5184,6 +5332,7 @@ function renderModal() {
   else if (m.type === 'targets') h = targetsHtml(m);
   else if (m.type === 'levelup') h = levelUpHtml(m);
   else if (m.type === 'noteedit') h = noteEditorHtml(m);
+  else if (m.type === 'groupsave') h = groupSaveHtml(m);
   else if (m.type === 'viewwait') h = dlgHead('Opening ' + (m.name || 'sheet')) + `<div class="dlg-b">${m.failed ? `<div class="banner warn" style="margin:0">${esc(m.owner || 'The player')}'s Grimsheet didn't answer. They need to be in the room with Grimsheet 1.3 or newer installed.</div>` : `<div class="sugg"><h3>Asking ${esc(m.owner || 'the player')}'s Grimsheet…</h3><span>The sheet opens read-only in a moment.</span></div>`}</div><div class="dlg-f"><button class="btn" data-act="close">${m.failed ? 'Close' : 'Cancel'}</button></div>`;
   $('#ovl').innerHTML = `<div class="ovl" data-act="ovlbg"><div class="dlg" role="dialog" aria-modal="true">${h}</div></div>`;
   $('#ovl .ovl').scrollTop = keepScroll;
@@ -5350,6 +5499,8 @@ function settingsHtml() {
     <div class="setrow" style="flex-wrap:wrap"><div class="grow" style="min-width:220px"><b>Panel size in Owlbear Rodeo</b><div class="muted">${IN_OBR ? 'How much of the Owlbear screen Grimsheet takes up.' : 'Applies when Grimsheet is opened inside Owlbear Rodeo.'}</div></div>
       <div class="seg" role="group" aria-label="Panel size">${[['small', 'Small'], ['medium', 'Medium'], ['large', 'Large'], ['custom', 'Custom']].map(([v, l]) => `<button data-act="setpanel" data-v="${v}" class="${SETTINGS.panel === v ? 'on' : ''}">${l}</button>`).join('')}</div>
       ${SETTINGS.panel === 'custom' ? `<div class="inline" style="flex-basis:100%;justify-content:flex-end;font-size:.88rem"><label class="muted">Width <input class="ed-inline" id="set-pw" data-setpanel="panelW" type="number" min="320" max="1600" step="20" value="${SETTINGS.panelW}" style="width:72px"></label><label class="muted">Height <input class="ed-inline" id="set-ph" data-setpanel="panelH" type="number" min="300" max="1400" step="20" value="${SETTINGS.panelH}" style="width:72px"></label><span class="muted">px</span></div>` : ''}</div>
+    ${IN_OBR && OBRX.ready && OBRX.me.role === 'GM' ? `<div class="setrow"><div class="grow"><b>I'm also playing a character</b><div class="muted">Off: Grimsheet shows your GM tools (Encounter, Party, Notes) and you don't appear in the party. On: you get a character sheet too.</div></div>
+      <button class="switch ${gmPlays() ? 'on' : ''}" data-act="setgmplays" aria-pressed="${gmPlays()}"><i></i>${gmPlays() ? 'On' : 'Off'}</button></div>` : ''}
     <div class="setrow"><div class="grow"><b>Share my rolls in Owlbear Rodeo</b><div class="muted">${IN_OBR ? (OBRX.ready ? 'Connected to your Owlbear room as ' + esc(OBRX.me.name || 'you') + '.' : 'Connecting to Owlbear…') : 'Applies when Grimsheet is opened inside Owlbear Rodeo.'} “GM only” shows your rolls to the GM and nobody else.</div></div>
       <div class="seg" role="group" aria-label="Share rolls">${[['all', 'Everyone'], ['gm', 'GM only'], ['off', 'Off']].map(([v, l]) => `<button data-act="setshare" data-v="${v}" class="${SETTINGS.share === v ? 'on' : ''}">${l}</button>`).join('')}</div></div>
     ${isGM() ? `<div class="sub-h" style="margin-top:14px">Encounters (GM)</div>
@@ -5632,6 +5783,11 @@ document.addEventListener('click', ev => {
     case 'saveroll': rollPromptedSave(id); break;
     case 'savedrop': writeSaves(readSaves().filter(x => x.id !== id)); renderAtkQueue(); break;
     case 'levelup': openLevelUp(); break;
+    case 'groupsave': openModal('groupsave', { only: v || null }); break;
+    case 'gsgo': startGroupSave(); break;
+    case 'callrest': callRest(v); break;
+    case 'restprompt': writeSaves(readSaves().filter(x => x.id !== id)); renderAtkQueue(); doRest(v); break;
+    case 'setgmplays': SETTINGS.gmPlays = !gmPlays(); saveSettings(); if (gmMode()) { clearMyStatus(); if (!['encounter', 'party', 'campaign'].includes(SETTINGS.view)) SETTINGS.view = 'encounter'; } else { SETTINGS.view = 'sheet'; publishStatus(); ensurePartyModule(); } closeModal(); render(); break;
     case 'noteadd': openNoteEditor(null); break;
     case 'noteopen': { const cc = camp(), n = cc.notes.find(x => x.id === id); if (!n) break; if (!notesView()) { SETTINGS.view = 'campaign'; saveSettings(); render(); } if (ui.noteOpen === id && el.classList.contains('ntitle')) ui.noteOpen = null; else { ui.noteOpen = id; if (!el.classList.contains('ntitle')) { ui.noteQ = ''; ui.noteF = 'all'; } } renderGrid(); const nd = document.querySelector(`[data-note="${id}"]`); if (nd && nd.scrollIntoView) nd.scrollIntoView({ block: 'nearest' }); break; }
     case 'noteedit': openNoteEditor(id); break;
