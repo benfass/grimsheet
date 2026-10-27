@@ -328,6 +328,24 @@ select.ed-inline{width:auto}
 .inq .atkc.save{box-shadow:inset 3px 0 0 var(--gold)}
 .mod-b > .inq{margin-bottom:8px}
 .mspell-g{font-size:.74rem;color:var(--muted);font-weight:600;margin:4px 0 0;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.btn.gsbtn{display:inline-flex;align-items:center;gap:6px}
+.btn.gsbtn svg{width:15px;height:15px}
+#ovl .dlg:has(.gsearch){align-self:flex-start;margin-top:8vh}
+.gsearch{gap:0 !important;padding:0 !important}
+.gs-in{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line)}
+.gs-in svg{width:18px;height:18px;color:var(--muted);flex:none}
+.gs-in input{flex:1;border:0;background:none;font-size:1.05rem;padding:6px 0;outline:none;color:var(--ink);min-width:0}
+.gs-in kbd{font-family:var(--f-mono);font-size:.72rem;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:1px 5px}
+.gs-list{max-height:min(60vh,520px);overflow:auto;padding:6px}
+.gs-hint{padding:14px 10px;font-size:.9rem;line-height:1.5}
+.gs-hit{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;border:0;border-radius:8px;padding:7px 10px;cursor:pointer;color:var(--ink);font:inherit}
+.gs-hit.on,.gs-hit:hover{background:var(--accent-soft)}
+.gs-k{flex:none;width:84px;font-size:.68rem;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gs-l{display:flex;flex-direction:column;min-width:0}.gs-l b,.gs-l span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.gs-l .muted{font-size:.8rem}
+.gs-hit.srd{border-top:1px solid var(--line);border-radius:0 0 8px 8px;margin-top:4px}
+.flash{animation:gsflash 2.2s ease-out}
+@keyframes gsflash{0%,30%{box-shadow:0 0 0 3px var(--accent);border-radius:8px}100%{box-shadow:0 0 0 3px transparent}}
+@media (prefers-reduced-motion:reduce){.flash{animation:none;outline:3px solid var(--accent)}}
 .tray .fu{display:flex;gap:6px;flex-wrap:wrap;margin-top:3px}
 .badge{font-size:.7rem;letter-spacing:.08em;font-weight:700;padding:0 6px;border-radius:4px;background:var(--gold-soft);color:var(--gold)}
 .badge.red{background:var(--danger-soft);color:var(--danger)}
@@ -2584,7 +2602,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.16.0';
+const APP_VERSION = '1.17.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -2601,6 +2619,7 @@ function applyPanelSize() {
 }
 
 const ICON = {
+  search: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg>',
   locate: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="4.5"/><path d="M8 1v2.5M8 12.5V15M1 8h2.5M12.5 8H15"/><circle cx="8" cy="8" r="1.2" fill="currentColor" stroke="none"/></svg>',
   undo: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4 2.5 7l3 3"/><path d="M2.5 7h7a4 4 0 0 1 0 8H7"/></svg>',
   area: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6" stroke-dasharray="2.2 1.6"/><circle cx="8" cy="8" r="1.6" fill="currentColor" stroke="none"/></svg>',
@@ -3047,7 +3066,7 @@ function partyMembers() {
   return others.map(p => {
     const s = p.s, pct = s.max ? Math.max(0, Math.min(100, s.hp / s.max * 100)) : 0;
     const ptok = (OBRX.pcTokens[p.id] || []).length;
-    return `<div class="entry"><div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap"><b ${ptok ? `data-dblfocus="pc|${esc(p.id)}" title="Double-click to find their token"` : ''}>${esc(s.char)}</b>${ptok ? locateBtn('focus', `data-v="pc|${esc(p.id)}"`, 'Find their token on the map') : ''}<span class="muted" style="font-size:.85rem">${esc(p.name)}${p.role === 'GM' ? ' · GM' : ''}${s.cls ? ' · ' + esc(s.cls) : ''}${s.level ? ' ' + esc(s.level) : ''}</span></div>
+    return `<div class="entry" data-pm="${esc(p.id)}"><div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap"><b ${ptok ? `data-dblfocus="pc|${esc(p.id)}" title="Double-click to find their token"` : ''}>${esc(s.char)}</b>${ptok ? locateBtn('focus', `data-v="pc|${esc(p.id)}"`, 'Find their token on the map') : ''}<span class="muted" style="font-size:.85rem">${esc(p.name)}${p.role === 'GM' ? ' · GM' : ''}${s.cls ? ' · ' + esc(s.cls) : ''}${s.level ? ' ' + esc(s.level) : ''}</span></div>
       <div class="inline" style="margin-top:4px"><span class="pool">${esc(s.hp)}<small>/${esc(s.max)} HP</small></span>${s.temp ? `<span class="temp">+${esc(s.temp)}</span>` : ''}<span class="chip">AC ${esc(s.ac)}</span>${s.dead ? '<span class="chip" style="color:var(--danger);border-color:var(--danger)">Dead</span>' : s.down ? '<span class="chip" style="color:var(--danger);border-color:var(--danger)">Down</span>' : ''}${(s.cond || []).map(k => `<span class="chip" style="color:var(--danger);border-color:var(--danger)">${esc(k)}</span>`).join('')}${s.conc ? `<span class="chip conc">◉ ${esc(s.conc)}</span>` : ''}</div>
       <div class="hpbar" style="margin-top:6px"><i class="${pct < 25 ? 'low' : pct < 55 ? 'mid' : ''}" style="width:${pct}%"></i></div>
       ${OBRX.me.role === 'GM' && s.charId ? `<div class="inline" style="margin-top:6px"><input class="qm" id="gmhp-${esc(p.id)}" data-qm="gmhp" data-player="${esc(p.id)}" data-char="${esc(s.charId)}" data-name="${esc(s.char)}" style="width:104px" placeholder="−12 or +8" aria-label="Damage or heal ${esc(s.char)}"><button class="btn small" data-act="gmview" data-player="${esc(p.id)}" data-char="${esc(s.charId)}" data-name="${esc(s.char)}" data-owner="${esc(p.name)}">View sheet</button></div>` : ''}</div>`;
@@ -3803,6 +3822,115 @@ function rollQueuedSave(id) {
   });
 }
 
+/* ---------- SEARCH: find anything in Grimsheet and jump to it (Ctrl+K or /) ---------- */
+function searchIndex() {
+  const out = [], c = C(), gm = gmMode(), add = (kind, label, sub, text, go, rank = 0) => out.push({ kind, label, sub: sub || '', text: (text || '').toLowerCase(), go, rank });
+  if (!gm && !ui.viewing) {
+    for (const m of c.modules) {
+      add('Module', m.title, 'On your sheet', '', () => goModule(m.id));
+      for (const e of m.entries || []) add(MODTYPES[m.type] ? m.title : 'Entry', e.name, e.short || '', [e.text, (e.tags && e.tags.action) || '', e.spell ? 'spell ' + (e.spell.school || '') : ''].join(' '), () => goEntry(m.id, e.id));
+    }
+    c.abilities.forEach(a => add('Ability', a.name + ' (' + a.key + ')', 'Check ' + signed(abMod(a.score)) + ' · save', 'save check ' + a.key, () => goSel(`[data-act=check][data-v="${a.key}"]`, '.ab', 'abilities')));
+    c.skills.forEach((s, i) => add('Skill', s.name, s.ab, '', () => goSel(`[data-act=skill][data-i="${i}"]`, '.row-i', 'skills')));
+    [['HP', 'Hit points, temp HP, damage, heal', '#hp-qm', '.hp'], ['Death saves', 'Hit dice and death saves', '[data-act=deathroll]', '.inline'], ['Conditions', c.conditions.join(', ') || 'Poisoned, prone…', '.cond', '.cond'], ['Spell slots', 'Slots by level', '[data-act=slot], .slots', null]].forEach(([l, sub, sel, wrap]) => add('Sheet', l, sub, '', () => goSel(sel, wrap, l === 'Spell slots' ? 'spells' : 'combat')));
+  }
+  if (isGM() && !ui.viewing) {
+    const R = encs();
+    for (const id of R.order) {
+      const e = R.list[id]; add('Encounter', e.name || 'Encounter', id === R.active ? 'Active' : 'Prepared', '', () => goEncounter(id));
+      for (const mo of e.mons) {
+        const t = tplOf(mo); add('Monster', mo.name, `${e.name || 'Encounter'} · HP ${mo.hp}/${mo.max} · AC ${mo.ac}`, (t.meta || '') + ' ' + (t.details || []).map(d => d.v).join(' '), () => goMonster(id, mo.id));
+        for (const [list, label] of [['actions', 'Action'], ['bonus', 'Bonus action'], ['reactions', 'Reaction'], ['traits', 'Trait'], ['legendary', 'Legendary'], ['spellActs', 'Spell']]) (t[list] || []).forEach((a, i) => add(label, a.name, mo.name, a.text, () => goMonster(id, mo.id, list + ':' + i), -1));
+      }
+    }
+  }
+  if (IN_OBR && OBRX.ready) for (const p of (OBRX.party || []).filter(p => p.id !== OBRX.me.id && p.s)) add('Party', p.s.char, `${p.name} · HP ${p.s.hp}/${p.s.max}`, p.s.cls || '', () => goParty(p.id));
+  for (const n of camp().notes.filter(noteVisible)) add(NOTE_TYPES[n.type] || 'Note', n.title, (n.tags || []).map(t => '#' + t).join(' ') + (n.status ? ' · ' + n.status : ''), n.body + ' ' + (n.tags || []).join(' '), () => goNote(n.id));
+  const cmd = (label, sub, fn, show = true) => show && add('Do', label, sub, '', fn, 1);
+  cmd('Settings', 'Dice, panel size, sharing', () => openModal('settings'));
+  cmd('Level up', c.name + ', level ' + c.level, () => openLevelUp(), !gm && !ui.viewing && (+c.level || 1) < 20);
+  cmd('Short rest', '', () => doRest('short'), !gm && !ui.viewing); cmd('Long rest', '', () => doRest('long'), !gm && !ui.viewing);
+  cmd('Characters', 'Switch, import, export', () => openModal('chars'), !gm);
+  cmd('New note', 'Party notes', () => { setView('campaign'); openNoteEditor(null); });
+  cmd('Add monsters', 'Encounter', () => { goEncounter(); openModal('addmon', { tab: 'list', q: '' }); }, isGM());
+  cmd('Ask for a save', 'Party', () => openModal('groupsave', {}), gm);
+  cmd('Undo', 'Recent changes', () => histStep(-1));
+  return out;
+}
+function searchRun(q) {
+  const words = q.toLowerCase().trim().split(/\s+/).filter(Boolean); if (!words.length) return [];
+  const hits = [];
+  for (const r of searchIndex()) {
+    const L = r.label.toLowerCase(), S = (r.sub || '').toLowerCase(); let score = 0, ok = true;
+    for (const w of words) {
+      if (L.startsWith(w)) score += 30; else if (L.split(/[\s(]+/).some(x => x.startsWith(w))) score += 20; else if (L.includes(w)) score += 12;
+      else if (S.includes(w) || r.kind.toLowerCase().startsWith(w)) score += 5; else if (r.text.includes(w)) score += 2; else { ok = false; break; }
+    }
+    if (ok) hits.push(Object.assign({ score: score + r.rank * 3 - L.length / 100 }, r));
+  }
+  return hits.sort((a, b) => b.score - a.score).slice(0, 30);
+}
+function openSearch() { if (ui.modal && ui.modal.type === 'search') return; openModal('search', { q: '', sel: 0, hits: [] }); const n = $('#gsearch'); if (n) n.focus(); }
+function searchHtml(md) {
+  return `<div class="dlg-b gsearch"><div class="gs-in">${ICON.search}<input id="gsearch" data-gsearch="1" value="${esc(md.q)}" placeholder="Search your sheet, monsters, party, notes…" autocomplete="off" aria-label="Search Grimsheet"><kbd>Esc</kbd></div><div id="gs-list" class="gs-list" role="listbox">${searchListHtml(md)}</div></div>`;
+}
+function searchListHtml(md) {
+  if (!md.q.trim()) return `<div class="muted gs-hint">Type a name: a spell, a skill, a monster, an NPC, a setting… <span class="mono">Enter</span> jumps to it. Open search any time with <span class="mono">Ctrl+K</span> or <span class="mono">/</span>.</div>`;
+  if (!md.hits.length) return `<div class="muted gs-hint">Nothing here matches “${esc(md.q)}”.${!gmMode() && !ui.viewing ? ` <button class="btn small" data-act="srchsrd">Search the SRD for it</button>` : ''}</div>`;
+  return md.hits.map((h, i) => `<button class="gs-hit ${i === md.sel ? 'on' : ''}" data-act="srchgo" data-i="${i}" role="option" aria-selected="${i === md.sel}"><span class="gs-k">${esc(h.kind)}</span><span class="gs-l"><b>${esc(h.label)}</b>${h.sub ? `<span class="muted">${esc(h.sub)}</span>` : ''}</span></button>`).join('')
+    + (!gmMode() && !ui.viewing ? `<button class="gs-hit srd" data-act="srchsrd"><span class="gs-k">SRD</span><span class="gs-l"><b>Search the SRD for “${esc(md.q)}”</b><span class="muted">Spells, weapons, gear and features to add</span></span></button>` : '');
+}
+function searchPaint() { const md = ui.modal, l = $('#gs-list'); if (!l || !md) return; l.innerHTML = searchListHtml(md); const on = l.querySelector('.gs-hit.on'); if (on && on.scrollIntoView) on.scrollIntoView({ block: 'nearest' }); }
+function searchGo(i) { const h = ui.modal && ui.modal.hits[i]; if (!h) return; closeModal(); setTimeout(() => h.go(), 0); }
+/* ---- jumping there ---- */
+function setView(v) { if (SETTINGS.view !== v) { SETTINGS.view = v; saveSettings(); } render(); }
+function flash(n) { if (!n) return; if (n.scrollIntoView) n.scrollIntoView({ block: 'center', behavior: 'smooth' }); n.classList.remove('flash'); void n.offsetWidth; n.classList.add('flash'); setTimeout(() => n.classList.remove('flash'), 2200); }
+function showModule(id) {
+  const c = C(), m = c.modules.find(x => x.id === id); if (!m) return null;
+  let changed = false;
+  if (c.hidden.includes(id)) { c.hidden = c.hidden.filter(x => x !== id); changed = true; toast(m.title + ' was hidden; it\'s back on your sheet.'); }
+  if (m.collapsed) { m.collapsed = false; changed = true; }
+  if (changed) save();
+  return m;
+}
+function goModule(id) { showModule(id); setView('sheet'); flash(document.querySelector(`[data-mod="${id}"]`)); }
+function goEntry(mid, eid) {
+  showModule(mid); ui.open.add(eid); setView('sheet');
+  flash(document.querySelector(`[data-mod="${mid}"] [data-entry="${eid}"]`) || document.querySelector(`[data-entry="${eid}"]`));
+}
+function goSel(sel, wrap, modType) {
+  const m = C().modules.find(x => x.type === modType); if (m) showModule(m.id);
+  setView('sheet'); const n = document.querySelector(sel); flash(n && wrap ? (n.closest(wrap) || n) : n);
+}
+function goEncounter(id) { if (id) ui.encSel = id === encs().active ? null : id; setView(gmMode() ? 'encounter' : 'encounter'); }
+function goMonster(eid, inst, ref) {
+  ui.encSel = eid === encs().active ? null : eid; ui.monFocus = inst; if (ref) ui.monTxt = inst + ref;
+  setView('encounter');
+  const card = document.querySelector(`[data-inst="${inst}"]`);
+  flash(ref ? (card && [...card.querySelectorAll('.mact')].find(x => x.querySelector(`[data-v="${ref}"]`)) || card) : card);
+}
+function goParty(pid) {
+  if (gmMode()) { setView('party'); flash(document.querySelector(`[data-pcard="${pid}"]`)); return; }
+  const m = C().modules.find(x => x.type === 'party'); if (m) showModule(m.id);
+  setView('sheet'); flash(document.querySelector(`[data-pm="${pid}"]`) || document.querySelector('[data-party]'));
+}
+function goNote(id) { ui.noteOpen = id; ui.noteQ = ''; ui.noteF = 'all'; setView('campaign'); flash(document.querySelector(`[data-note="${id}"]`)); }
+document.addEventListener('keydown', ev => {
+  const t = ev.target, typing = t && (t.isContentEditable || /^(input|textarea|select)$/i.test(t.tagName));
+  if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && ev.key.toLowerCase() === 'k') { ev.preventDefault(); openSearch(); return; }
+  if (ev.key === '/' && !typing && !ui.modal) { ev.preventDefault(); openSearch(); return; }
+  if (!ui.modal || ui.modal.type !== 'search') return;
+  const md = ui.modal;
+  if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') { ev.preventDefault(); if (md.hits.length) { md.sel = (md.sel + (ev.key === 'ArrowDown' ? 1 : -1) + md.hits.length) % md.hits.length; searchPaint(); } }
+  else if (ev.key === 'Enter') { ev.preventDefault(); if (md.hits.length) searchGo(md.sel); else if (md.q.trim() && !gmMode()) searchSrd(md.q); }
+  else if (ev.key === 'Escape') { ev.preventDefault(); closeModal(); }
+});
+function searchSrd(q) {
+  const c = C(), mm = c.modules.find(x => x.type === 'spells') || c.modules.find(x => x.type === 'features') || c.modules[0];
+  const it = SRD.items.find(x => x.name.toLowerCase().includes(q.toLowerCase().trim()));
+  openModal('fromlib', { id: mm.id, tab: 'srd', cat: it ? it.cat : 'Spells', q, added: [] });
+}
+
 /* ---------- FIND TOKENS and FOG OF WAR ---------- */
 // Double-click a name (or use the ◎ button) to pan the map to that creature's token and select it.
 async function focusTokens(ids, select = true) {
@@ -4337,6 +4465,7 @@ function gmTopHtml() {
       <span id="tgtwrap" class="tgtwrap">${targetChipHtml()}</span>
       ${undoHtml()}
       <div class="seg" role="group" aria-label="View">${[['encounter', 'Encounter'], ['party', 'Party'], ['campaign', 'Notes']].map(([k, l]) => `<button data-act="setview" data-v="${k}" class="${v === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+      <button class="btn gsbtn" data-act="gsearch" title="Search everything (Ctrl+K or /)" aria-label="Search">${ICON.search}<span>Search</span></button>
       <button class="btn" data-act="sizemenu" title="Panel size and compact mode">Size</button>
       <button class="btn" data-act="modal" data-v="settings" aria-label="Settings" title="Settings">Settings</button>
     </div>`;
@@ -4349,7 +4478,7 @@ function renderGmParty() {
   const cards = ps.map(p => {
     const s = p.s, pct = s.max ? Math.max(0, Math.min(100, s.hp / s.max * 100)) : 0, d = s.death || { s: 0, f: 0 };
     const state = s.dead ? '<span class="chip bad">Dead</span>' : s.down ? `<span class="chip bad">Down</span><span class="muted mono" title="Death saves">✓${d.s} ✗${d.f}</span>` : s.hp <= s.max / 2 ? '<span class="chip warn">Bloodied</span>' : '';
-    return `<section class="pcard ${s.down ? 'down' : ''}">
+    return `<section class="pcard ${s.down ? 'down' : ''}" data-pcard="${esc(p.id)}">
       <div class="pc-h"><b ${(OBRX.pcTokens[p.id] || []).length ? `data-dblfocus="pc|${esc(p.id)}" title="Double-click to find their token"` : ''}>${esc(s.char)}${(OBRX.pcTokens[p.id] || []).length ? ' ' + locateBtn('focus', `data-v="pc|${esc(p.id)}"`, 'Find their token on the map') : ''}</b><span class="muted">${esc(p.name)}${s.cls ? ' · ' + esc(s.cls) : ''}${s.level ? ' ' + esc(s.level) : ''}</span></div>
       <div class="inq" data-inq="pc:${esc(p.id)}" hidden></div>
       <div class="inline"><span class="pool">${esc(s.hp)}<small>/${esc(s.max)}</small></span>${s.temp ? `<span class="temp">+${esc(s.temp)}</span>` : ''}<span class="chip">AC ${esc(s.ac)}</span>${state}</div>
@@ -5197,6 +5326,7 @@ function renderTop() {
       <button class="btn" data-act="modal" data-v="chars">Characters</button>
       ${!ui.viewing ? `<div class="seg" role="group" aria-label="View"><button data-act="setview" data-v="sheet" class="${!['encounter', 'campaign'].includes(SETTINGS.view) || (SETTINGS.view === 'encounter' && !isGM()) ? 'on' : ''}">Sheet</button>${isGM() ? `<button data-act="setview" data-v="encounter" class="${SETTINGS.view === 'encounter' ? 'on' : ''}">Encounter</button>` : ''}<button data-act="setview" data-v="campaign" class="${SETTINGS.view === 'campaign' ? 'on' : ''}">Notes</button></div>` : ''}
       ${IN_OBR ? '<button class="btn" data-act="sizemenu" title="Panel size and compact mode">Size</button>' : ''}
+      <button class="btn gsbtn" data-act="gsearch" title="Search everything (Ctrl+K or /)" aria-label="Search">${ICON.search}<span>Search</span></button>
       <button class="btn" data-act="modal" data-v="settings" aria-label="Settings" title="Settings">Settings</button>
       ${ed ? `<button class="btn" data-act="modal" data-v="addModule">+ Module</button>` : ''}
     </div>`;
@@ -5552,6 +5682,7 @@ function renderModal() {
   else if (m.type === 'levelup') h = levelUpHtml(m);
   else if (m.type === 'noteedit') h = noteEditorHtml(m);
   else if (m.type === 'groupsave') h = groupSaveHtml(m);
+  else if (m.type === 'search') h = searchHtml(m);
   else if (m.type === 'viewwait') h = dlgHead('Opening ' + (m.name || 'sheet')) + `<div class="dlg-b">${m.failed ? `<div class="banner warn" style="margin:0">${esc(m.owner || 'The player')}'s Grimsheet didn't answer. They need to be in the room with Grimsheet 1.3 or newer installed.</div>` : `<div class="sugg"><h3>Asking ${esc(m.owner || 'the player')}'s Grimsheet…</h3><span>The sheet opens read-only in a moment.</span></div>`}</div><div class="dlg-f"><button class="btn" data-act="close">${m.failed ? 'Close' : 'Cancel'}</button></div>`;
   $('#ovl').innerHTML = `<div class="ovl" data-act="ovlbg"><div class="dlg" role="dialog" aria-modal="true">${h}</div></div>`;
   $('#ovl .ovl').scrollTop = keepScroll;
@@ -6002,6 +6133,9 @@ document.addEventListener('click', ev => {
     case 'saveroll': rollPromptedSave(id); break;
     case 'savedrop': writeSaves(readSaves().filter(x => x.id !== id)); renderAtkQueue(); break;
     case 'levelup': openLevelUp(); break;
+    case 'gsearch': openSearch(); break;
+    case 'srchgo': searchGo(i); break;
+    case 'srchsrd': { const q = ui.modal ? ui.modal.q : ''; closeModal(); searchSrd(q); break; }
     case 'focus': focusRef(v); break;
     case 'encsel': ui.encSel = v === encs().active ? null : v; ui.encRen = null; renderGrid(); paintUndo(); break;
     case 'encnew': { const r = encs(), x = blankEnc(); x.id = uid(); x.name = 'Encounter ' + (r.order.length + 1); r.list[x.id] = x; r.order.push(x.id); ui.encSel = x.id; ui.encRen = x.id; saveEnc({ quiet: true }); renderGrid(); const n = $('#enc-name'); if (n) { n.focus(); n.select(); } break; }
@@ -6257,6 +6391,7 @@ document.addEventListener('change', ev => {
 });
 document.addEventListener('input', ev => {
   const t = ev.target;
+  if (t.dataset.gsearch && ui.modal && ui.modal.type === 'search') { ui.modal.q = t.value; ui.modal.hits = searchRun(t.value); ui.modal.sel = 0; searchPaint(); return; }
   if (t.dataset.noteq) { ui.noteQ = t.value; const pos = t.selectionStart; renderGrid(); const n = $('#note-q'); if (n) { n.focus(); n.setSelectionRange(pos, pos); } return; }
   if (ui.modal && ui.modal.type === 'levelup' && (t.dataset.lunc === 'name' || t.dataset.lusubo || t.dataset.lufeato)) {
     if (t.dataset.lunc) ui.modal.nc.name = t.value; else if (t.dataset.lusubo) ui.modal.subOther = t.value; else ui.modal.featOther = t.value;

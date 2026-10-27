@@ -1,6 +1,6 @@
-# D&D Character Sheet App — Product Spec (v1.14)
+# D&D Character Sheet App — Product Spec (v1.15)
 
-*Working name: Grimsheet. v0.2 recorded the platform decision and first build; v0.3 added the SRD 5.2 content pack and locked skill proficiency to Edit mode; v0.4 expanded the pack; v0.5 added PDF import and documented the saved character format; v0.6 replaced the grid with a row-and-column layout; v0.7 added dice animation and a Settings panel; v0.8 added the Owlbear Rodeo extension and a backup reminder; v0.9 added panel sizes and compact mode; v1.0 added the background page and token linking; v1.1 added GM tools; v1.2 added monsters, the Encounter view and initiative; v1.3 added attacks against a target on the map; v1.4 added rerolls; v1.5 added spell areas on the map; v1.6 added combat prompts; v1.7 added the level-up wizard; v1.8 added undo; v1.9 added campaign notes; v1.10 added GM mode; v1.11 added several encounters; v1.12 added finding tokens, fog-aware targets and target buttons; v1.13 showed prompts next to what they're about; v1.14 reads monster spellcasting.*
+*Working name: Grimsheet. v0.2 recorded the platform decision and first build; v0.3 added the SRD 5.2 content pack and locked skill proficiency to Edit mode; v0.4 expanded the pack; v0.5 added PDF import and documented the saved character format; v0.6 replaced the grid with a row-and-column layout; v0.7 added dice animation and a Settings panel; v0.8 added the Owlbear Rodeo extension and a backup reminder; v0.9 added panel sizes and compact mode; v1.0 added the background page and token linking; v1.1 added GM tools; v1.2 added monsters, the Encounter view and initiative; v1.3 added attacks against a target on the map; v1.4 added rerolls; v1.5 added spell areas on the map; v1.6 added combat prompts; v1.7 added the level-up wizard; v1.8 added undo; v1.9 added campaign notes; v1.10 added GM mode; v1.11 added several encounters; v1.12 added finding tokens, fog-aware targets and target buttons; v1.13 showed prompts next to what they're about; v1.14 read monster spellcasting; v1.15 adds search.*
 
 ## 1. Vision
 
@@ -353,6 +353,12 @@ Decisions: a party journal anyone can edit; its own view; typed entries.
 - The stat block reader finds the Spellcasting trait or action (2024: "At will: …", "1/day each: …"; 2014: "Cantrips (at will): …", "1st level (4 slots): …"), the spell save DC, spell attack bonus (or the spellcasting ability + PB) and caster level.
 - Each spell becomes a row on the monster card under "Spells · DC · to hit", grouped by frequency, with per-day boxes (or slot boxes per level for 2014 casters). Spells in the SRD get their attack, damage (cantrips scaled by caster level; "level N version" upcast), save with the monster's DC, area button and text; others show their name with a note to see the book.
 - Monsters saved earlier get their spells read the first time they're shown.
+
+### Built in v2.13: Search
+- **Search** button in the toolbar (players and GM), Ctrl/Cmd+K, or "/" outside text fields. Type to see matches; arrows and Enter, or tap; Esc closes.
+- **What it finds**: on your sheet: modules, every entry (name, description, text, spell school), abilities, skills, HP, death saves, conditions, spell slots; for the GM: encounters, monsters in any encounter, and their actions, traits, legendary actions and spells; party members; campaign notes (title, text, tags, status); and actions (Settings, Level up, rests, Characters, New note, Add monsters, Ask for a save, Undo).
+- **Jumping there**: switches to the right view (sheet, encounter tab, Party, Notes), un-hides or expands the module, opens the entry or the monster action's text, scrolls to it and highlights it for a moment.
+- Ranking: name starts with the words, then a word in the name, then the name, then the description or kind, then the full text; actions slightly ahead. Players can also "Search the SRD for …", which opens the SRD browser with that search.
 
 ### Roadmap
 Ordered by when it gets built. Priority applies inside a goal.

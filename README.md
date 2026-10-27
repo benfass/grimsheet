@@ -26,6 +26,7 @@ Characters are saved in each player's own browser. Nothing is uploaded and this 
 ## Owlbear Rodeo features
 
 - **Level up** (button next to your level): pick the class (or multiclass into a new one), take average or roll hit points, get the new class and subclass features with their SRD text, choose an Ability Score Improvement, feat or Epic Boon, and see your spell slots update. One tap undoes the whole level. Works with homebrew classes too.
+- **Search** (toolbar, Ctrl+K or /): find anything (an entry, a skill, a monster or its action, a party member, a note, a setting) and jump straight to it.
 - **Undo:** the Undo button (or Ctrl+Z) takes back the last change: HP, a spent slot or use, a condition, an edit, a whole level-up. ▾ shows recent changes in plain words; tap one to go back to before it. Redo is there too.
 - **Campaign notes** (Notes in the toolbar): a party journal for the room. NPCs, places, quests, items and notes with tags, statuses (open/done quests, friendly/hostile NPCs), search and `[[links]]` between notes. Party notes are shared with everyone in the room and anyone can edit them; "only me" notes stay private (the GM's are hidden from players until revealed). Players who missed a session catch up when they open Grimsheet. Export as Markdown or back up and import.
 - **Share rolls** with everyone, with the GM only, or not at all (Settings). Notifications arrive even while your Grimsheet panel is closed.
