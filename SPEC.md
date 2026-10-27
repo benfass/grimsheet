@@ -1,6 +1,6 @@
-# D&D Character Sheet App — Product Spec (v1.13)
+# D&D Character Sheet App — Product Spec (v1.14)
 
-*Working name: Grimsheet. v0.2 recorded the platform decision and first build; v0.3 added the SRD 5.2 content pack and locked skill proficiency to Edit mode; v0.4 expanded the pack; v0.5 added PDF import and documented the saved character format; v0.6 replaced the grid with a row-and-column layout; v0.7 added dice animation and a Settings panel; v0.8 added the Owlbear Rodeo extension and a backup reminder; v0.9 added panel sizes and compact mode; v1.0 added the background page and token linking; v1.1 added GM tools; v1.2 added monsters, the Encounter view and initiative; v1.3 added attacks against a target on the map; v1.4 added rerolls; v1.5 added spell areas on the map; v1.6 added combat prompts; v1.7 added the level-up wizard; v1.8 added undo; v1.9 added campaign notes; v1.10 added GM mode; v1.11 added several encounters; v1.12 added finding tokens, fog-aware targets and target buttons; v1.13 shows prompts next to what they're about.*
+*Working name: Grimsheet. v0.2 recorded the platform decision and first build; v0.3 added the SRD 5.2 content pack and locked skill proficiency to Edit mode; v0.4 expanded the pack; v0.5 added PDF import and documented the saved character format; v0.6 replaced the grid with a row-and-column layout; v0.7 added dice animation and a Settings panel; v0.8 added the Owlbear Rodeo extension and a backup reminder; v0.9 added panel sizes and compact mode; v1.0 added the background page and token linking; v1.1 added GM tools; v1.2 added monsters, the Encounter view and initiative; v1.3 added attacks against a target on the map; v1.4 added rerolls; v1.5 added spell areas on the map; v1.6 added combat prompts; v1.7 added the level-up wizard; v1.8 added undo; v1.9 added campaign notes; v1.10 added GM mode; v1.11 added several encounters; v1.12 added finding tokens, fog-aware targets and target buttons; v1.13 showed prompts next to what they're about; v1.14 reads monster spellcasting.*
 
 ## 1. Vision
 
@@ -348,6 +348,11 @@ Decisions: a party journal anyone can edit; its own view; typed entries.
   - **GM**: an attack card inside the target monster's card and the attacking monster's card (`srcMon` is sent with monster attacks and areas); a player target's attack card inside that player's card in the Party view; for an area or group save, a one-creature version (that creature's save controls and damage, plus Apply to all) inside each affected monster's or player's card.
   - **Players**: concentration checks and death save prompts inside the Combat module; the GM's save requests inside the Abilities module.
 - Fixed: an attack card no longer shows "Waiting for the damage roll" once the damage has arrived.
+
+### Built in v2.12: Monster spellcasting
+- The stat block reader finds the Spellcasting trait or action (2024: "At will: …", "1/day each: …"; 2014: "Cantrips (at will): …", "1st level (4 slots): …"), the spell save DC, spell attack bonus (or the spellcasting ability + PB) and caster level.
+- Each spell becomes a row on the monster card under "Spells · DC · to hit", grouped by frequency, with per-day boxes (or slot boxes per level for 2014 casters). Spells in the SRD get their attack, damage (cantrips scaled by caster level; "level N version" upcast), save with the monster's DC, area button and text; others show their name with a note to see the book.
+- Monsters saved earlier get their spells read the first time they're shown.
 
 ### Roadmap
 Ordered by when it gets built. Priority applies inside a goal.

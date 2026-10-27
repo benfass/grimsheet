@@ -327,6 +327,7 @@ select.ed-inline{width:auto}
 .inq .atkc.area.mini{box-shadow:inset 3px 0 0 #e8692c}
 .inq .atkc.save{box-shadow:inset 3px 0 0 var(--gold)}
 .mod-b > .inq{margin-bottom:8px}
+.mspell-g{font-size:.74rem;color:var(--muted);font-weight:600;margin:4px 0 0;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .tray .fu{display:flex;gap:6px;flex-wrap:wrap;margin-top:3px}
 .badge{font-size:.7rem;letter-spacing:.08em;font-weight:700;padding:0 6px;border-radius:4px;background:var(--gold-soft);color:var(--gold)}
 .badge.red{background:var(--danger-soft);color:var(--danger)}
@@ -1631,7 +1632,52 @@ const MONSTERS = (() => {
     });
     if (!t.hpDice && t.hp) t.hpDice = '';
     t.hpAvg = t.hp;
+    readSpellcasting(t);
     return t;
+  }
+  // "Spellcasting. … (spell save DC 15) … At will: Detect Magic, Fog Cloud 1/day each: Control Weather …" (2024),
+  // "Cantrips (at will): … 1st level (4 slots): …" (2014). Spells found in the SRD get their dice, save and area.
+  function readSpellcasting(t) {
+    const src = [].concat(t.traits, t.actions, t.bonus).find(a => /spellcasting/i.test(a.name));
+    t.spellActs = []; t.spellcasting = null;
+    if (!src) return;
+    const txt = src.text.replace(/[−–]/g, '-');
+    const dc = +(txt.match(/spell save dc\s*(\d+)/i) || [])[1] || null;
+    const atkM = txt.match(/([+-]\d+)\s*to hit with spell attacks/i) || txt.match(/spell attack[^.]*?([+-]\d+)/i);
+    const abM = txt.match(/(strength|dexterity|constitution|intelligence|wisdom|charisma) as the spellcasting ability/i) || txt.match(/spellcasting ability is (strength|dexterity|constitution|intelligence|wisdom|charisma)/i);
+    const ab = abM ? ABFULL[abM[1].toLowerCase()] : null, abMod = ab ? mod(t.abilities[ab] || 10) : 0;
+    const attack = atkM ? num(atkM[1]) : ab ? abMod + (t.pb || 2) : null;
+    const HEAD = /(at will|cantrips?(?:\s*\(at will\))?|(\d+)\s*\/\s*day(?:\s+each)?|(\d+)(?:st|nd|rd|th)[- ]level\s*\((\d+)\s+slots?\))\s*:\s*/gi;
+    const heads = []; let h;
+    while ((h = HEAD.exec(txt))) heads.push({ at: h.index, end: h.index + h[0].length, label: h[1].replace(/\s+/g, ' ').replace(/^cantrips?(\s*\(at will\))?/i, 'Cantrips (at will)').replace(/^at will/i, 'At will'), perDay: h[2] ? +h[2] : null, level: h[3] ? +h[3] : null, slots: h[4] ? +h[4] : null });
+    if (!heads.length) return;
+    const groups = heads.map((g, i) => {
+      let body = txt.slice(g.end, i + 1 < heads.length ? heads[i + 1].at : txt.length).trim().replace(/[.;]\s*$/, '');
+      body = body.split(/\.\s+[A-Z]/)[0];
+      return Object.assign(g, { spells: body.split(/,\s*(?![^()]*\))/).map(x => x.trim()).filter(Boolean) });
+    });
+    const srdSpell = nm => (typeof SRD !== 'undefined' && SRD.items || []).find(x => x.kind === 'spell' && x.name.toLowerCase() === nm.toLowerCase());
+    const cap = s => s.replace(/\b([a-z])/g, (m, c) => c.toUpperCase());
+    for (const g of groups) for (const raw of g.spells) {
+      const note = (raw.match(/\(([^)]*)\)/) || [])[1] || '', nm = raw.replace(/\([^)]*\)/g, '').replace(/[*†]/g, '').trim();
+      if (!nm || nm.length > 40) continue;
+      const it = srdSpell(nm), lv = +(note.match(/level\s*(\d)\s*version/i) || [])[1] || 0;
+      const a = { name: it ? it.name : cap(nm), damage: [], group: g.label, spell: true, srd: !!it };
+      let body = '';
+      if (it) {
+        body = `${it.level ? 'Level ' + it.level : 'Cantrip'} ${it.school}. ${it.short || ''} Range: ${it.range}.${it.dur ? ' Duration: ' + it.dur + '.' : ''}${it.text && it.text !== it.short ? ' ' + it.text : ''}`;
+        const cl = +(txt.match(/(\d+)(?:st|nd|rd|th)-level spellcaster/i) || [])[1] || 0, tier = it.cant && cl ? (cl >= 17 ? 4 : cl >= 11 ? 3 : cl >= 5 ? 2 : 1) : 1;
+        for (const [dice, mf, type] of it.dmg || []) a.damage.push({ dice: tier > 1 ? ENGINE.scaleLeadDice(String(dice || ''), tier) : String(dice || ''), mod: mf === 'SPELL' ? String(abMod) : /^-?\d+$/.test(String(mf || '')) ? String(mf) : '', type: type || '' });
+        if (lv > it.level && it.up && a.damage.length) a.damage.push({ dice: ENGINE.multDice(it.up, lv - it.level), mod: '', type: a.damage[0].type });
+        if (it.save) a.save = { ability: it.save, dc: dc || 8 + (t.pb || 2) + abMod };
+        if (it.atk && attack != null) a.attack = attack;
+        if (it.conc) a.conc = true;
+      } else body = 'Not in the free SRD: see your book for what it does.';
+      if (g.perDay) a.uses = g.perDay;
+      a.text = `${src.name} (${g.label}${note ? '; ' + note : ''}). ${body}`.trim();
+      t.spellActs.push(a);
+    }
+    t.spellcasting = { name: src.name, dc, attack, ability: ab, groups: groups.map(g => ({ label: g.label, level: g.level, slots: g.slots })) };
   }
 
   /* ---- SRD 5.1 starter set ---- */
@@ -2208,7 +2254,7 @@ Poison Breath (Recharge 5-6). The dragon exhales poisonous gas in a 30-foot cone
     if (!cache) cache = BLOCKS.map(b => { const t = parse(b); t.id = 'srd:' + t.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'); t.srd = true; t.source = b; return t; });
     return cache;
   }
-  return { parse, srd, avgDice, mod };
+  return { parse, srd, avgDice, mod, spells: readSpellcasting };
 })();
 if (typeof module !== 'undefined') module.exports = MONSTERS;
 </script>
@@ -2538,7 +2584,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.15.0';
+const APP_VERSION = '1.16.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -3170,7 +3216,9 @@ window.addEventListener('storage', ev => {
 });
 
 /* ---- instances ---- */
-const tplOf = m => enc().tpls[m.tpl] || tplById(m.tpl) || { name: m.name, ac: m.ac, hp: m.max, abilities: { STR: 10, DEX: 10, CON: 10, INT: 10, WIS: 10, CHA: 10 }, saves: {}, actions: [], bonus: [], reactions: [], legendary: [], traits: [], details: [], init: 0 };
+// monsters saved before spells were read get them now, from their Spellcasting text
+function withSpells(t) { if (t && t.spellActs === undefined && Array.isArray(t.actions)) { try { MONSTERS.spells(t); } catch (e) { t.spellActs = []; } } return t; }
+const tplOf = m => withSpells(enc().tpls[m.tpl] || tplById(m.tpl)) || { name: m.name, ac: m.ac, hp: m.max, abilities: { STR: 10, DEX: 10, CON: 10, INT: 10, WIS: 10, CHA: 10 }, saves: {}, actions: [], bonus: [], reactions: [], legendary: [], traits: [], details: [], init: 0 };
 function addMonsters(t, n, opts = {}) {
   const e = enc(); e.tpls[t.id] = t;
   const made = [];
@@ -3393,14 +3441,7 @@ function renderEncounter() {
   const cards = e.mons.length ? `<div class="mgrid">${e.mons.map(m => monCard(m, cur)).join('')}</div>` : '';
   return head + order + cards;
 }
-function monCard(m, cur) {
-  const t = tplOf(m), open = ui.monOpen && ui.monOpen.has(m.id), edit = ui.monEdit === m.id;
-  const rowKey = m.solo ? 'm:' + m.id : 'g:' + m.tpl, isCur = cur === rowKey;
-  const pct = m.max ? Math.max(0, Math.min(100, m.hp / m.max * 100)) : 0;
-  const tok = (OBRX.monTokens[m.id] || []).length;
-  const acts = [['actions', 'Actions'], ['bonus', 'Bonus actions'], ['reactions', 'Reactions']].map(([list, label]) => {
-    const as = t[list] || []; if (!as.length) return '';
-    return `<div class="mact-h">${label}</div>` + as.map((a, i) => {
+function monActRow(m, list, a, i) {
       const ref = list + ':' + i, ready = m.rech[ref] !== false, used = m.uses[ref] || 0;
       const btns = [];
       if (a.attack != null) btns.push(`<button class="roll hit" data-act="monatk" data-id="${m.id}" data-v="${ref}">${signed(a.attack)}</button>`);
@@ -3410,8 +3451,23 @@ function monCard(m, cur) {
       if (a.recharge) btns.push(`<button class="chip ${ready ? 'tag-action' : ''}" data-act="monrech" data-id="${m.id}" data-v="${ref}" title="Tap to mark used or ready">${ready ? 'Ready' : 'Recharging'} · ${a.recharge}–6</button>`);
       if (a.uses) btns.push(`<span class="boxes">${Array.from({ length: a.uses }, (_, k) => `<button class="box ${k < used ? 'used' : ''}" data-act="monuse" data-id="${m.id}" data-v="${ref}" data-i="${k}" aria-label="Use ${k + 1}"></button>`).join('')}</span>`);
       return `<div class="mact"><button class="mname" data-act="montxt" data-id="${m.id}" data-v="${ref}" title="${esc(a.text)}">${esc(a.name)}</button>${btns.join('')}</div>${ui.monTxt === m.id + ref ? `<div class="e-body" style="margin:2px 0 6px">${esc(a.text)}</div>` : ''}`;
-    }).join('');
+}
+function monCard(m, cur) {
+  const t = tplOf(m), open = ui.monOpen && ui.monOpen.has(m.id), edit = ui.monEdit === m.id;
+  const rowKey = m.solo ? 'm:' + m.id : 'g:' + m.tpl, isCur = cur === rowKey;
+  const pct = m.max ? Math.max(0, Math.min(100, m.hp / m.max * 100)) : 0;
+  const tok = (OBRX.monTokens[m.id] || []).length;
+  const acts = [['actions', 'Actions'], ['bonus', 'Bonus actions'], ['reactions', 'Reactions']].map(([list, label]) => {
+    const as = t[list] || []; if (!as.length) return '';
+    return `<div class="mact-h">${label}</div>` + as.map((a, i) => monActRow(m, list, a, i)).join('');
   }).join('');
+  const sc = t.spellcasting, sa = t.spellActs || [];
+  const spells = sc && sa.length ? `<div class="mact-h">Spells${sc.dc ? ' · DC ' + sc.dc : ''}${sc.attack != null ? ' · ' + signed(sc.attack) + ' to hit' : ''}</div>` + sc.groups.map(g => {
+    const rows = sa.map((a, i) => [a, i]).filter(([a]) => a.group === g.label);
+    if (!rows.length) return '';
+    const used = m.uses['slot:' + g.level] || 0;
+    return `<div class="mspell-g">${esc(g.label)}${g.slots ? ` <span class="boxes">${Array.from({ length: g.slots }, (_, k) => `<button class="box ${k < used ? 'used' : ''}" data-act="monuse" data-id="${m.id}" data-v="slot:${g.level}" data-i="${k}" aria-label="Slot ${k + 1}"></button>`).join('')}</span>` : ''}</div>` + rows.map(([a, i]) => monActRow(m, 'spellActs', a, i)).join('');
+  }).join('') : '';
   const leg = t.legendaryCount ? `<div class="mact-h">Legendary actions</div><div class="mact"><span class="boxes">${Array.from({ length: t.legendaryCount }, (_, k) => `<button class="box ${k < m.leg ? 'used' : ''}" data-act="monleg" data-id="${m.id}" data-i="${k}" aria-label="Legendary action ${k + 1}"></button>`).join('')}</span><span class="muted" style="font-size:.8rem">${esc(t.legendary.map(a => a.name + (a.cost > 1 ? ' (' + a.cost + ')' : '')).join(', '))}</span></div>` : '';
   const ab = `<div class="mab">${['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA'].map(k => `<div><span class="k">${k}</span><button class="md" data-act="moncheck" data-id="${m.id}" data-v="${k}" title="${k} check">${signed(MONSTERS.mod(t.abilities[k] || 10))}</button><button class="sv" data-act="monsave" data-id="${m.id}" data-v="${k}" title="${k} save">${t.saves[k] != null ? 'save ' + signed(t.saves[k]) : 'save'}</button></div>`).join('')}</div>`;
   const details = open ? `<div class="mdet">${t.meta ? `<div class="muted" style="font-style:italic">${esc(t.meta)}</div>` : ''}<div class="muted">Speed ${esc(t.speed || '')}${t.cr ? ' · CR ' + esc(t.cr) + (t.xp ? ' (' + t.xp + ' XP)' : '') : ''}${t.hpDice ? ' · HP dice ' + esc(t.hpDice) : ''}</div>
@@ -3439,7 +3495,7 @@ function monCard(m, cur) {
     <div class="cond" style="margin-top:6px">${m.cond.map(k => `<button class="on" data-act="moncond" data-id="${m.id}" data-v="${esc(k)}" title="Remove">${esc(k)} ✕</button>`).join('')}
       ${m.concNote && m.cond.includes('Concentrating') ? `<span class="muted" style="font-size:.78rem">${esc(m.concNote)}</span>` : ''}
       <select class="ed-inline" id="mc-${m.id}" data-moncond="${m.id}" aria-label="Add a condition" style="width:auto;font-size:.78rem"><option value="">+ condition</option>${CONDITIONS.concat(['Concentrating']).filter(k => !m.cond.includes(k)).map(k => `<option>${k}</option>`).join('')}</select></div>
-    ${ab}${acts}${leg}${details}
+    ${ab}${acts}${spells}${leg}${details}
   </section>`;
 }
 
