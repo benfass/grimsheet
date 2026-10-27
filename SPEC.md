@@ -271,13 +271,26 @@ Decisions: monster HP visibility is a GM setting; Grimsheet's tracker is primary
 - **Monster tokens**: GM menu now works on several tokens. Unlinked tokens → search the bestiary (catalog cached in `grimsheet.moncat.v1` for the menu page) → numbered monsters, token renamed, linked with `com.grimsheet/monster = { room, inst, name }`. Linked selections → damage/heal all (characters by message, monsters directly), unlink all, "Open in Encounter" (focuses the card). Selecting a monster token highlights its card. Stat Bubbles on monster tokens use `hide` unless HP visibility is Exact.
 - **Owlbear tracker**: when on, initiative and the active turn are written to linked character and monster tokens.
 
-### Next
-1. Cloud backup/sync of characters across devices.
-2. Condition durations and concentration prompts in combat; encounter difficulty from CR and party level.
-2. PWA install + offline (service worker, manifest).
-2. Cloud sync of the user's own characters across devices.
-3. Print / PDF layout.
-4. Triggers (on 0 HP, on rest) and concentration reminders when taking damage.
-5. Importers (D&D Beyond JSON).
-6. Themes, portrait, Discord webhook for shared rolls.
-7. LLM-assisted summaries and recognition for harder text.
+### Roadmap
+Ordered by when it gets built. Priority applies inside a goal.
+
+**Current goal: Choose targets on the map**
+- *High:* **Attacks against a target.** Click Attack, then click a token. The roll is compared to the target's AC, with distance and range taken from the scene grid, and damage is applied after the GM confirms. Monsters attacking characters work the same way: the hit and the damage go to that player's sheet.
+- *High:* **Spell areas on the map.** Casting a spell with an area (sphere, cone, line, cube) places a measured shape on the map. Tokens inside it are listed, with "roll saves for all" for monsters and a save prompt for players, then damage (half on a successful save where the spell says so).
+- *Low:* **Conditions on tokens.** Small markers on tokens for conditions and concentration, kept in step with the sheet and the monster cards.
+- *Low:* **Combat prompts.** A concentration check when a concentrating creature takes damage (DC 10 or half the damage, whichever is higher), a death save prompt when a downed player's turn starts, and turn reminders.
+- *Low:* **Shared homebrew.** The GM shares a homebrew pack (items, spells, monsters) with the room and players add it in one click.
+
+**Mid goals**
+- **Level-up wizard.** Pick the class gaining a level, then step through HP (roll or average), new features from the content library, spell slot and prepared spell changes, and ability score improvements or feats. One undo for the whole level.
+- **Undo button.** A per-character change history (HP, slots, resources, edits) with an undo button and a short list of recent changes.
+
+**Mid to long goal**
+- **Campaign notes and session log.** Notes per campaign and per session, and an automatic log of rolls, damage, conditions and loot during a session, giving a recap at the end.
+
+**Long goal**
+- **Keep characters safe across devices.** Characters are kept on a sync service instead of only in one browser, so they survive a new device, a cleared browser, or Owlbear keeping its own browser storage. Works offline and syncs when back online; existing characters move over on first sign-in.
+
+**Later, not scheduled**
+- Install as an app with offline use; condition durations on the initiative tracker; encounter difficulty from CR and party level.
+- Print / PDF layout; importers (D&D Beyond JSON); themes, portraits, Discord webhook for shared rolls; help from an AI model for harder text recognition and summaries.
