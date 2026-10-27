@@ -71,8 +71,16 @@
       if (d && d.type === 'atk' && d.v === 1 && me.role === 'GM') {
         const key = 'grimsheet.attacks.' + room;
         S.write(key, S.mergeAttack(S.read(key) || [], d));
+        if (d.part === 'area') { OBR.notification.show(`${d.attacker}: ${d.name} (${d.areaLabel}), ${(d.targets || []).length} inside. Resolve it in Grimsheet.`, 'DEFAULT').catch(() => { }); return; }
         const what = d.part === 'atk' ? d.total + ' to hit' + (d.crit ? ' (natural 20!)' : d.fumble ? ' (natural 1)' : '') : d.part === 'heal' ? d.total + ' healing' : d.total + ' ' + (d.types || '') + ' damage';
         OBR.notification.show(`${d.attacker} → ${d.target.name}: ${what}. Confirm it in Grimsheet.`, d.crit ? 'SUCCESS' : 'DEFAULT').catch(() => { });
+        return;
+      }
+      if (d && d.type === 'saveRes' && me.role === 'GM') { const key = 'grimsheet.attacks.' + room; S.write(key, S.mergeSaveRes(S.read(key) || [], d)); return; }
+      if (d && d.type === 'saveReq' && d.to === me.id) {
+        const key = 'grimsheet.saves.' + room, q = S.read(key) || [];
+        if (!q.some(x => x.id === d.id)) { q.unshift({ id: d.id, aid: d.aid, from: d.from, ability: d.ability, dc: d.dc, what: d.what }); S.write(key, q.slice(0, 10)); }
+        OBR.notification.show(`${d.from} asks for a ${d.ability} save (DC ${d.dc}) against ${d.what}. Roll it in Grimsheet.`, 'WARNING').catch(() => { });
         return;
       }
       if (d && d.type === 'askInit' && me.role !== 'GM') OBR.notification.show(`${d.from} asks for initiative. Open Grimsheet and tap INIT in your Combat module.`, 'INFO').catch(() => { });

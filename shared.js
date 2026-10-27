@@ -1,7 +1,7 @@
 /* Grimsheet helpers shared by background.html and gm.html (the panel keeps its own copy). */
 window.GS = (function () {
   const GS = {
-    VERSION: '1.6.0',
+    VERSION: '1.7.0',
     CH_ROLL: 'com.grimsheet/roll',
     CH_GM: 'com.grimsheet/gm',        // GM ↔ player: hp changes, sheet requests and replies
     CH_LOCAL: 'com.grimsheet/local',  // same browser: GM menu → GM panel
@@ -47,12 +47,20 @@ window.GS = (function () {
   GS.mergeAttack = (list, d) => {
     let c = list.find(x => x.id === d.id);
     if (!c) { c = { id: d.id, from: d.from, who: d.who, attacker: d.attacker, target: d.target, atk: null, dmg: null, save: null, verdict: null }; list.unshift(c); }
-    if (d.part === 'atk') c.atk = { total: d.total, nat: d.nat, crit: !!d.crit, fumble: !!d.fumble, mode: d.mode || 'normal', rr: d.rr || '' };
+    if (d.part === 'area') { c.kind = 'area'; Object.assign(c, { name: d.name, areaLabel: d.areaLabel, itemId: d.itemId, half: !!d.half, keep: !!d.keep, heal: !!d.heal, targets: d.targets || [], excl: d.excl || [], res: c.res || {}, asked: c.asked || {} }); }
+    else if (d.part === 'atk') c.atk = { total: d.total, nat: d.nat, crit: !!d.crit, fumble: !!d.fumble, mode: d.mode || 'normal', rr: d.rr || '' };
     else c.dmg = { total: d.total, types: d.types || '', crit: !!d.isCrit, heal: d.part === 'heal', rr: d.rr || '' };
     if (d.save) c.save = d.save;
     if (d.dist) { c.dist = d.dist; c.range = d.range || ''; c.rangeOk = d.rangeOk; }
     c.at = Date.now();
     return list.slice(0, 30);
+  };
+  // a player's answer to the GM's request for a saving throw (same as the panel's mergeSaveRes)
+  GS.mergeSaveRes = (list, d) => {
+    const c = list.find(x => x.id === d.aid); if (!c || !c.save) return list;
+    c.res = c.res || {};
+    for (const t of c.targets || []) if (t.player === d.from && (!d.char || !t.char || t.char === d.char)) c.res[t.id] = { total: d.total, ok: d.total >= +c.save.dc, nat: d.nat, by: 'player' };
+    return list;
   };
   GS.chunks = (s, n = 12000) => { const out = []; for (let i = 0; i < s.length; i += n) out.push(s.slice(i, i + n)); return out.length ? out : ['']; };
   GS.load = src => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); });

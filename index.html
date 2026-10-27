@@ -240,6 +240,18 @@ select.ed-inline{width:auto}
 .atkc-h{display:flex;align-items:center;gap:6px;min-width:0}
 .atkc-m{font-size:.8rem}
 .atkc .fu{display:flex;gap:6px;flex-wrap:wrap;margin-top:3px}
+.atkc.area{border-color:#e8692c;box-shadow:var(--shadow),inset 3px 0 0 #e8692c}
+.atkc.save{border-color:var(--gold);box-shadow:var(--shadow),inset 3px 0 0 var(--gold)}
+.atkc .arows{display:flex;flex-direction:column;margin:2px 0}
+.atkc .arow{display:flex;align-items:center;gap:6px;padding:3px 0;border-top:1px solid var(--line);min-width:0}
+.atkc .arow .an{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.atkc .arow .as{display:flex;align-items:center;gap:3px;flex-wrap:wrap}
+.atkc .arow .aa{min-width:28px;text-align:right}
+.atkc .arow .chip{padding:0 6px;min-height:22px}
+.atkc .chip.on-ok{background:var(--ok);color:var(--on-accent);border-color:var(--ok)}
+.atkc .chip.on-bad{background:var(--danger);color:var(--on-accent);border-color:var(--danger)}
+.btn.areab{display:inline-flex;align-items:center;gap:5px}
+.btn.areab svg,.atkc-h svg{width:14px;height:14px;flex:none}
 .tray .fu{display:flex;gap:6px;flex-wrap:wrap;margin-top:3px}
 .badge{font-size:.7rem;letter-spacing:.08em;font-weight:700;padding:0 6px;border-radius:4px;background:var(--gold-soft);color:var(--gold)}
 .badge.red{background:var(--danger-soft);color:var(--danger)}
@@ -563,6 +575,23 @@ const ENGINE = (() => {
     return `Reroll ${what}${which}, keep ${r.keep === 'best' ? 'the higher' : 'the new roll'}${r.bonus ? ', +' + r.bonus : ''}`;
   }
 
+  // "20-foot-radius sphere", "Self (60-foot line)", "a 30-foot cone", "15-foot Emanation", "line … 5 feet wide"
+  function areaOf(text) {
+    const low = String(text || '').toLowerCase().replace(/[−–]/g, '-');
+    const SH = 'sphere|cone|line|cube|cylinder|emanation|circle|square|radius';
+    let m, shape = null, size = 0;
+    if ((m = low.match(new RegExp('(\\d+)[- ]?(?:ft|foot|feet)\\.?[- ](?:radius[- ])?(' + SH + ')s?\\b')))) { size = +m[1]; shape = m[2]; }
+    else if ((m = low.match(/\b(radius|emanation) of (\d+) ?(?:ft|feet|foot)/))) { size = +m[2]; shape = m[1]; }
+    else if ((m = low.match(/\b(emanation|sphere|cube|cone|line)\s+(\d+)\s*(?:ft|feet|foot)/))) { shape = m[1]; size = +m[2]; }
+    if (!shape || !size) return null;
+    if (shape === 'radius' || shape === 'circle' || shape === 'cylinder') shape = 'sphere';
+    if (shape === 'square') shape = 'cube';
+    const w = low.match(/(\d+) ?(?:feet|ft|foot) wide/);
+    const self = shape === 'cone' || shape === 'line' || shape === 'emanation' || /^\s*self\b/.test(low);
+    const half = /half as much|half (?:the )?damage on (?:a )?success|half on (?:a )?success|half on a successful|half damage on a successful/.test(low);
+    return { shape, size, width: shape === 'line' ? (w ? +w[1] : 5) : 0, self, half };
+  }
+
   function scan(text) {
     const out = []; const t = String(text || ''); const low = t.toLowerCase();
     const add = (key, label, apply) => { if (!out.some(s => s.key === key)) out.push({ key, label, apply }); };
@@ -647,7 +676,7 @@ const ENGINE = (() => {
     return out;
   }
 
-  return { parse, tokenize, signedTerms, staticSum, rollComps, evalStatic, rollSimple, multDice, scaleLeadDice, scan, ordinal, hasDice, rerollOf, rerollText };
+  return { parse, tokenize, signedTerms, staticSum, rollComps, evalStatic, rollSimple, multDice, scaleLeadDice, scan, ordinal, hasDice, rerollOf, rerollText, areaOf };
 })();
 if (typeof module !== 'undefined') module.exports = ENGINE;
 </script>
@@ -2434,7 +2463,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.6.0';
+const APP_VERSION = '1.7.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -2451,6 +2480,7 @@ function applyPanelSize() {
 }
 
 const ICON = {
+  area: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6" stroke-dasharray="2.2 1.6"/><circle cx="8" cy="8" r="1.6" fill="currentColor" stroke="none"/></svg>',
   target: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="2"/><path d="M8 0.5v3M8 12.5v3M0.5 8h3M12.5 8h3"/></svg>',
   edit: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 2.5l2.5 2.5L6 12.5H3.5V10z"/></svg>',
   star: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 1.8l1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.6l-3.8 2 .7-4.3-3.1-3 4.3-.6z"/></svg>',
@@ -2784,7 +2814,7 @@ async function startOwlbear() {
       writeCatalog(); ENC = null; enc(); render();
       setInterval(() => { if (!document.hidden) refreshLinks(); }, 5000);
       try {
-        OBR.scene.items.onChange(items => refreshLinks(items));
+        OBR.scene.items.onChange(items => { refreshLinks(items); areaWatch(items); });
         OBR.scene.onReadyChange(() => refreshLinks());
         refreshLinks();
       } catch (e) { }
@@ -2929,6 +2959,16 @@ async function receiveGm(d) {
   if (d.type === 'atk') {
     if (OBRX.me.role !== 'GM') return;
     if (!bgAlive()) { writeAtkQ(mergeAttack(readAtkQ(), d)); OBRX.api.notification.show(attackNote(d), d.crit ? 'SUCCESS' : 'DEFAULT').catch(() => { }); }
+    setTimeout(renderAtkQueue, 200); return;
+  }
+  if (d.type === 'saveReq') {
+    if (d.to !== OBRX.me.id || gmSeen.has(d.id)) return; gmSeen.add(d.id);
+    if (!bgAlive()) { writeSaves([{ id: d.id, aid: d.aid, from: d.from, ability: d.ability, dc: d.dc, what: d.what }].concat(readSaves())); OBRX.api.notification.show(`${d.from} asks for a ${d.ability} save (DC ${d.dc}) against ${d.what}.`, 'WARNING').catch(() => { }); }
+    setTimeout(renderAtkQueue, 200); toast(`${d.from}: ${d.ability} save, DC ${d.dc}, against ${d.what}.`); return;
+  }
+  if (d.type === 'saveRes') {
+    if (OBRX.me.role !== 'GM') return;
+    if (!bgAlive()) writeAtkQ(mergeSaveRes(readAtkQ(), d));
     setTimeout(renderAtkQueue, 200); return;
   }
   if (d.type === 'atkResult') {
@@ -3242,6 +3282,7 @@ function monCard(m, cur) {
       if (a.attack != null) btns.push(`<button class="roll hit" data-act="monatk" data-id="${m.id}" data-v="${ref}">${signed(a.attack)}</button>`);
       if (a.damage.length) btns.push(`<button class="roll dmg" data-act="mondmg" data-id="${m.id}|${ref}">${esc(a.damage.map(d => (d.dice || '') + (d.mod ? (d.dice ? (+d.mod < 0 ? ' − ' + Math.abs(+d.mod) : ' + ' + d.mod) : d.mod) : '')).join(' + '))}</button>`);
       if (a.save) btns.push(`<span class="chip dc">DC ${a.save.dc} ${a.save.ability}</span>`);
+      const ar = IN_OBR && E.areaOf(a.text); if (ar) btns.push(`<button class="btn small areab" data-act="monarea" data-id="${m.id}" data-v="${ref}" title="Place it on the map from ${esc(m.name)}'s token, toward the target">${ICON.area} ${areaLabel(ar)}</button>`);
       if (a.recharge) btns.push(`<button class="chip ${ready ? 'tag-action' : ''}" data-act="monrech" data-id="${m.id}" data-v="${ref}" title="Tap to mark used or ready">${ready ? 'Ready' : 'Recharging'} · ${a.recharge}–6</button>`);
       if (a.uses) btns.push(`<span class="boxes">${Array.from({ length: a.uses }, (_, k) => `<button class="box ${k < used ? 'used' : ''}" data-act="monuse" data-id="${m.id}" data-v="${ref}" data-i="${k}" aria-label="Use ${k + 1}"></button>`).join('')}</span>`);
       return `<div class="mact"><button class="mname" data-act="montxt" data-id="${m.id}" data-v="${ref}" title="${esc(a.text)}">${esc(a.name)}</button>${btns.join('')}</div>${ui.monTxt === m.id + ref ? `<div class="e-body" style="margin:2px 0 6px">${esc(a.text)}</div>` : ''}`;
@@ -3314,14 +3355,15 @@ function writeAtkQ(q) { writeJSON(atkKey(), q.slice(0, 30)); }
 function mergeAttack(list, d) {
   let c = list.find(x => x.id === d.id);
   if (!c) { c = { id: d.id, from: d.from, who: d.who, attacker: d.attacker, target: d.target, atk: null, dmg: null, save: null, verdict: null }; list.unshift(c); }
-  if (d.part === 'atk') c.atk = { total: d.total, nat: d.nat, crit: !!d.crit, fumble: !!d.fumble, mode: d.mode || 'normal', rr: d.rr || '' };
+  if (d.part === 'area') { c.kind = 'area'; Object.assign(c, { name: d.name, areaLabel: d.areaLabel, itemId: d.itemId, half: !!d.half, keep: !!d.keep, heal: !!d.heal, targets: d.targets || [], excl: d.excl || [], res: c.res || {}, asked: c.asked || {} }); }
+  else if (d.part === 'atk') c.atk = { total: d.total, nat: d.nat, crit: !!d.crit, fumble: !!d.fumble, mode: d.mode || 'normal', rr: d.rr || '' };
   else c.dmg = { total: d.total, types: d.types || '', crit: !!d.isCrit, heal: d.part === 'heal', rr: d.rr || '' };
   if (d.save) c.save = d.save;
   if (d.dist) { c.dist = d.dist; c.range = d.range || ''; c.rangeOk = d.rangeOk; }
   c.at = Date.now();
   return list;
 }
-window.addEventListener('storage', ev => { if (ev.key && ev.key.startsWith('grimsheet.attacks.')) renderAtkQueue(); });
+window.addEventListener('storage', ev => { if (ev.key && (ev.key.startsWith('grimsheet.attacks.') || ev.key.startsWith('grimsheet.saves.'))) renderAtkQueue(); });
 
 /* ---- choosing a target ---- */
 function myTokenIds() { return OBRX.links.map(l => l.id); }
@@ -3416,6 +3458,8 @@ function targetFor(attackerIds, part, key) {
   if (!IN_OBR || !OBRX.ready || ui.viewing) return null;
   const la = ui.lastAtk;
   // damage after an attack goes to the same target, even if the selection moved on
+  const lr = ui.lastArea;
+  if (part !== 'atk' && lr && lr.key === key && Date.now() - lr.at < 5 * 60e3) return { tgt: lr.tgt, aid: lr.aid, area: true };
   if (part !== 'atk' && la && la.key === key && Date.now() - la.at < 5 * 60e3) return { tgt: la.tgt, aid: la.aid };
   const t = ui.target; if (!t || (attackerIds || []).includes(t.id)) return null;
   return { tgt: { id: t.id, name: t.name } };
@@ -3439,6 +3483,7 @@ function attachTarget(entry, T) {
 async function landTarget(entry, T) {
   const info = await entry.tgtP;
   if (T.part === 'atk') ui.lastAtk = { aid: entry.aid, key: T.key, tgt: T.tgt, at: Date.now() };
+  if (T.area && ui.lastArea && ui.lastArea.aid === entry.aid) ui.lastArea = null;
   const msg = { type: 'atk', v: 1, id: entry.aid, part: T.part, from: OBRX.me.id, who: OBRX.me.name, attacker: T.attacker, target: { id: info.id, name: info.name }, dist: info.dist || '', range: info.range || '', rangeOk: info.rangeOk, total: entry.total, nat: entry.nat, crit: entry.crit, fumble: entry.fumble, isCrit: entry.isCrit, types: entry.note || '', mode: entry.mode, save: T.save || null, rr: T.rr || '' };
   if (OBRX.me.role === 'GM') { writeAtkQ(mergeAttack(readAtkQ(), msg)); renderAtkQueue(); return; }
   entry.tgt.sent = true; if (ui.log[0] === entry) renderTray();
@@ -3480,10 +3525,13 @@ function suggestVerdict(c, ac) {
 }
 function renderAtkQueue() {
   const n = document.getElementById('atkq'); if (!n) return;
-  if (!IN_OBR || !OBRX.ready || OBRX.me.role !== 'GM') { n.innerHTML = ''; return; }
+  if (!IN_OBR || !OBRX.ready) { n.innerHTML = ''; return; }
+  if (OBRX.me.role !== 'GM') { n.innerHTML = savePromptsHtml(); return; }
   const q = readAtkQ();
-  n.innerHTML = q.length ? `<div class="atkq">${q.map(atkCard).join('')}</div>` : '';
+  n.innerHTML = q.length ? `<div class="atkq">${q.map(c => c.kind === 'area' ? areaCard(c) : atkCard(c)).join('')}</div>` : '';
+  q.filter(c => c.kind === 'area' && !c.checked && !areaChecking.has(c.id)).forEach(c => { areaChecking.add(c.id); recheckArea(c.id, true); });
 }
+const areaChecking = new Set();
 function atkCard(c) {
   const R = resolveTarget(c.target.id), sv = suggestVerdict(c, R.ac), heal = c.dmg && c.dmg.heal;
   const verdict = c.verdict || sv;
@@ -3546,6 +3594,253 @@ function rollQueuedSave(id) {
     const t = tplOf(R.m), ab = c.save.ability, bonus = t.saves[ab] != null ? t.saves[ab] : MONSTERS.mod(t.abilities[ab] || 10);
     const total = quickD20(bonus); c.saveRoll = { total, ok: total >= +c.save.dc };
   });
+}
+
+/* ---------- AREAS: spell and breath templates on the map ---------- */
+// "Place area" draws the shape (sphere, cube, cone, line, emanation) on the map from the caster's token
+// toward the target, lists the creatures inside and sends a card to the GM. The damage roll joins the
+// card. The GM rolls monster saves, asks players for theirs, and applies full / half / none to each.
+const AREA = 'com.grimsheet/area';
+const savesKey = () => 'grimsheet.saves.' + (OBRX.room || 'room');
+ui.lastArea = null;
+function areaOfEntry(e) { return E.areaOf([e.spell && e.spell.range, e.short, e.text].filter(Boolean).join('\n')); }
+function areaLabel(a) { return a.size + '-ft ' + (a.shape === 'emanation' ? 'emanation' : a.shape); }
+function areaBtn(e, lvl) {
+  const a = areaOfEntry(e); if (!a || !IN_OBR) return '';
+  return `<button class="btn small areab" data-act="area" data-id="${e.id}" data-lvl="${lvl || ''}" title="Place a ${areaLabel(a)} on the map and send it to the GM${e.damage.length ? ', with the damage roll' : ''}">${ICON.area} ${areaLabel(a)}</button>`;
+}
+
+/* ---- geometry ---- */
+async function gridInfo() {
+  const g = OBRX.api.scene.grid; const [dpi, sc] = await Promise.all([g.getDpi(), g.getScale()]);
+  const p = (sc && sc.parsed) || { multiplier: 5, unit: 'ft' }, mult = p.multiplier || 5, unit = p.unit || 'ft';
+  const ftPerCell = /^(ft|feet|foot|')$/i.test(unit) ? mult : /^m$/i.test(unit) ? mult * 10 / 3 : 5;
+  return { dpi, pxPerFt: dpi / ftPerCell };
+}
+const circlePts = (r, n = 48) => Array.from({ length: n }, (_, i) => ({ x: r * Math.cos(2 * Math.PI * i / n), y: r * Math.sin(2 * Math.PI * i / n) }));
+function areaGeom(a, G, from, to) {
+  // from: caster bounds (or null); to: target point (or null)
+  const px = a.size * G.pxPerFt, fc = from ? from.center : null;
+  const aim = fc && to ? Math.atan2(to.y - fc.y, to.x - fc.x) : 0;
+  const half = from ? Math.max(from.width, from.height) / 2 : 0;
+  const edge = fc ? { x: fc.x + Math.cos(aim) * half, y: fc.y + Math.sin(aim) * half } : null;
+  const deg = aim * 180 / Math.PI;
+  if (a.shape === 'cone') return { position: edge, rotation: deg, points: [{ x: 0, y: 0 }, { x: px, y: -px / 2 }, { x: px, y: px / 2 }] };
+  if (a.shape === 'line') { const w = (a.width || 5) * G.pxPerFt; return { position: edge, rotation: deg, points: [{ x: 0, y: -w / 2 }, { x: px, y: -w / 2 }, { x: px, y: w / 2 }, { x: 0, y: w / 2 }] }; }
+  if (a.shape === 'emanation') return { position: fc, rotation: 0, points: circlePts(px + half) };
+  if (a.shape === 'cube' && a.self && edge) return { position: edge, rotation: deg, points: [{ x: 0, y: -px / 2 }, { x: px, y: -px / 2 }, { x: px, y: px / 2 }, { x: 0, y: px / 2 }] };
+  const c = to || fc;
+  if (a.shape === 'cube') return { position: c, rotation: 0, points: [{ x: -px / 2, y: -px / 2 }, { x: px / 2, y: -px / 2 }, { x: px / 2, y: px / 2 }, { x: -px / 2, y: px / 2 }] };
+  return { position: c, rotation: 0, points: circlePts(px) };
+}
+function mkAreaItem(g, meta, name) {
+  const style = { fillColor: '#e8692c', fillOpacity: 0.2, strokeColor: '#e8692c', strokeOpacity: 0.9, strokeWidth: 4, strokeDash: [], tension: 0, closed: true };
+  const B = window.OwlbearBuild;
+  if (B && B.buildCurve) return B.buildCurve().points(g.points).style(style).position(g.position).rotation(g.rotation).layer('DRAWING').name(name).locked(false).metadata({ [AREA]: meta }).build();
+  return { id: uid() + uid(), type: 'CURVE', name, layer: 'DRAWING', position: g.position, rotation: g.rotation, scale: { x: 1, y: 1 }, visible: true, locked: false, zIndex: Date.now(), points: g.points, style, metadata: { [AREA]: meta } };
+}
+// a point inside the drawn shape, whatever the item's current position, rotation and scale
+function inArea(item, p, tol) {
+  const r = -(item.rotation || 0) * Math.PI / 180, sc = item.scale || { x: 1, y: 1 };
+  const dx = p.x - item.position.x, dy = p.y - item.position.y;
+  const x = (dx * Math.cos(r) - dy * Math.sin(r)) / (sc.x || 1), y = (dx * Math.sin(r) + dy * Math.cos(r)) / (sc.y || 1);
+  const P = item.points || []; let inside = false;
+  for (let i = 0, j = P.length - 1; i < P.length; j = i++) {
+    const a = P[i], b = P[j];
+    if (((a.y > y) !== (b.y > y)) && x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  if (inside) return true;
+  for (let i = 0, j = P.length - 1; i < P.length; j = i++) { // on the edge, within a small tolerance
+    const a = P[i], b = P[j], L = (b.x - a.x) ** 2 + (b.y - a.y) ** 2; if (!L) continue;
+    const t = Math.max(0, Math.min(1, ((x - a.x) * (b.x - a.x) + (y - a.y) * (b.y - a.y)) / L));
+    if (Math.hypot(x - (a.x + t * (b.x - a.x)), y - (a.y + t * (b.y - a.y))) <= tol) return true;
+  }
+  return false;
+}
+// creatures whose space (any grid square of it) has its centre inside the area
+async function creaturesIn(item, exclude = []) {
+  const api = OBRX.api, dpi = await api.scene.grid.getDpi();
+  const toks = (await api.scene.items.getItems(isCreature)).filter(t => !exclude.includes(t.id));
+  const out = [];
+  await Promise.all(toks.map(async t => {
+    let b; try { b = await api.scene.items.getItemBounds([t.id]); } catch (e) { return; }
+    const nx = Math.max(1, Math.round(b.width / dpi)), ny = Math.max(1, Math.round(b.height / dpi));
+    for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) {
+      const p = { x: b.min.x + (i + 0.5) * b.width / nx, y: b.min.y + (j + 0.5) * b.height / ny };
+      if (inArea(item, p, dpi * 0.05)) {
+        const L = t.metadata && t.metadata[LINK], M = t.metadata && t.metadata[MONLINK];
+        OBRX.tokCache[t.id] = t;
+        out.push({ id: t.id, name: tokenLabel(t), player: L ? L.player : null, char: L ? L.char : null, mon: M ? M.inst : null });
+        return;
+      }
+    }
+  }));
+  return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/* ---- placing ---- */
+// who: { name, tokens: [ids], key, e | (m, a, ref) }
+async function placeArea(src) {
+  if (!IN_OBR || !OBRX.ready) { toast('Areas are placed on the map inside Owlbear Rodeo.'); return; }
+  const a = src.area, G = await gridInfo().catch(() => null); if (!G) { toast('Open a scene with a grid first.'); return; }
+  const api = OBRX.api, casterId = src.tokens[0];
+  let from = null, to = null;
+  try { if (casterId) from = await api.scene.items.getItemBounds([casterId]); } catch (e) { }
+  const t = ui.target && !src.tokens.includes(ui.target.id) ? ui.target : null;
+  try { if (t) to = (await api.scene.items.getItemBounds([t.id])).center; } catch (e) { }
+  if (!from && (a.self || !to)) { toast(a.self ? 'Link your token first: this area starts from you.' : 'Select a target token for the centre of the area, or link your token.'); return; }
+  const aid = uid();
+  let item = null;
+  if (src.keep) { try { [item] = await api.scene.items.getItems(it => !!(it.metadata && it.metadata[AREA] && it.metadata[AREA].owner === OBRX.me.id && it.metadata[AREA].name === src.name)); } catch (e) { } }
+  if (!item) {
+    const g = areaGeom(a, G, from, to);
+    item = mkAreaItem(g, { id: aid, owner: OBRX.me.id, name: src.name }, src.name + ' (' + areaLabel(a) + ')');
+    if (a.shape === 'emanation' && casterId) item.attachedTo = casterId;
+    try { await api.scene.items.addItems([item]); } catch (e) { toast('Couldn\'t draw on the map.'); return; }
+  }
+  const targets = await creaturesIn(item, a.self ? [casterId] : []);
+  const msg = { type: 'atk', v: 1, id: aid, part: 'area', from: OBRX.me.id, who: OBRX.me.name, attacker: src.attacker, target: { id: item.id, name: src.name }, name: src.name, areaLabel: areaLabel(a), itemId: item.id, half: a.half, keep: !!src.keep, save: src.save || null, heal: !!src.heal, targets, excl: a.self && casterId ? [casterId] : [] };
+  ui.lastArea = { aid, key: src.key, at: Date.now(), tgt: { id: item.id, name: src.name + ' area' } };
+  if (OBRX.me.role === 'GM') { writeAtkQ(mergeAttack(readAtkQ(), msg)); renderAtkQueue(); }
+  else api.broadcast.sendMessage(CH_GM, msg, { destination: 'REMOTE' }).catch(() => toast('Couldn\'t reach the GM.'));
+  toast(`${src.name}: ${areaLabel(a)} placed${!to && !a.self ? ' on you, drag it into place' : ''}. ${targets.length ? targets.length + ' inside: ' + targets.map(x => x.name).join(', ') : 'Nobody inside yet'}. ${OBRX.me.role === 'GM' ? '' : 'Sent to the GM.'}`);
+  src.roll && src.roll();
+}
+function placeEntryArea(e, lvl) {
+  const a = areaOfEntry(e); if (!a) return;
+  const keep = !!(e.spell && e.spell.duration && !/instant/i.test(e.spell.duration));
+  placeArea({ area: a, name: e.name, attacker: C().name, tokens: myTokenIds(), key: 'e:' + e.id, keep, heal: isHealing(e),
+    save: e.save ? { dc: dcValue(e), ability: e.save.ability } : null, roll: e.damage.length ? () => rollDamage(e, false, lvl || (e.spell ? +e.spell.level || 0 : 0)) : null });
+}
+function placeMonsterArea(m, ref) {
+  const a0 = actOf(m, ref); if (!a0) return; const a = E.areaOf(a0.text); if (!a) return;
+  if (a0.recharge) m.rech[ref] = false;
+  if (a0.uses) m.uses[ref] = Math.min(a0.uses, (m.uses[ref] || 0) + 1);
+  saveEnc({ quiet: true });
+  placeArea({ area: a, name: a0.name, attacker: m.name, tokens: monTokenIds(m), key: 'm:' + m.id + '|' + ref,
+    save: a0.save ? { dc: a0.save.dc, ability: a0.save.ability } : null, roll: a0.damage.length ? () => monDamage(m, ref, false) : null });
+  if (encView()) renderGrid();
+}
+
+/* ---- GM: the area card ---- */
+function areaOutcome(c, t) {
+  const r = c.res && c.res[t.id], ok = r ? r.ok : null;
+  if (!c.dmg) return { ok, amt: 0 };
+  if (c.dmg.heal || c.heal) return { ok, amt: c.dmg.total };
+  if (!c.save || ok !== true) return { ok, amt: c.dmg.total };
+  return { ok, amt: c.half ? Math.floor(c.dmg.total / 2) : 0 };
+}
+function areaCard(c) {
+  const heal = c.heal || (c.dmg && c.dmg.heal);
+  const rows = (c.targets || []).map(t => {
+    const R = resolveTarget(t.id), r = c.res && c.res[t.id], o = areaOutcome(c, t);
+    let save = '';
+    if (c.save && !heal) {
+      if (r) save = `<span class="mono">${r.total}</span> ${r.ok ? '<b class="ok">saved</b>' : '<b class="bad">failed</b>'}${r.by === 'player' ? ' <span class="muted">(player)</span>' : ''}`;
+      else if (R.kind === 'mon') save = `<button class="btn small" data-act="arearoll1" data-id="${esc(c.id)}" data-v="${esc(t.id)}">Roll save</button>`;
+      else if (R.kind === 'pc') save = c.asked && c.asked[t.id] ? '<span class="muted">asked…</span>' : `<button class="btn small" data-act="areaask1" data-id="${esc(c.id)}" data-v="${esc(t.id)}">Ask</button>`;
+      save += ` <button class="chip ${r && !r.ok ? 'on-bad' : ''}" data-act="areaset" data-id="${esc(c.id)}" data-v="${esc(t.id)}|0" title="Mark as failed">✗</button><button class="chip ${r && r.ok ? 'on-ok' : ''}" data-act="areaset" data-id="${esc(c.id)}" data-v="${esc(t.id)}|1" title="Mark as saved">✓</button>`;
+    }
+    const amt = c.dmg ? `<b class="mono ${heal ? 'ok' : ''}">${o.amt}</b>${!heal && c.save && o.ok == null ? '<span class="muted">?</span>' : ''}` : '';
+    return `<div class="arow"><span class="an">${esc(t.name)}${R.hp ? ` <span class="muted mono">${esc(R.hp)}</span>` : ''}</span><span class="as">${save}</span><span class="aa">${amt}</span><button class="ico" data-act="areadrop1" data-id="${esc(c.id)}" data-v="${esc(t.id)}" title="Leave out" aria-label="Leave ${esc(t.name)} out">✕</button></div>`;
+  }).join('') || '<div class="muted">Nobody inside. Move the area on the map, then Recheck.</div>';
+  const nMon = (c.targets || []).filter(t => resolveTarget(t.id).kind === 'mon' && !(c.res && c.res[t.id])).length;
+  const nPc = (c.targets || []).filter(t => resolveTarget(t.id).kind === 'pc' && !(c.res && c.res[t.id]) && !(c.asked && c.asked[t.id])).length;
+  const btns = [];
+  if (c.save && !heal && nMon) btns.push(`<button class="btn small" data-act="arearoll" data-id="${esc(c.id)}">Roll ${nMon} monster save${nMon > 1 ? 's' : ''}</button>`);
+  if (c.save && !heal && nPc) btns.push(`<button class="btn small" data-act="areaask" data-id="${esc(c.id)}">Ask ${nPc} player${nPc > 1 ? 's' : ''}</button>`);
+  btns.push(`<button class="btn small" data-act="arearecheck" data-id="${esc(c.id)}" title="Look again at who is inside, after moving the area">Recheck</button>`);
+  if (c.dmg && (c.targets || []).length) btns.push(`<button class="btn small primary" data-act="areaapply" data-id="${esc(c.id)}">${heal ? 'Heal all' : 'Apply to all'}</button>`);
+  btns.push(`<button class="btn small ghost" data-act="arearemove" data-id="${esc(c.id)}">${c.dmg ? 'Remove area' : 'Remove'}</button>`);
+  const who = c.from === OBRX.me.id ? '' : esc(c.who);
+  return `<div class="atkc area"><div class="atkc-h">${ICON.area}<b>${esc(c.attacker)}</b> <span class="muted">→</span> <b>${esc(c.name)}</b> <span class="muted">${esc(c.areaLabel || '')}</span><span style="flex:1"></span><button class="ico" data-act="atkdrop" data-id="${esc(c.id)}" title="Dismiss and leave the area on the map" aria-label="Dismiss">✕</button></div>
+    <div class="atkc-m muted">${[who, c.save ? `DC ${esc(c.save.dc)} ${esc(c.save.ability)} save${c.half ? ', half on success' : ''}` : ''].filter(Boolean).join(' · ')}</div>
+    <div>${c.dmg ? `<b class="mono">${c.dmg.total}</b> ${heal ? 'healing' : esc(c.dmg.types || '') + ' damage'}${c.dmg.crit ? ' <span class="badge">CRIT</span>' : ''}${c.dmg.rr ? ` <span class="warn" title="${esc(c.dmg.rr)}">↻ rerolled</span>` : ''}` : '<span class="muted">No damage roll (yet).</span>'}</div>
+    <div class="arows">${rows}</div><div class="fu">${btns.join('')}</div></div>`;
+}
+function rollMonSave(c, t) {
+  const R = resolveTarget(t.id); if (R.kind !== 'mon' || !c.save) return;
+  const tp = tplOf(R.m), ab = c.save.ability, bonus = tp.saves[ab] != null ? tp.saves[ab] : MONSTERS.mod(tp.abilities[ab] || 10);
+  const total = quickD20(bonus); c.res = c.res || {}; c.res[t.id] = { total, ok: total >= +c.save.dc, by: 'gm' };
+}
+function askSave(c, t) {
+  const R = resolveTarget(t.id); if (R.kind !== 'pc') return;
+  c.asked = c.asked || {}; c.asked[t.id] = true;
+  OBRX.api.broadcast.sendMessage(CH_GM, { type: 'saveReq', id: uid(), aid: c.id, to: R.player, char: R.char, ability: c.save.ability, dc: c.save.dc, what: c.name, from: OBRX.me.name }, { destination: R.player === OBRX.me.id ? 'LOCAL' : 'REMOTE' }).catch(() => { });
+}
+async function recheckArea(id, quiet) {
+  const c = readAtkQ().find(x => x.id === id); if (!c || !c.itemId) return;
+  let item; try { [item] = await OBRX.api.scene.items.getItems([c.itemId]); } catch (e) { }
+  if (!item) { if (!quiet) toast('The area isn\'t on the map any more.'); return; }
+  const found = await creaturesIn(item, c.excl || []);
+  updAtk(id, x => { x.targets = found; x.geom = areaKey(item); x.checked = true; });
+  if (!quiet) toast(found.length + ' inside ' + c.name + '.');
+}
+const areaKey = it => [it.position.x, it.position.y, it.rotation, it.scale && it.scale.x, it.scale && it.scale.y].map(v => Math.round(v || 0)).join(',');
+// the GM moves or rotates an area on the map: look again at who is inside
+let areaWatchT = null;
+function areaWatch(items) {
+  if (!IN_OBR || !OBRX.ready || OBRX.me.role !== 'GM' || !items) return;
+  const q = readAtkQ().filter(c => c.kind === 'area' && c.itemId); if (!q.length) return;
+  const moved = q.filter(c => { const it = items.find(i => i.id === c.itemId); return it && c.geom && areaKey(it) !== c.geom; });
+  if (!moved.length) return;
+  clearTimeout(areaWatchT); areaWatchT = setTimeout(() => moved.forEach(c => recheckArea(c.id, true)), 400);
+}
+async function applyArea(id) {
+  const c = readAtkQ().find(x => x.id === id); if (!c || !c.dmg) return;
+  const heal = c.heal || c.dmg.heal, done = [], seen = [];
+  // hidden tokens get the damage too, but the caster isn't told about them
+  const visible = t => { const it = OBRX.tokCache[t.id]; return !it || it.visible !== false; };
+  for (const t of c.targets || []) {
+    const o = areaOutcome(c, t);
+    const ok = o.amt ? await applyToToken(t.id, heal ? o.amt : -o.amt, t.name) : true;
+    const line = t.name + ' ' + (ok ? o.amt : '–') + (o.ok ? ' (saved)' : '');
+    done.push(line); if (visible(t)) seen.push(line);
+  }
+  updAtk(id, () => false);
+  if (!c.keep) deleteArea(c);
+  const text = `${c.name}: ${seen.join(', ') || 'nobody'}${heal ? ' healed' : ''}`;
+  tellAttacker(c, text); toast(`${c.name}: ${done.join(', ') || 'nobody'}.`);
+}
+function deleteArea(c) { if (c.itemId && OBRX.ready) OBRX.api.scene.items.deleteItems([c.itemId]).catch(() => { }); }
+// damage or healing to any token: monster card, player's sheet, or the token's HP bubble
+async function applyToToken(tokId, delta, name) {
+  const R = resolveTarget(tokId);
+  if (R.kind === 'mon') { applyMonHp(R.m, delta); saveEnc(); if (encView()) renderGrid(); return true; }
+  if (R.kind === 'pc') { sendHp(R.player, R.char, delta); return true; }
+  let ok = false;
+  try { await OBRX.api.scene.items.updateItems([tokId], ds => { for (const d of ds) { const b = d.metadata[BUBBLES]; if (b && typeof b.health === 'number') { b.health = Math.max(0, Math.min(b['max health'] || 1e9, b.health + delta)); ok = true; } } }); } catch (e) { }
+  if (!ok) toast(name + ' isn\'t linked and has no HP bubble, so nothing was changed.');
+  return ok;
+}
+
+/* ---- players: the GM asks for a saving throw ---- */
+function readSaves() { const q = readJSON(savesKey()); return Array.isArray(q) ? q : []; }
+function writeSaves(q) { writeJSON(savesKey(), q.slice(0, 10)); }
+function savePromptsHtml() {
+  const q = readSaves(); if (!q.length) return '';
+  return `<div class="atkq">${q.map(p => `<div class="atkc save"><div class="atkc-h"><b>${esc(p.from)}</b>&nbsp;asks for a saving throw<span style="flex:1"></span><button class="ico" data-act="savedrop" data-id="${esc(p.id)}" aria-label="Dismiss">✕</button></div>
+    <div><b>${esc(p.ability)} save</b> · DC ${esc(p.dc)} · against ${esc(p.what)}</div>
+    <div class="fu"><button class="btn small primary" data-act="saveroll" data-id="${esc(p.id)}">Roll ${esc(p.ability)} save</button></div></div>`).join('')}</div>`;
+}
+function rollPromptedSave(id) {
+  const p = readSaves().find(x => x.id === id); if (!p) return;
+  const a = C().abilities.find(x => x.key === p.ability);
+  roll((a ? a.name : p.ability) + ' save · ' + p.what, saveComps(p.ability), { onLand: en => answerSave(p, en) });
+}
+function answerSave(p, en) {
+  writeSaves(readSaves().filter(x => x.id !== p.id)); renderAtkQueue();
+  OBRX.api.broadcast.sendMessage(CH_GM, { type: 'saveRes', id: uid(), aid: p.aid, from: OBRX.me.id, char: C().id, total: en.total, nat: en.nat }, { destination: 'REMOTE' }).catch(() => { });
+  en.tgt = { name: p.what, result: 'sent to the GM' }; if (ui.log[0] === en) renderTray();
+}
+// a plain save roll of the asked ability answers the request too
+function answerByRoll(ab, en) { const p = readSaves().find(x => x.ability === ab); if (p) answerSave(p, en); }
+// same as GS.mergeSaveRes in shared.js
+function mergeSaveRes(list, d) {
+  const c = list.find(x => x.id === d.aid); if (!c || !c.save) return list;
+  c.res = c.res || {};
+  for (const t of c.targets || []) if (t.player === d.from && (!d.char || !t.char || t.char === d.char)) c.res[t.id] = { total: d.total, ok: d.total >= +c.save.dc, nat: d.nat, by: 'player' };
+  return list;
 }
 
 /* ---------- REROLLS: Lucky, Heroic Inspiration, Savage Attacker… ---------- */
@@ -3744,6 +4039,13 @@ function animateDice(entry) {
     renderTray(true); shareRoll(entry); entry.onLand && entry.onLand(entry);
     diceBoxControls(entry);
   }, ms + 45 * (shown.length - 1)));
+}
+function castMenu(el, e, c) {
+  const base = +e.spell.level || 1;
+  const opts = [];
+  for (let l = base; l <= 9; l++) if (c.slots[l].max > 0) opts.push(`<button class="opt" data-act="castat" data-id="${e.id}" data-v="${l}" ${c.slots[l].used >= c.slots[l].max ? 'disabled' : ''}>${E.ordinal(l)}-level slot · ${c.slots[l].max - c.slots[l].used} left${l > base && e.spell.upcast ? ' · +' + E.multDice(e.spell.upcast, l - base) : ''}</button>`);
+  opts.push(`<button class="opt" data-act="castat" data-id="${e.id}" data-v="0">Cast without a slot${e.tags.ritual ? ' (ritual)' : ''}</button>`);
+  showPop(el, `<b style="font-family:var(--f-display)">Cast ${esc(e.name)}</b><div style="margin-top:4px">${opts.join('')}</div>`);
 }
 function rollAttack(e) {
   const fu = e.damage.length ? [{ label: 'Damage', act: 'dmg', id: e.id }] : [];
@@ -4003,6 +4305,7 @@ function entryRow(e, m, compact) {
   if (e.attack) { const l = staticLabel(attackComps(e)); acts += `<button class="roll hit" data-act="atk" data-id="${e.id}" title="Roll to hit${+e.attack.crit < 20 ? ' · crits on ' + e.attack.crit + '–20' : ''}">${l.text} hit</button>`; }
   if (e.damage.length) { const heal = isHealing(e); acts += `<button class="roll ${heal ? 'heal' : 'dmg'}" data-act="dmg" data-id="${e.id}">${esc(dmgLabel(e))} ${esc(heal ? 'heal' : (e.damage.map(p => p.type).filter(Boolean).join('/') || 'dmg'))}</button>`; }
   if (e.save) acts += `<button class="chip dc" data-act="explain" data-v="save" data-id="${e.id}" title="How the DC is worked out">DC ${dcValue(e)} ${esc(e.save.ability)}</button>`;
+  if (IN_OBR && !ui.viewing) acts += areaBtn(e);
   if (e.reroll) acts += `<span class="chip rrchip" title="${esc(E.rerollText(e.reroll))}. The button appears on matching rolls.">↻ ${e.reroll.on === 'd20' ? 'd20 reroll' : e.reroll.on === 'damage' ? 'damage reroll' : 'reroll'}</span>`;
   if (e.counter) acts += counterHtml(e);
   if (e.effect && !e.item) acts += `<button class="switch ${e.effect.active ? 'on' : ''}" data-act="fx" data-id="${e.id}" title="${esc(fxSummary(e))}"><i></i>${e.effect.active ? 'Active' : 'Off'}</button>`;
@@ -4449,7 +4752,7 @@ document.addEventListener('click', ev => {
     case 'adv': ui.adv = v; renderTop(); break;
     case 'rest': doRest(v); break;
     case 'check': { const a = c.abilities.find(x => x.key === v); roll(a.name + ' check', checkComps(v, 0)); break; }
-    case 'save': { const a = c.abilities.find(x => x.key === v); roll(a.name + ' save', saveComps(v)); break; }
+    case 'save': { const a = c.abilities.find(x => x.key === v); roll(a.name + ' save', saveComps(v), { onLand: IN_OBR && !ui.viewing ? en => answerByRoll(v, en) : undefined }); break; }
     case 'saveprof': if (ed) { c.abilities[i].save = !c.abilities[i].save; rerender(); } break;
     case 'skill': { const s = c.skills[i]; roll(s.name + ' check', checkComps(s.ab, s.prof)); break; }
     case 'skprof': if (ed) { c.skills[i].prof = (c.skills[i].prof + 1) % 3; rerender(); } break;
@@ -4498,23 +4801,19 @@ document.addEventListener('click', ev => {
     case 'fx': f.e.effect.active = !f.e.effect.active; rerender(); if (f.e.effect.active) toast(f.e.name + ' is on: ' + fxSummary(f.e) + '.'); break;
     case 'equip': f.e.item.equipped = !f.e.item.equipped; rerender(); break;
     case 'useitem': { const e = f.e; if ((+e.item.qty || 0) < 1) break; e.item.qty = (+e.item.qty || 0) - 1; rollDamage(e); rerender(); break; }
-    case 'cast': {
-      const e = f.e, base = +e.spell.level || 1;
-      const opts = [];
-      for (let l = base; l <= 9; l++) if (c.slots[l].max > 0) opts.push(`<button class="opt" data-act="castat" data-id="${e.id}" data-v="${l}" ${c.slots[l].used >= c.slots[l].max ? 'disabled' : ''}>${E.ordinal(l)}-level slot · ${c.slots[l].max - c.slots[l].used} left${l > base && e.spell.upcast ? ' · +' + E.multDice(e.spell.upcast, l - base) : ''}</button>`);
-      opts.push(`<button class="opt" data-act="castat" data-id="${e.id}" data-v="0">Cast without a slot${e.tags.ritual ? ' (ritual)' : ''}</button>`);
-      showPop(el, `<b style="font-family:var(--f-display)">Cast ${esc(e.name)}</b><div style="margin-top:4px">${opts.join('')}</div>`);
-      break;
-    }
+    case 'cast': castMenu(el, f.e, c); break;
     case 'castat': {
       hidePop(); const e = f.e; const lvl = +v; const base = +e.spell.level || 1;
       if (lvl) c.slots[lvl].used++;
       const fu = []; if (e.attack) fu.push({ label: 'Spell attack', act: 'atk', id: e.id });
       if (e.damage.length) fu.push({ label: isHealing(e) ? 'Roll healing' : 'Roll damage', act: 'dmg', id: e.id, lvl: lvl || base });
+      const ar = IN_OBR && areaOfEntry(e); if (ar) fu.unshift({ label: 'Place ' + areaLabel(ar), act: 'area', id: e.id, lvl: lvl || base });
       const note = (e.save ? 'DC ' + dcValue(e) + ' ' + e.save.ability + ' save. ' : '') + (e.tags.conc ? 'Concentration.' : '');
       ui.log.unshift({ id: uid(), title: 'Cast ' + e.name + (lvl ? ' (' + E.ordinal(lvl) + ' level)' : ''), total: '✦', parts: [], fu, mode: 'normal', note });
       if (e.effect && !e.effect.active) { e.effect.active = true; toast(e.name + ' is on: ' + fxSummary(e) + '. Switch it off when it ends.'); }
-      rerender(); renderTray(true); break;
+      rerender(); renderTray(true);
+      if (ui.areaAfterCast === e.id) { ui.areaAfterCast = null; placeEntryArea(e, lvl || base); }
+      break;
     }
     case 'edit': openEditor(id); break;
     case 'newentry': openEditor(null, id, true); break;
@@ -4570,6 +4869,19 @@ document.addEventListener('click', ev => {
     case 'setshare': SETTINGS.share = v; saveSettings(); renderModal(); break;
     case 'setview': SETTINGS.view = v; saveSettings(); render(); window.scrollTo(0, 0); break;
     case 'setmonhp': SETTINGS.monHp = v; saveSettings(); syncMonTokens(); publishInit(); renderModal(); break;
+    case 'area': { const e = f && f.e; if (!e) break; if (e.spell && +e.spell.level > 0 && !el.dataset.lvl && !ui.viewing) { ui.areaAfterCast = e.id; castMenu(el, e, c); } else placeEntryArea(e, +el.dataset.lvl || 0); break; }
+    case 'monarea': { const m = enc().mons.find(x => x.id === id); if (m) placeMonsterArea(m, v); break; }
+    case 'arearoll': updAtk(id, x => { (x.targets || []).forEach(t => { if (!(x.res && x.res[t.id])) rollMonSave(x, t); }); }); break;
+    case 'arearoll1': updAtk(id, x => { const t = (x.targets || []).find(t => t.id === v); if (t) rollMonSave(x, t); }); break;
+    case 'areaask': updAtk(id, x => { (x.targets || []).forEach(t => { if (!(x.res && x.res[t.id]) && !(x.asked && x.asked[t.id])) askSave(x, t); }); }); break;
+    case 'areaask1': updAtk(id, x => { const t = (x.targets || []).find(t => t.id === v); if (t) askSave(x, t); }); break;
+    case 'areaset': { const [tid, ok] = String(v).split('|'); updAtk(id, x => { x.res = x.res || {}; const r = x.res[tid]; x.res[tid] = { total: r ? r.total : '–', ok: ok === '1', by: 'gm' }; }); break; }
+    case 'areadrop1': updAtk(id, x => { x.targets = (x.targets || []).filter(t => t.id !== v); x.excl = (x.excl || []).concat([v]); }); break;
+    case 'arearecheck': recheckArea(id); break;
+    case 'areaapply': applyArea(id); break;
+    case 'arearemove': { const x = readAtkQ().find(q => q.id === id); if (x) { deleteArea(x); updAtk(id, () => false); } break; }
+    case 'saveroll': rollPromptedSave(id); break;
+    case 'savedrop': writeSaves(readSaves().filter(x => x.id !== id)); renderAtkQueue(); break;
     case 'rrgo': { const en = ui.log.find(x => x.id === id) || ui.log[0]; if (en) rrStart(en, v); break; }
     case 'rrdie': rrPickDie(v); break;
     case 'rrcancel': { const en = ui.rrPick && ui.rrPick.entry; ui.rrPick = null; renderTray(); if (en) paintDiceBox(en); break; }

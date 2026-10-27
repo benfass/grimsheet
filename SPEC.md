@@ -1,6 +1,6 @@
-# D&D Character Sheet App — Product Spec (v1.4)
+# D&D Character Sheet App — Product Spec (v1.5)
 
-*Working name: Grimsheet. v0.2 recorded the platform decision and first build; v0.3 added the SRD 5.2 content pack and locked skill proficiency to Edit mode; v0.4 expanded the pack; v0.5 added PDF import and documented the saved character format; v0.6 replaced the grid with a row-and-column layout; v0.7 added dice animation and a Settings panel; v0.8 added the Owlbear Rodeo extension and a backup reminder; v0.9 added panel sizes and compact mode; v1.0 added the background page and token linking; v1.1 added GM tools; v1.2 added monsters, the Encounter view and initiative; v1.3 added attacks against a target on the map; v1.4 adds rerolls.*
+*Working name: Grimsheet. v0.2 recorded the platform decision and first build; v0.3 added the SRD 5.2 content pack and locked skill proficiency to Edit mode; v0.4 expanded the pack; v0.5 added PDF import and documented the saved character format; v0.6 replaced the grid with a row-and-column layout; v0.7 added dice animation and a Settings panel; v0.8 added the Owlbear Rodeo extension and a backup reminder; v0.9 added panel sizes and compact mode; v1.0 added the background page and token linking; v1.1 added GM tools; v1.2 added monsters, the Encounter view and initiative; v1.3 added attacks against a target on the map; v1.4 added rerolls; v1.5 adds spell areas on the map.*
 
 ## 1. Vision
 
@@ -286,12 +286,20 @@ Decisions: monster HP visibility is a GM setting; Grimsheet's tracker is primary
 - **Honesty**: rerolls are always announced: to the table with the roll's sharing, or to the GM when sharing is off (GM-only monster rolls stay hidden). Rerolling a targeted roll updates the GM's attack card, marked "↻ rerolled" with what changed.
 - **Dice on screen**: setting "Dice stay on screen" (Auto: about 3 s, 8 s when a reroll is possible; Longer; Until closed). Pointing at the dice keeps them up; ✕ hides them. The roll bar always keeps the buttons.
 
+### Built in v2.3: Spell areas on the map
+- **Area detection** (`ENGINE.areaOf`) from a spell's range and text, or a monster action: "20-foot-radius Sphere", "Self (60-foot line)", "30-foot cone", "15-foot Emanation", "line … 5 feet wide", "N-ft cube/cylinder/radius"; whether the area starts from the caster; "half as much damage on a successful one".
+- **Place**: entries with an area get a button with its size and shape (in Owlbear). Leveled spells open the Cast menu first (slot spent, damage at that level); after casting, the roll bar also offers "Place …". Monster actions with an area get the button on the monster card (marks recharge/uses spent).
+- **Shape on the map**: a Curve item on the Drawing layer (`com.grimsheet/area = { id, owner, name }`), movable and rotatable like any drawing. Cones and lines start at the edge of the caster's token and point at the target; spheres, cylinders and cubes are centred on the target (or on the caster with no target); self cubes start at the caster; emanations surround the caster and are attached to its token. Size from the scene's grid scale. A kept spell (duration other than Instantaneous) reuses its area when used again.
+- **Who is inside**: every grid square of a token (from its bounds) is tested against the shape's current points, position, rotation and scale; a token is inside when the centre of any of its squares is. The caster is left out of areas that start from them. The GM's copy rechecks automatically (hidden tokens included) and again whenever the area is moved.
+- **Area card for the GM** (same queue as attack cards): caster → area, DC and save, damage (the damage roll joins it, rerolls included), and a row per creature: Roll save (monsters, with their save bonus), Ask (players get a notification and a "Roll DEX save" card; a normal save roll of that ability answers it too), or mark ✗/✓ by hand; damage per row is full, half or none. Buttons: roll all monster saves, ask all players, Recheck, Apply to all (heal all for healing areas), Remove area. Applying updates monsters, players' sheets and HP bubbles, removes an instantaneous area from the map, and tells the caster (hidden creatures left out of what the caster sees).
+- **Messages**: `type: 'atk'` with `part: 'area'` (targets, item, save, half), `saveReq` (GM → player), `saveRes` (player → GM). The background pages keep save requests (`grimsheet.saves.<room>`) and answers while panels are closed.
+
 ### Roadmap
 Ordered by when it gets built. Priority applies inside a goal.
 
 **Current goal: Choose targets on the map**
 - *Done (v2.1):* **Attacks against a target** (see above).
-- *High:* **Spell areas on the map.** Casting a spell with an area (sphere, cone, line, cube) places a measured shape on the map. Tokens inside it are listed, with "roll saves for all" for monsters and a save prompt for players, then damage (half on a successful save where the spell says so).
+- *Done (v2.3):* **Spell areas on the map** (see above).
 - *Low:* **Conditions on tokens.** Small markers on tokens for conditions and concentration, kept in step with the sheet and the monster cards.
 - *Low:* **Combat prompts.** A concentration check when a concentrating creature takes damage (DC 10 or half the damage, whichever is higher), a death save prompt when a downed player's turn starts, and turn reminders.
 - *Low:* **Shared homebrew.** The GM shares a homebrew pack (items, spells, monsters) with the room and players add it in one click.
