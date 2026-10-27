@@ -27,6 +27,7 @@ Characters are saved in each player's own browser. Nothing is uploaded and this 
 
 - **Share rolls** with everyone, with the GM only, or not at all (Settings). Notifications arrive even while your Grimsheet panel is closed.
 - **Table** tab in roll history with everyone's shared rolls.
+- **Rerolls:** features like Lucky, Heroic Inspiration, Halfling Luck or Savage Attacker get a reroll tag (found automatically in pasted text, or set in the editor). After a matching roll, a reroll button appears on the dice and in the roll bar; it spends a use and recomputes the total. Rerolls are always announced, to the table or at least to the GM, and show up on the GM's attack cards.
 - **Party** module with live HP, AC and conditions of everyone using Grimsheet in the room.
 - **Link your token:** right-click your character token → **Link to my Grimsheet character**. The token's [Stat Bubbles for D&D](https://github.com/SeamusFinlayson/Bubbles-for-Owlbear-Rodeo) HP and AC follow your sheet, and rolling Initiative puts your total into Owlbear's initiative tracker. Right-click → **Unlink from Grimsheet** to undo.
 - **Panel size** (Small, Medium, Large or custom) and a **Compact** mode.

@@ -1,7 +1,7 @@
 /* Grimsheet helpers shared by background.html and gm.html (the panel keeps its own copy). */
 window.GS = (function () {
   const GS = {
-    VERSION: '1.5.0',
+    VERSION: '1.6.0',
     CH_ROLL: 'com.grimsheet/roll',
     CH_GM: 'com.grimsheet/gm',        // GM ↔ player: hp changes, sheet requests and replies
     CH_LOCAL: 'com.grimsheet/local',  // same browser: GM menu → GM panel
@@ -47,8 +47,8 @@ window.GS = (function () {
   GS.mergeAttack = (list, d) => {
     let c = list.find(x => x.id === d.id);
     if (!c) { c = { id: d.id, from: d.from, who: d.who, attacker: d.attacker, target: d.target, atk: null, dmg: null, save: null, verdict: null }; list.unshift(c); }
-    if (d.part === 'atk') c.atk = { total: d.total, nat: d.nat, crit: !!d.crit, fumble: !!d.fumble, mode: d.mode || 'normal' };
-    else c.dmg = { total: d.total, types: d.types || '', crit: !!d.isCrit, heal: d.part === 'heal' };
+    if (d.part === 'atk') c.atk = { total: d.total, nat: d.nat, crit: !!d.crit, fumble: !!d.fumble, mode: d.mode || 'normal', rr: d.rr || '' };
+    else c.dmg = { total: d.total, types: d.types || '', crit: !!d.isCrit, heal: d.part === 'heal', rr: d.rr || '' };
     if (d.save) c.save = d.save;
     if (d.dist) { c.dist = d.dist; c.range = d.range || ''; c.rangeOk = d.rangeOk; }
     c.at = Date.now();

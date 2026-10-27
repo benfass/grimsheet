@@ -252,6 +252,19 @@ select.ed-inline{width:auto}
 /* dice animation: lands just above the roll tray */
 .dicefx{position:fixed;left:0;right:0;bottom:calc(74px + env(safe-area-inset-bottom,0px));z-index:44;max-width:1500px;margin:0 auto;pointer-events:none;transition:opacity .35s}
 .dicefx .shelf{display:inline-flex;flex-wrap:wrap;gap:12px;align-items:center;max-width:100%;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:10px 14px 20px;box-shadow:0 10px 30px rgba(0,0,0,.16)}
+.dicefx .shelf.live{pointer-events:auto}
+.dicefx .rrbox{flex-basis:100%;display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)}
+.dicefx .rrbox .ico{margin-left:auto}
+.die.pickable{cursor:pointer}
+.die.pickable svg *:not(.facet){stroke-width:3.5}
+.die.pickable:hover,.die.pickable:focus-visible{transform:translateY(-3px);outline:none}
+.die.rerolled{animation:reroll .5s ease-out}
+@keyframes reroll{0%{transform:rotate(-200deg) scale(.6);opacity:.3}100%{transform:none;opacity:1}}
+@media (prefers-reduced-motion:reduce){.die.rerolled{animation:none}}
+.tray .fu.rr{align-items:center}
+.tray .fu.rr .muted{font-size:.82rem}
+.rrl{font-size:.8rem;display:flex;flex-direction:column;gap:1px;margin-top:2px;color:var(--ink)}
+.rrchip{color:var(--accent);border-color:var(--accent)}
 .dicefx.out{opacity:0}
 .die{position:relative;width:52px;height:52px;display:grid;place-items:center;animation:tumble var(--t) cubic-bezier(.2,.75,.3,1) var(--d) both}
 .die svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible;filter:drop-shadow(0 4px 6px rgba(0,0,0,.18))}
@@ -525,6 +538,31 @@ const ENGINE = (() => {
   const ordinal = n => n + (n === 1 ? 'st' : n === 2 ? 'nd' : n === 3 ? 'rd' : 'th');
   const modWord = w => w ? (/spellcasting/.test(w) ? 'SPELL' : AB[w]) : '';
 
+  // "reroll", "roll it again", "roll an additional d20 and choose", "roll the damage dice twice and use either"
+  function rerollOf(text) {
+    const low = String(text || '').toLowerCase().replace(/[−–]/g, '-');
+    const re = /\bre-?roll|\broll (?:it|the die|the dice|that die|them|the d20) again|\broll an additional d20|damage dice twice|\bluck points?\b[^.]*\badvantage\b/;
+    const m = low.match(re); if (!m) return null;
+    const sents = low.split(/(?<=[.!?])\s+/), s = sents.find(x => re.test(x)) || low;
+    const D20 = /\bd20\b|attack roll|ability check|saving throw|\bsave\b|d20 test/;
+    let on = /damage/.test(s) && !D20.test(s) ? 'damage' : /\bany die\b|\ba die\b|\bany dice\b/.test(s) ? 'any' : D20.test(s) ? 'd20' : /damage/.test(s) ? 'damage' : 'any';
+    let dice = 'one', lowv = 0, k;
+    if (/damage dice twice|re-?roll (?:all|the) (?:weapon'?s? )?damage dice/.test(s)) dice = 'all';
+    else if ((k = s.match(/\b(1|one|2|two)\s+or\s+(2|two|3|three)\s+on (?:a|the|any) (?:damage )?die/))) { dice = 'low'; lowv = { two: 2, three: 3 }[k[2]] || +k[2]; }
+    else if (/\broll(?:s)? a 1\b|\bnatural 1\b|\ba 1 on the d20\b/.test(s)) { dice = 'low'; lowv = 1; }
+    const keep = /must use the new roll|using the new roll/.test(low) ? 'new' : /use either|choose which|either roll|use the higher|higher roll|\badvantage\b/.test(low) ? 'best' : 'new';
+    let bonus = '';
+    if ((k = s.match(/with a bonus equal to your (?:\w+ )?level/))) bonus = 'LEVEL';
+    else if ((k = s.match(/with a \+?(\d+) bonus/))) bonus = k[1];
+    return { on, dice, low: lowv, keep, bonus };
+  }
+  function rerollText(r) {
+    if (!r) return '';
+    const what = r.on === 'd20' ? 'the d20' : r.on === 'damage' ? (r.dice === 'all' ? 'all damage dice' : 'a damage die') : 'any die';
+    const which = r.dice === 'low' ? ` showing ${r.low}${r.low > 1 ? ' or less' : ''}` : r.dice === 'all' && r.on !== 'damage' ? ' (all dice)' : '';
+    return `Reroll ${what}${which}, keep ${r.keep === 'best' ? 'the higher' : 'the new roll'}${r.bonus ? ', +' + r.bonus : ''}`;
+  }
+
   function scan(text) {
     const out = []; const t = String(text || ''); const low = t.toLowerCase();
     const add = (key, label, apply) => { if (!out.some(s => s.key === key)) out.push({ key, label, apply }); };
@@ -580,6 +618,9 @@ const ENGINE = (() => {
     // upcast + cantrip scaling
     if ((m = low.match(/by\s+(\d+d\d+)\s+for each\s+(?:spell\s+)?slot level above/))) { const u = m[1]; add('upcast', 'Upcast: +' + u + ' per slot level above', d => { d.spell = d.spell || { level: 1 }; d.spell.upcast = u; }); }
     if (/increases by \d+d\d+ when you reach (?:5th level|level 5|character level 5)/.test(low) || (level === 0 && /\b(?:5th level|level 5)\b.*\b(?:11th level|level 11)\b/s.test(low))) add('cantrip', 'Cantrip damage grows at levels 5, 11, 17', d => { d.spell = d.spell || { level: 0 }; d.spell.cantrip = true; });
+    // rerolls
+    const rr = rerollOf(t);
+    if (rr) add('reroll', rerollText(rr), d => { d.reroll = rr; });
     // limited uses
     let max = '', reset = '', recover = 'all', kind = 'boxes';
     if ((m = low.match(/\b(once|twice|(?:one|two|three|four|five|six|\d+)\s+times?)\s+(?:per|each)\s+(short or long rest|long rest|short rest|day)/))) {
@@ -606,7 +647,7 @@ const ENGINE = (() => {
     return out;
   }
 
-  return { parse, tokenize, signedTerms, staticSum, rollComps, evalStatic, rollSimple, multDice, scaleLeadDice, scan, ordinal, hasDice };
+  return { parse, tokenize, signedTerms, staticSum, rollComps, evalStatic, rollSimple, multDice, scaleLeadDice, scan, ordinal, hasDice, rerollOf, rerollText };
 })();
 if (typeof module !== 'undefined') module.exports = ENGINE;
 </script>
@@ -1367,6 +1408,7 @@ const SRD = (() => {
     if (it.save) base.save = { ...it.save };
     if (it.dmg) base.damage = dmgList(it.dmg);
     if (it.counter) base.counter = { used: 0, ...it.counter };
+    const rr = it.reroll || ENGINE.rerollOf(base.text); if (rr) base.reroll = { ...rr };
     if (it.fx && Object.keys(it.fx).length) base.effect = Object.assign({ active: false, attack: '', damage: '', save: '', ac: '', check: '', only: '' }, it.fx);
     return base;
   }
@@ -2392,10 +2434,10 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.6.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
-const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
+const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
 function saveSettings() { try { localStorage.setItem(SETKEY, JSON.stringify(SETTINGS)); } catch (e) { } }
 const DICE_MS = { quick: 450, normal: 850, dramatic: 1400 };
 document.documentElement.classList.toggle('compact', !!SETTINGS.compact);
@@ -2677,6 +2719,9 @@ function roll(title, comps, opt = {}) {
   const mode = d20 ? ui.adv : 'normal';
   const r = E.rollComps(comps, CTX, { mode, crit: opt.crit });
   const entry = { id: uid(), title, kind: opt.kind || '', total: Math.max(opt.minZero ? 0 : -999, r.total), parts: r.parts, mode, nat: r.nat, crit: false, fumble: false, fu: opt.fu || [], note: opt.note || '', isCrit: !!opt.crit };
+  Object.assign(entry, { minZero: !!opt.minZero, critMin: opt.critMin || 20, fu0: (opt.fu || []).slice(), hidden: !!opt.noShare, monId: opt.mon || null });
+  Object.defineProperty(entry, 'afterFn', { value: opt.after || null, enumerable: false, writable: true });
+  Object.defineProperty(entry, 'T', { value: opt.target || null, enumerable: false, writable: true });
   if (opt.target) attachTarget(entry, opt.target);
   const land = opt.target ? (en => { opt.onLand && opt.onLand(en); landTarget(en, opt.target); }) : opt.onLand;
   if (land) Object.defineProperty(entry, 'onLand', { value: land, enumerable: false });
@@ -3144,7 +3189,7 @@ function monAttack(m, ref) {
   const key = 'm:' + m.id + '|' + ref, T = targetFor(monTokenIds(m), 'atk', key);
   if (T) Object.assign(T, { part: 'atk', key, from: monTokenIds(m)[0], ri: rangeInfo(a.text), attacker: m.name }); else ui.lastAtk = null;
   roll(m.name + ' · ' + a.name + ' to hit', [{ d20: true }, { src: 'Attack bonus', f: String(a.attack || 0) }], {
-    noShare: !SETTINGS.monShare, target: T, fu: a.damage.length ? [{ label: 'Damage', act: 'mondmg', id: m.id + '|' + ref }] : [],
+    noShare: !SETTINGS.monShare, target: T, mon: m.id, fu: a.damage.length ? [{ label: 'Damage', act: 'mondmg', id: m.id + '|' + ref }] : [],
     after: en => { if (en.crit && a.damage.length) en.fu = [{ label: 'Crit damage', act: 'mondmg', id: m.id + '|' + ref, crit: 1 }, ...en.fu]; },
   });
 }
@@ -3153,11 +3198,11 @@ function monDamage(m, ref, crit) {
   const comps = []; a.damage.forEach(d => { if (d.dice) comps.push({ f: d.dice, suffix: d.type }); if (d.mod) comps.push({ f: d.mod, src: d.dice ? '' : d.type }); });
   const key = 'm:' + m.id + '|' + ref, T = targetFor(monTokenIds(m), 'dmg', key);
   if (T) Object.assign(T, { part: 'dmg', key, attacker: m.name, save: a.save && a.attack == null ? { dc: a.save.dc, ability: a.save.ability } : null });
-  roll(m.name + ' · ' + a.name + ' damage' + (crit ? ' (crit)' : ''), comps, { crit, kind: 'dmg', minZero: true, noShare: !SETTINGS.monShare, target: T, note: [...new Set(a.damage.map(d => d.type))].join(', ') });
+  roll(m.name + ' · ' + a.name + ' damage' + (crit ? ' (crit)' : ''), comps, { crit, kind: 'dmg', minZero: true, noShare: !SETTINGS.monShare, target: T, mon: m.id, note: [...new Set(a.damage.map(d => d.type))].join(', ') });
 }
 function monCheck(m, ab, save) {
   const t = tplOf(m), md = MONSTERS.mod(t.abilities[ab] || 10), sv = save && t.saves[ab] != null ? t.saves[ab] : md;
-  roll(m.name + ' · ' + ab + (save ? ' save' : ' check'), [{ d20: true }, { src: save && t.saves[ab] != null ? 'Save bonus' : ab, f: String(save ? sv : md) }], { noShare: !SETTINGS.monShare });
+  roll(m.name + ' · ' + ab + (save ? ' save' : ' check'), [{ d20: true }, { src: save && t.saves[ab] != null ? 'Save bonus' : ab, f: String(save ? sv : md) }], { noShare: !SETTINGS.monShare, mon: m.id });
 }
 
 /* ---- rendering ---- */
@@ -3269,8 +3314,8 @@ function writeAtkQ(q) { writeJSON(atkKey(), q.slice(0, 30)); }
 function mergeAttack(list, d) {
   let c = list.find(x => x.id === d.id);
   if (!c) { c = { id: d.id, from: d.from, who: d.who, attacker: d.attacker, target: d.target, atk: null, dmg: null, save: null, verdict: null }; list.unshift(c); }
-  if (d.part === 'atk') c.atk = { total: d.total, nat: d.nat, crit: !!d.crit, fumble: !!d.fumble, mode: d.mode || 'normal' };
-  else c.dmg = { total: d.total, types: d.types || '', crit: !!d.isCrit, heal: d.part === 'heal' };
+  if (d.part === 'atk') c.atk = { total: d.total, nat: d.nat, crit: !!d.crit, fumble: !!d.fumble, mode: d.mode || 'normal', rr: d.rr || '' };
+  else c.dmg = { total: d.total, types: d.types || '', crit: !!d.isCrit, heal: d.part === 'heal', rr: d.rr || '' };
   if (d.save) c.save = d.save;
   if (d.dist) { c.dist = d.dist; c.range = d.range || ''; c.rangeOk = d.rangeOk; }
   c.at = Date.now();
@@ -3394,7 +3439,7 @@ function attachTarget(entry, T) {
 async function landTarget(entry, T) {
   const info = await entry.tgtP;
   if (T.part === 'atk') ui.lastAtk = { aid: entry.aid, key: T.key, tgt: T.tgt, at: Date.now() };
-  const msg = { type: 'atk', v: 1, id: entry.aid, part: T.part, from: OBRX.me.id, who: OBRX.me.name, attacker: T.attacker, target: { id: info.id, name: info.name }, dist: info.dist || '', range: info.range || '', rangeOk: info.rangeOk, total: entry.total, nat: entry.nat, crit: entry.crit, fumble: entry.fumble, isCrit: entry.isCrit, types: entry.note || '', mode: entry.mode, save: T.save || null };
+  const msg = { type: 'atk', v: 1, id: entry.aid, part: T.part, from: OBRX.me.id, who: OBRX.me.name, attacker: T.attacker, target: { id: info.id, name: info.name }, dist: info.dist || '', range: info.range || '', rangeOk: info.rangeOk, total: entry.total, nat: entry.nat, crit: entry.crit, fumble: entry.fumble, isCrit: entry.isCrit, types: entry.note || '', mode: entry.mode, save: T.save || null, rr: T.rr || '' };
   if (OBRX.me.role === 'GM') { writeAtkQ(mergeAttack(readAtkQ(), msg)); renderAtkQueue(); return; }
   entry.tgt.sent = true; if (ui.log[0] === entry) renderTray();
   OBRX.api.broadcast.sendMessage(CH_GM, msg, { destination: 'REMOTE' }).catch(() => toast('Couldn\'t reach the GM.'));
@@ -3443,12 +3488,13 @@ function atkCard(c) {
   const R = resolveTarget(c.target.id), sv = suggestVerdict(c, R.ac), heal = c.dmg && c.dmg.heal;
   const verdict = c.verdict || sv;
   const lines = [];
-  if (c.atk) lines.push(`<div><span class="muted">To hit</span> <b class="mono">${c.atk.total}</b>${c.atk.mode === 'adv' ? ' <span class="badge teal">ADV</span>' : c.atk.mode === 'dis' ? ' <span class="badge red">DIS</span>' : ''}${c.atk.nat === 20 ? ' <span class="badge">NAT 20</span>' : c.atk.nat === 1 ? ' <span class="badge red">NAT 1</span>' : ''} <span class="muted">vs AC ${R.ac ?? '?'}</span> → ${verdict === 'crit' ? '<b class="ok">Critical hit</b>' : verdict === 'hit' ? '<b class="ok">Hit</b>' : verdict === 'miss' ? '<b class="bad">Miss</b>' : '<span class="muted">AC unknown</span>'}</div>`);
+  if (c.atk) lines.push(`<div><span class="muted">To hit</span> <b class="mono">${c.atk.total}</b>${c.atk.mode === 'adv' ? ' <span class="badge teal">ADV</span>' : c.atk.mode === 'dis' ? ' <span class="badge red">DIS</span>' : ''}${c.atk.nat === 20 ? ' <span class="badge">NAT 20</span>' : c.atk.nat === 1 ? ' <span class="badge red">NAT 1</span>' : ''} ${c.atk.rr ? ` <span class="warn" title="${esc(c.atk.rr)}">↻ rerolled</span>` : ''} <span class="muted">vs AC ${R.ac ?? '?'}</span> → ${verdict === 'crit' ? '<b class="ok">Critical hit</b>' : verdict === 'hit' ? '<b class="ok">Hit</b>' : verdict === 'miss' ? '<b class="bad">Miss</b>' : '<span class="muted">AC unknown</span>'}</div>`);
   if (c.save) {
     const sr = c.saveRoll;
     lines.push(`<div><span class="chip dc">DC ${esc(c.save.dc)} ${esc(c.save.ability)} save</span> ${sr ? `<span class="muted">rolled</span> <b class="mono">${sr.total}</b> → ${sr.ok ? '<b class="ok">saved</b>' : '<b class="bad">failed</b>'}` : R.kind === 'mon' ? `<button class="btn small" data-act="atksave" data-id="${esc(c.id)}">Roll ${esc(R.m.name)}'s save</button>` : '<span class="muted">ask for the save, then choose full or half</span>'}</div>`);
   }
-  if (c.dmg) lines.push(`<div><b class="mono">${c.dmg.total}</b> ${heal ? 'healing' : esc(c.dmg.types || 'damage') + (c.dmg.types ? ' damage' : '')}${c.dmg.crit ? ' <span class="badge">CRIT</span>' : ''}</div>`);
+  if (c.dmg) lines.push(`<div><b class="mono">${c.dmg.total}</b> ${heal ? 'healing' : esc(c.dmg.types || 'damage') + (c.dmg.types ? ' damage' : '')}${c.dmg.crit ? ' <span class="badge">CRIT</span>' : ''}${c.dmg.rr ? ` <span class="warn" title="${esc(c.dmg.rr)}">↻ rerolled</span>` : ''}</div>`);
+  const rrs = [c.atk && c.atk.rr, c.dmg && c.dmg.rr].filter(Boolean); if (rrs.length) lines.push(`<div class="atkc-m warn">↻ ${rrs.map(esc).join(' · ')}</div>`);
   else if (c.atk && verdict !== 'miss') lines.push(`<div class="muted">${c.verdict ? 'Waiting for the damage roll…' : 'Damage not rolled yet.'}</div>`);
   const btns = [];
   if (c.dmg) {
@@ -3502,6 +3548,167 @@ function rollQueuedSave(id) {
   });
 }
 
+/* ---------- REROLLS: Lucky, Heroic Inspiration, Savage Attacker… ---------- */
+// An entry with a reroll tag ({ on: d20|damage|any, dice: one|all|low, low, keep: new|best, bonus })
+// offers a button on matching rolls, in the roll tray and on the dice. Uses come from the entry's
+// limited uses when it has them. Rerolls are always announced: to the table, or to the GM when
+// roll sharing is off.
+const DICE_STAY = { short: 2600, long: 8000 };
+function rrDiceOf(entry, r) {
+  const out = [];
+  entry.parts.forEach((p, pi) => {
+    if (!p.dice || !p.dice.length || p.err) return;
+    const isD20 = p.label === 'd20';
+    if (r.on === 'd20' && !isD20) return;
+    if (r.on === 'damage' && (isD20 || entry.kind !== 'dmg')) return;
+    // only parts that are a plain sum of dice can be recomputed safely
+    if (!isD20 && Math.abs(p.value) !== p.dice.reduce((a, d) => a + d.v, 0)) return;
+    p.dice.forEach((d, j) => { if (d.drop || (r.dice === 'low' && d.v > r.low)) return; out.push({ pi, j, k: pi + ':' + j, d, p }); });
+  });
+  if (r.on === 'd20' && r.dice === 'one') return out.slice(0, 1);
+  return out;
+}
+function rrSources(entry) {
+  if (!entry || ui.viewing || entry.title === 'Test roll' || !entry.parts) return [];
+  const out = [], used = entry.rrUsed || [];
+  if (entry.monId) {
+    const m = enc().mons.find(x => x.id === entry.monId); if (!m) return [];
+    const t = tplOf(m);
+    for (const list of ['traits', 'actions', 'bonus', 'reactions']) (t[list] || []).forEach((a, i) => {
+      const r = E.rerollOf(a.text); if (!r) return;
+      const ref = list + ':' + i; out.push({ id: 'm|' + ref, name: a.name, r, left: a.uses ? a.uses - (m.uses[ref] || 0) : null, mon: m, ref });
+    });
+  } else {
+    for (const { e } of allEntries()) {
+      if (!e.reroll) continue;
+      const left = e.counter && e.counter.kind !== 'succfail' ? counterMax(e.counter) - (+e.counter.used || 0) : null;
+      out.push({ id: 'e|' + e.id, name: e.name, r: e.reroll, left, e });
+    }
+  }
+  return out.filter(s => (s.left == null ? !used.includes(s.id) : s.left > 0) && rrDiceOf(entry, s.r).length);
+}
+function rrStart(entry, srcId) {
+  const S = rrSources(entry).find(s => s.id === srcId); if (!S) return;
+  const dice = rrDiceOf(entry, S.r);
+  if (S.r.dice === 'one' && dice.length > 1) { ui.rrPick = { entry, srcId }; renderTray(); paintDiceBox(entry); return; }
+  doReroll(entry, S, S.r.dice === 'one' ? dice.slice(0, 1) : dice);
+}
+function rrPickDie(k) {
+  const pk = ui.rrPick; if (!pk) return;
+  const S = rrSources(pk.entry).find(s => s.id === pk.srcId); ui.rrPick = null;
+  if (!S) { renderTray(); return; }
+  const d = rrDiceOf(pk.entry, S.r).filter(x => x.k === k);
+  if (d.length) doReroll(pk.entry, S, d); else renderTray();
+}
+function doReroll(entry, S, dice) {
+  ui.rrPick = null;
+  const before = entry.total, changes = dice.map(x => ({ x, from: x.d.v, to: 1 + Math.floor(Math.random() * x.d.s) }));
+  // "use either roll" on all dice compares the totals; on one die it keeps the higher die
+  const allBetter = changes.reduce((a, c) => a + c.to, 0) > changes.reduce((a, c) => a + c.from, 0);
+  for (const c of changes) {
+    const keepNew = S.r.keep !== 'best' || (S.r.dice === 'all' ? allBetter : c.to > c.from);
+    c.kept = keepNew ? c.to : c.from;
+    const d = c.x.d, p = c.x.p;
+    d.was = c.from; d.v = c.kept; d.rr = true;
+    if (p.label === 'd20') {
+      const vs = p.dice.map(x => x.v);
+      const v = entry.mode === 'adv' ? Math.max(...vs) : entry.mode === 'dis' ? Math.min(...vs) : d.v;
+      let marked = false; p.dice.forEach(x => { x.drop = !(x.v === v && !marked && (marked = true)); });
+      p.value = v; p.detail = vs.join(', '); entry.nat = v;
+    } else { p.value += (p.neg ? -1 : 1) * (c.kept - c.from); p.detail = p.dice.map(x => x.v).join(', '); }
+  }
+  if (S.r.bonus) {
+    let b = 0; try { b = Math.floor(E.evalStatic(String(S.r.bonus), CTX)); } catch (e) { b = parseInt(S.r.bonus, 10) || 0; }
+    if (b) entry.parts.push({ label: S.name + ' bonus', value: b });
+  }
+  entry.total = Math.max(entry.minZero ? 0 : -999, entry.parts.reduce((a, p) => a + (p.err ? 0 : p.value), 0));
+  if (entry.parts.some(p => p.label === 'd20')) { entry.crit = entry.nat >= (entry.critMin || 20); entry.fumble = entry.nat === 1; }
+  if (entry.fu0) { entry.fu = entry.fu0.slice(); entry.afterFn && entry.afterFn(entry); }
+  const sum = k => changes.reduce((a, c) => a + c[k], 0);
+  const text = S.r.dice === 'all' && S.r.keep === 'best' && changes.length > 1
+    ? `rolled ${changes.map(c => c.to).join(' + ')} = ${sum('to')} against ${sum('from')}, kept ${allBetter ? 'the new roll' : 'the first'}`
+    : changes.map(c => `d${c.x.d.s} ${c.from} → ${c.to}${c.kept !== c.to ? ' (kept ' + c.kept + ')' : ''}`).join(', ');
+  entry.rr = (entry.rr || []).concat([{ src: S.name, text, before, after: entry.total }]);
+  entry.rrUsed = (entry.rrUsed || []).concat([S.id]);
+  // spend a use
+  if (S.e && S.left != null) { S.e.counter.used = (+S.e.counter.used || 0) + 1; save(); renderGrid(); }
+  if (S.mon && S.left != null) { S.mon.uses[S.ref] = (S.mon.uses[S.ref] || 0) + 1; saveEnc({ quiet: true }); if (encView()) renderGrid(); }
+  renderTray(true); paintDiceBox(entry, changes.map(c => c.x.k));
+  announceReroll(entry, S, text, before);
+  toast(`${S.name}: ${text}. ${before} → ${entry.total}.`);
+}
+// keep the table honest: rerolls of shared rolls are always announced (GM only when sharing is off)
+function announceReroll(entry, S, text, before) {
+  if (entry.T && entry.tgtP && OBRX.ready) { entry.T.rr = `${S.name}: ${text}`; landTarget(entry, entry.T); }
+  if (!IN_OBR || !OBRX.ready || entry.hidden || ui.viewing) return;
+  const msg = rollMessage(entry);
+  msg.title = `${entry.title} · rerolled with ${S.name} (${text}; was ${before})`;
+  if (SETTINGS.share === 'off') msg.gmOnly = true;
+  msg.reroll = true;
+  feedPush(Object.assign({ mine: true }, msg));
+  OBRX.api.broadcast.sendMessage(CH_ROLL, msg, { destination: 'REMOTE' }).catch(() => { });
+}
+function rrTrayHtml(r) {
+  let h = '';
+  if (r.rr && r.rr.length) h += `<div class="rrl">${r.rr.map(x => `<span>↻ <b>${esc(x.src)}</b> ${esc(x.text)} <span class="muted">(was ${x.before})</span></span>`).join('')}</div>`;
+  const pk = ui.rrPick && ui.rrPick.entry === r ? ui.rrPick : null;
+  if (pk) {
+    const S = rrSources(r).find(s => s.id === pk.srcId);
+    const ds = S ? rrDiceOf(r, S.r) : [];
+    h += `<div class="fu rr"><span class="muted">Which die? (${esc(S ? S.name : '')})</span>${ds.map(x => `<button class="btn small" data-act="rrdie" data-v="${x.k}">d${x.d.s}: ${x.d.v}</button>`).join('')}<button class="btn small ghost" data-act="rrcancel">Cancel</button></div>`;
+  } else {
+    const ss = rrSources(r);
+    if (ss.length) h += `<div class="fu rr"><span class="muted">Reroll:</span>${ss.map(s => `<button class="btn small" data-act="rrgo" data-id="${esc(r.id)}" data-v="${esc(s.id)}" title="${esc(E.rerollText(s.r))}">↻ ${esc(s.name)}${s.left != null ? ` <span class="muted">${s.left} left</span>` : ''}</button>`).join('')}</div>`;
+  }
+  return h;
+}
+/* ---- the dice on screen ---- */
+function dieHtml(d, tone, i, ms) {
+  return `<div class="die die-${tone} ${d.drop ? 'drop' : ''}" data-k="${d.k}" style="--d:${i * 45}ms;--t:${ms}ms;--r:${(i % 2 ? 1 : -1) * (300 + (i * 67) % 160)}deg">${dieSvg(d.s)}<b>${1 + Math.floor(Math.random() * d.s)}</b><i>d${d.s}</i></div>`;
+}
+function boxDice(entry) { return entry.parts.flatMap((p, pi) => (p.dice || []).map((d, j) => ({ ...d, neg: p.neg, k: pi + ':' + j }))); }
+// after landing (or a reroll): reroll buttons on the dice, and how long they stay
+function diceBoxControls(entry) {
+  const box = $('#dicefx'), shelf = box && box.querySelector('.shelf'); if (!shelf || DICE.entry !== entry) return;
+  const ss = rrSources(entry), pk = ui.rrPick && ui.rrPick.entry === entry ? ui.rrPick : null;
+  let ctl = shelf.querySelector('.rrbox'); if (ctl) ctl.remove();
+  const pickKeys = pk ? (() => { const S = ss.find(s => s.id === pk.srcId); return S ? rrDiceOf(entry, S.r).map(x => x.k) : []; })() : [];
+  shelf.querySelectorAll('.die').forEach(n => { const on = pickKeys.includes(n.dataset.k); n.classList.toggle('pickable', on); if (on) { n.dataset.act = 'rrdie'; n.dataset.v = n.dataset.k; n.setAttribute('role', 'button'); n.tabIndex = 0; } else { delete n.dataset.act; n.removeAttribute('role'); n.removeAttribute('tabindex'); } });
+  const interactive = ss.length || pk || SETTINGS.diceStay === 'tap';
+  shelf.classList.toggle('live', !!interactive);
+  if (interactive) {
+    ctl = document.createElement('div'); ctl.className = 'rrbox';
+    ctl.innerHTML = (pk ? `<span class="muted">Tap a die to reroll</span><button class="btn small ghost" data-act="rrcancel">Cancel</button>`
+      : ss.map(s => `<button class="btn small" data-act="rrgo" data-id="${esc(entry.id)}" data-v="${esc(s.id)}" title="${esc(E.rerollText(s.r))}">↻ ${esc(s.name)}${s.left != null ? ' · ' + s.left : ''}</button>`).join(''))
+      + `<button class="ico" data-act="dicehide" title="Hide the dice" aria-label="Hide the dice">✕</button>`;
+    shelf.appendChild(ctl);
+  }
+  scheduleDiceHide(ss.length || pk ? 'long' : null);
+}
+function scheduleDiceHide(want) {
+  clearTimeout(DICE.hideT);
+  const box = $('#dicefx'); if (!box || box.hidden) return;
+  const stay = SETTINGS.diceStay || 'auto';
+  if (stay === 'tap' || DICE.hover || (ui.rrPick && ui.rrPick.entry === DICE.entry)) return;
+  const ms = stay === 'long' || want === 'long' ? DICE_STAY.long : DICE_STAY.short;
+  DICE.hideT = setTimeout(hideDice, ms);
+}
+function hideDice() { const box = $('#dicefx'); if (!box) return; clearTimeout(DICE.hideT); box.classList.add('out'); DICE.hideT = setTimeout(() => { box.hidden = true; }, 400); }
+function paintDiceBox(entry, changed = []) {
+  const box = $('#dicefx'); if (!box || box.hidden || DICE.entry !== entry) return;
+  const shelf = box.querySelector('.shelf'); if (!shelf) return;
+  for (const d of boxDice(entry)) {
+    const n = shelf.querySelector(`.die[data-k="${d.k}"]`); if (!n) continue;
+    n.querySelector('b').textContent = d.v; n.classList.toggle('drop', !!d.drop);
+    n.classList.toggle('crit', d.s === 20 && !d.drop && entry.crit); n.classList.toggle('fum', d.s === 20 && !d.drop && entry.fumble);
+    if (changed.includes(d.k)) { n.classList.remove('rerolled'); void n.offsetWidth; n.classList.add('rerolled'); }
+  }
+  box.classList.remove('out');
+  diceBoxControls(entry);
+}
+document.addEventListener('mouseover', ev => { if (ev.target.closest && ev.target.closest('#dicefx .shelf.live')) { if (!DICE.hover) { DICE.hover = true; clearTimeout(DICE.hideT); } } });
+document.addEventListener('mouseout', ev => { const sh = ev.target.closest && ev.target.closest('#dicefx .shelf.live'); if (sh && !sh.contains(ev.relatedTarget)) { DICE.hover = false; scheduleDiceHide(rrSources(DICE.entry).length ? 'long' : null); } });
+
 /* ---------- dice animation ---------- */
 const DIE_SHAPE = {
   4: '<polygon points="20,3 37,35 3,35"/>',
@@ -3517,11 +3724,11 @@ function stopDice() { DICE.timers.forEach(t => clearInterval(t) || clearTimeout(
 function animateDice(entry) {
   stopDice();
   const ms = DICE_MS[SETTINGS.diceSpeed] || DICE_MS.normal;
-  const all = entry.parts.flatMap(p => (p.dice || []).map(d => ({ ...d, neg: p.neg })));
+  const all = boxDice(entry); DICE.entry = entry; DICE.hover = false; ui.rrPick = null;
   const shown = all.slice(0, 12), more = all.length - shown.length;
   const tone = entry.kind === 'heal' ? 'heal' : entry.kind === 'dmg' ? 'dmg' : 'check';
   const box = $('#dicefx');
-  box.innerHTML = '<div class="shelf">' + shown.map((d, i) => `<div class="die die-${tone} ${d.drop ? 'drop' : ''}" style="--d:${i * 45}ms;--t:${ms}ms;--r:${(i % 2 ? 1 : -1) * (300 + (i * 67) % 160)}deg">${dieSvg(d.s)}<b>${1 + Math.floor(Math.random() * d.s)}</b><i>d${d.s}</i></div>`).join('') + (more > 0 ? `<span class="die-more">+${more} more</span>` : '') + '</div>';
+  box.innerHTML = '<div class="shelf">' + shown.map((d, i) => dieHtml(d, tone, i, ms)).join('') + (more > 0 ? `<span class="die-more">+${more} more</span>` : '') + '</div>';
   box.hidden = false; box.classList.remove('out');
   renderTray(false, true);
   const nums = [...box.querySelectorAll('.die b')];
@@ -3535,7 +3742,7 @@ function animateDice(entry) {
       if (d.s === 20 && !d.drop && d.v === 1 && entry.fumble) el.classList.add('fum');
     });
     renderTray(true); shareRoll(entry); entry.onLand && entry.onLand(entry);
-    DICE.hideT = setTimeout(() => { box.classList.add('out'); DICE.hideT = setTimeout(() => { box.hidden = true; }, 400); }, 2600);
+    diceBoxControls(entry);
   }, ms + 45 * (shown.length - 1)));
 }
 function rollAttack(e) {
@@ -3796,6 +4003,7 @@ function entryRow(e, m, compact) {
   if (e.attack) { const l = staticLabel(attackComps(e)); acts += `<button class="roll hit" data-act="atk" data-id="${e.id}" title="Roll to hit${+e.attack.crit < 20 ? ' · crits on ' + e.attack.crit + '–20' : ''}">${l.text} hit</button>`; }
   if (e.damage.length) { const heal = isHealing(e); acts += `<button class="roll ${heal ? 'heal' : 'dmg'}" data-act="dmg" data-id="${e.id}">${esc(dmgLabel(e))} ${esc(heal ? 'heal' : (e.damage.map(p => p.type).filter(Boolean).join('/') || 'dmg'))}</button>`; }
   if (e.save) acts += `<button class="chip dc" data-act="explain" data-v="save" data-id="${e.id}" title="How the DC is worked out">DC ${dcValue(e)} ${esc(e.save.ability)}</button>`;
+  if (e.reroll) acts += `<span class="chip rrchip" title="${esc(E.rerollText(e.reroll))}. The button appears on matching rolls.">↻ ${e.reroll.on === 'd20' ? 'd20 reroll' : e.reroll.on === 'damage' ? 'damage reroll' : 'reroll'}</span>`;
   if (e.counter) acts += counterHtml(e);
   if (e.effect && !e.item) acts += `<button class="switch ${e.effect.active ? 'on' : ''}" data-act="fx" data-id="${e.id}" title="${esc(fxSummary(e))}"><i></i>${e.effect.active ? 'Active' : 'Off'}</button>`;
   if (e.item && !compact) acts += `<span class="muted" style="font-size:.85rem">Qty</span><input class="qm" id="iq-${e.id}" data-qm="qty" data-id="${e.id}" value="${esc(e.item.qty)}" style="width:52px" aria-label="Quantity">
@@ -3833,7 +4041,7 @@ function renderTray(isNew, rolling) {
   if (!r) { $('#tray').innerHTML = `<div class="tot muted">d20</div><div class="info"><div class="ttl">Tap any number to roll</div><div class="brk">Every roll shows where each bonus came from.</div></div>${quick}`; return; }
   if (rolling) { $('#tray').innerHTML = `<div class="tot muted" aria-live="polite">…</div><div class="info"><div class="ttl">${esc(r.title)} ${r.mode === 'adv' ? '<span class="badge teal">ADV</span>' : r.mode === 'dis' ? '<span class="badge red">DIS</span>' : ''}</div><div class="brk">Rolling…</div></div>${quick}`; return; }
   $('#tray').innerHTML = `<div class="tot ${isNew ? 'new' : ''} ${r.crit ? 'crit' : ''} ${r.fumble ? 'fum' : ''}">${r.total}</div>
-    <div class="info"><div class="ttl">${esc(r.title)} ${badges(r)}</div><div class="brk">${breakdown(r)}</div>${tgtLine(r)}
+    <div class="info"><div class="ttl">${esc(r.title)} ${badges(r)}</div><div class="brk">${breakdown(r)}</div>${tgtLine(r)}${rrTrayHtml(r)}
     ${r.fu.length ? `<div class="fu">${r.fu.map(f => `<button class="btn small ${f.crit ? 'primary' : ''}" data-act="${f.act}" data-id="${f.id || ''}" data-crit="${f.crit || ''}" data-lvl="${f.lvl || ''}" data-amt="${r.total}">${esc(f.label)}</button>`).join('')}</div>` : ''}</div>${quick}`;
 }
 function badges(r) {
@@ -4079,6 +4287,8 @@ function settingsHtml() {
       <button class="switch ${SETTINGS.diceAnim ? 'on' : ''}" data-act="setanim" aria-pressed="${SETTINGS.diceAnim}"><i></i>${SETTINGS.diceAnim ? 'On' : 'Off'}</button></div>
     <div class="setrow" ${SETTINGS.diceAnim ? '' : 'style="opacity:.5"'}><div class="grow"><b>Animation speed</b><div class="muted">How long the dice take to land.</div></div>
       <div class="seg" role="group" aria-label="Animation speed">${[['quick', 'Quick'], ['normal', 'Normal'], ['dramatic', 'Dramatic']].map(([v, l]) => `<button data-act="setspeed" data-v="${v}" class="${sp === v ? 'on' : ''}" ${SETTINGS.diceAnim ? '' : 'disabled'}>${l}</button>`).join('')}</div></div>
+    <div class="setrow" ${SETTINGS.diceAnim ? '' : 'style="opacity:.5"'}><div class="grow"><b>Dice stay on screen</b><div class="muted">Auto keeps them longer when you can reroll. Pointing at the dice keeps them up. The roll bar at the bottom always keeps the reroll buttons.</div></div>
+      <div class="seg" role="group" aria-label="Dice stay on screen">${[['auto', 'Auto'], ['long', 'Longer'], ['tap', 'Until closed']].map(([v, l]) => `<button data-act="setstay" data-v="${v}" class="${(SETTINGS.diceStay || 'auto') === v ? 'on' : ''}" ${SETTINGS.diceAnim ? '' : 'disabled'}>${l}</button>`).join('')}</div></div>
     <div class="setrow"><div class="grow"><b>Compact</b><div class="muted">Smaller text and tighter spacing, to fit more on screen.</div></div>
       <button class="switch ${SETTINGS.compact ? 'on' : ''}" data-act="setcompact" aria-pressed="${!!SETTINGS.compact}"><i></i>${SETTINGS.compact ? 'On' : 'Off'}</button></div>
     <div class="setrow" style="flex-wrap:wrap"><div class="grow" style="min-width:220px"><b>Panel size in Owlbear Rodeo</b><div class="muted">${IN_OBR ? 'How much of the Owlbear screen Grimsheet takes up.' : 'Applies when Grimsheet is opened inside Owlbear Rodeo.'}</div></div>
@@ -4159,6 +4369,13 @@ function editorHtml(m) {
       <label class="fld"><span>Save ability</span><select id="d-save-ab" data-d="save.ability">${abilOptions(d.save.ability)}</select></label>
       ${fld('DC', 'save.dc', d.save.dc, { formula: 'num', ph: '8 + PROF + WIS' })}</div>` : '');
 
+  h += sec('reroll', 'Reroll', 'Adds a reroll button to matching rolls. If this entry has limited uses, each reroll spends one.', !!d.reroll, d.reroll ? `<div class="frow">
+      <label class="fld"><span>Rolls</span><select id="d-rr-on" data-d="reroll.on">${[['d20', 'd20 rolls (attacks, checks, saves)'], ['damage', 'Damage rolls'], ['any', 'Any roll']].map(([v, l]) => `<option value="${v}" ${d.reroll.on === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      <label class="fld"><span>Which dice</span><select id="d-rr-dice" data-d="reroll.dice">${[['one', 'One die'], ['all', 'All the dice'], ['low', 'Dice showing a low number']].map(([v, l]) => `<option value="${v}" ${d.reroll.dice === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      ${d.reroll.dice === 'low' ? fld('Reroll dice showing', 'reroll.low', d.reroll.low, { num: true, hint: '1 for natural 1s, 2 for 1s and 2s' }) : ''}
+      <label class="fld"><span>Keep</span><select id="d-rr-keep" data-d="reroll.keep">${[['new', 'The new roll'], ['best', 'Whichever is higher']].map(([v, l]) => `<option value="${v}" ${d.reroll.keep === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      ${fld('Bonus to the new roll', 'reroll.bonus', d.reroll.bonus, { formula: 'num', ph: 'LEVEL', hint: 'Optional, e.g. Indomitable' })}</div>` : '');
+
   h += sec('counter', 'Limited uses', 'Checkboxes, a points pool or success/failure track, with a reset rule.', !!d.counter, d.counter ? `<div class="frow">
       <label class="fld"><span>Style</span><select id="d-ct-kind" data-d="counter.kind"><option value="boxes" ${d.counter.kind === 'boxes' ? 'selected' : ''}>Checkboxes</option><option value="pool" ${d.counter.kind === 'pool' ? 'selected' : ''}>Points pool</option><option value="succfail" ${d.counter.kind === 'succfail' ? 'selected' : ''}>Success / failure</option></select></label>
       ${d.counter.kind !== 'succfail' ? fld('Maximum', 'counter.max', d.counter.max, { formula: 'num', ph: '3, PROF, max(1, CHA)' }) : ''}
@@ -4200,6 +4417,7 @@ const SEC_DEFAULT = {
   damage: () => [{ dice: '1d6', mod: '', type: '' }],
   save: d => ({ ability: 'DEX', dc: d.spell ? 'SPELLDC' : '8 + PROF + CON' }),
   counter: () => ({ kind: 'boxes', max: '1', used: 0, reset: 'long', recover: 'all' }),
+  reroll: () => ({ on: 'd20', dice: 'one', low: 1, keep: 'new', bonus: '' }),
   effect: () => ({ active: false, attack: '', damage: '', save: '', ac: '', check: '', only: '' }),
   spell: () => ({ level: 1, school: '', castTime: '', range: '', duration: '', components: '', upcast: '', cantrip: false }),
   item: () => ({ qty: 1, weight: 0, equipped: false }),
@@ -4352,6 +4570,11 @@ document.addEventListener('click', ev => {
     case 'setshare': SETTINGS.share = v; saveSettings(); renderModal(); break;
     case 'setview': SETTINGS.view = v; saveSettings(); render(); window.scrollTo(0, 0); break;
     case 'setmonhp': SETTINGS.monHp = v; saveSettings(); syncMonTokens(); publishInit(); renderModal(); break;
+    case 'rrgo': { const en = ui.log.find(x => x.id === id) || ui.log[0]; if (en) rrStart(en, v); break; }
+    case 'rrdie': rrPickDie(v); break;
+    case 'rrcancel': { const en = ui.rrPick && ui.rrPick.entry; ui.rrPick = null; renderTray(); if (en) paintDiceBox(en); break; }
+    case 'dicehide': hideDice(); break;
+    case 'setstay': SETTINGS.diceStay = v; saveSettings(); renderModal(); break;
     case 'tgtpick': openTargetPicker(); break;
     case 'tgtclear': ui.target = null; ui.lastAtk = null; paintTarget(); if (ui.modal && ui.modal.type === 'targets') renderModal(); break;
     case 'tgtset': { const it = OBRX.tokCache[id]; if (it) setTarget(it); closeModal(); break; }

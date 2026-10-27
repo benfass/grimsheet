@@ -1,6 +1,6 @@
-# D&D Character Sheet App — Product Spec (v1.3)
+# D&D Character Sheet App — Product Spec (v1.4)
 
-*Working name: Grimsheet. v0.2 recorded the platform decision and first build; v0.3 added the SRD 5.2 content pack and locked skill proficiency to Edit mode; v0.4 expanded the pack; v0.5 added PDF import and documented the saved character format; v0.6 replaced the grid with a row-and-column layout; v0.7 added dice animation and a Settings panel; v0.8 added the Owlbear Rodeo extension and a backup reminder; v0.9 added panel sizes and compact mode; v1.0 added the background page and token linking; v1.1 added GM tools; v1.2 added monsters, the Encounter view and initiative; v1.3 adds attacks against a target on the map.*
+*Working name: Grimsheet. v0.2 recorded the platform decision and first build; v0.3 added the SRD 5.2 content pack and locked skill proficiency to Edit mode; v0.4 expanded the pack; v0.5 added PDF import and documented the saved character format; v0.6 replaced the grid with a row-and-column layout; v0.7 added dice animation and a Settings panel; v0.8 added the Owlbear Rodeo extension and a backup reminder; v0.9 added panel sizes and compact mode; v1.0 added the background page and token linking; v1.1 added GM tools; v1.2 added monsters, the Encounter view and initiative; v1.3 added attacks against a target on the map; v1.4 adds rerolls.*
 
 ## 1. Vision
 
@@ -278,6 +278,13 @@ Decisions: monster HP visibility is a GM setting; Grimsheet's tracker is primary
 - **Flow**: an attack or damage roll with a target goes to the GM (`com.grimsheet/gm`, `type: 'atk'`, `part: atk|dmg|heal`; the damage roll after an attack on the same weapon joins it). The roll tray shows the target, distance, range and the GM's answer.
 - **GM confirms**: a card per attack above the sheet or encounter: attacker → target, distance and range, to-hit against the target's AC (monster AC, the player's published AC, or the token's Stat Bubbles AC), suggested hit/miss (natural 20 = critical, natural 1 = miss), damage, and for saving throw damage a "Roll save" button for monsters. Buttons: Hit / Miss before damage; Apply / Half / Miss after. Applying changes the monster's HP, sends the damage to the player's sheet, or changes an unlinked token's HP bubble; the attacker is told the result (`type: 'atkResult'`). The GM's own monster attacks use the same cards.
 - **Waiting attacks** are kept in the GM's browser (`grimsheet.attacks.<room>`, last 30) by the background page, so they arrive even when the GM's panel is closed, with a notification.
+
+### Built in v2.2: Rerolls
+- **Reroll tag** on any entry: `reroll = { on: d20|damage|any, dice: one|all|low, low, keep: new|best, bonus }`. Set in the editor's Reroll section, or found in pasted text (and in SRD features and PDF imports): "reroll", "roll it again", "roll an additional d20", "roll the damage dice twice and use either", Luck Points for advantage, "a 1 on the d20", "a 1 or 2 on a damage die", "with a bonus equal to your level". Examples: Heroic Inspiration (any die, new), Lucky (d20, higher), Halfling Luck (d20 showing 1), Great Weapon Fighting 2014 (damage dice showing 1–2), Savage Attacker (all damage dice, higher total), Indomitable (d20, + level). Entries show a "↻ reroll" chip.
+- **On a roll**: matching sources appear as buttons in the roll bar and on the dice: only when they apply (a d20 roll, a damage roll, a low die showing), with uses left from the entry's limited uses (each reroll spends one); sources without uses work once per roll. "One die" on several dice asks which die (tap it on the dice or in the roll bar); d20 rerolls take the kept d20 and re-apply advantage/disadvantage. Totals, crits and follow-up buttons are recomputed; the roll keeps a visible history ("Lucky: d20 3 → 17, was 15").
+- **Monsters**: reroll traits in a monster's stat block work the same on its rolls (X/Day uses tracked on the card).
+- **Honesty**: rerolls are always announced: to the table with the roll's sharing, or to the GM when sharing is off (GM-only monster rolls stay hidden). Rerolling a targeted roll updates the GM's attack card, marked "↻ rerolled" with what changed.
+- **Dice on screen**: setting "Dice stay on screen" (Auto: about 3 s, 8 s when a reroll is possible; Longer; Until closed). Pointing at the dice keeps them up; ✕ hides them. The roll bar always keeps the buttons.
 
 ### Roadmap
 Ordered by when it gets built. Priority applies inside a goal.
