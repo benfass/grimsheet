@@ -41,8 +41,10 @@ input.q { width: 100% }
   const settings = () => S.read('grimsheet.settings.v1') || {};
   const pcLink = it => it.metadata && it.metadata[S.LINK];
   const monLink = it => { const l = it.metadata && it.metadata[MONLINK]; return l && l.room === room ? l : null; };
-  const loadEnc = () => { const all = S.read(ENCKEY) || {}; return { all, e: all[room] || { tpls: {}, mons: [], pcs: [], groupInit: {}, seq: {}, combat: { active: false, round: 1, turn: null } } }; };
-  const saveEnc = (all, e) => { all[room] = e; S.write(ENCKEY, all); };
+  // several encounters per room: monsters are found in any of them, new ones go to the active one
+  const loadEnc = () => { const all = S.read(ENCKEY) || {}, r = S.encRoom(all, room), e = r.list[r.active]; ['tpls', 'mons', 'pcs', 'groupInit', 'seq'].forEach(k => { if (!e[k]) e[k] = S.blankEnc()[k]; }); return { all, r, e }; };
+  const saveEnc = all => { S.write(ENCKEY, all); };
+  let linkedInsts = new Set();
   const bubbles = m => ({ health: m.hp, 'max health': m.max, 'temporary health': m.temp || 0, 'armor class': m.ac, hide: (settings().monHp || 'hidden') !== 'exact' });
 
   function render() {
@@ -52,9 +54,9 @@ input.q { width: 100% }
     if (items.length === 1 && pcs.length === 1) return renderPc(app, items[0]);
     if (!pcs.length && !mons.length) return renderFree(app, free);
     // one or more linked tokens: show who, and damage or heal them all
-    const { e } = loadEnc();
+    const { r } = loadEnc();
     const lines = [];
-    for (const it of mons) { const l = monLink(it), m = e.mons.find(x => x.id === l.inst); lines.push(`<div><span>${esc(m ? m.name : l.name)}</span><span class="hpn">${m ? m.hp + '/' + m.max : '?'}</span></div>`); }
+    for (const it of mons) { const l = monLink(it), f = S.encFind(r, l.inst), m = f && f.m; lines.push(`<div><span>${esc(m ? m.name : l.name)}</span><span class="hpn">${m ? m.hp + '/' + m.max : '?'}</span></div>`); }
     for (const it of pcs) { const l = pcLink(it), p = players.find(x => x.id === l.player), s = p && p.s && p.s.charId === l.char ? p.s : null; lines.push(`<div><span>${esc(l.name)} <span class="m">${esc(p ? p.name : 'not in room')}</span></span><span class="hpn">${s ? s.hp + '/' + s.max : '?'}</span></div>`); }
     const single = mons.length === 1 && items.length === 1 ? monLink(mons[0]) : null;
     app.innerHTML = `<div class="t">${items.length === 1 ? esc(lines.length ? (single ? single.name : '') : '') : items.length + ' tokens selected'}</div>
@@ -87,7 +89,13 @@ input.q { width: 100% }
     const opts = free.length === 1 ? players.filter(p => p.s && p.s.charId) : [];
     app.innerHTML = `<div class="t">${free.length === 1 ? esc(free[0].name || 'Token') : free.length + ' tokens'}</div>
       ${opts.length ? `<div class="m">Link to a player's character:</div><div class="list">${opts.map(p => `<button data-link="${esc(p.id)}"><span><b>${esc(p.s.char)}</b> · ${esc(p.name)}</span><span class="m">${esc(p.s.hp)}/${esc(p.s.max)} HP</span></button>`).join('')}</div><div class="sep"></div>` : ''}
-      <div class="m">Make ${free.length === 1 ? 'it a monster' : 'them monsters'}:</div>
+      ${(() => {
+        const { e } = loadEnc(), groups = {};
+        for (const m of e.mons) if (!linkedInsts.has(m.id) && m.hp > 0) (groups[m.tpl] = groups[m.tpl] || []).push(m);
+        const g = Object.values(groups); if (!g.length) return '';
+        return `<div class="m">Link to monsters in ${esc(e.name || 'the encounter')} without a token:</div><div class="list">${g.map(ms => `<button data-pre="${esc(ms[0].tpl)}"><span><b>${esc(ms.length > 1 ? (e.tpls[ms[0].tpl] || ms[0]).name : ms[0].name)}</b></span><span class="m">${ms.length > 1 ? ms.length + ' waiting' : 'HP ' + ms[0].hp}</span></button>`).join('')}</div><div class="sep"></div>`;
+      })()}
+      <div class="m">Make ${free.length === 1 ? 'it a new monster' : 'them new monsters'}:</div>
       ${cat.length ? `<input class="q" id="q" value="${esc(q)}" placeholder="Search: goblin, ogre…" aria-label="Search monsters">
         <div class="list">${matches.map(t => `<button data-mon="${esc(t.id)}"><span><b>${esc(t.name)}</b>${t.srd ? '' : ' <span class="m">mine</span>'}</span><span class="m">CR ${esc(t.cr || '?')} · HP ${t.hp}</span></button>`).join('') || '<div class="m">No match.</div>'}</div>`
         : '<div class="m">Open the Grimsheet panel once to load the monster list.</div>'}
@@ -100,6 +108,7 @@ input.q { width: 100% }
     const sel = await OBR.player.getSelection();
     items = sel && sel.length ? (await OBR.scene.items.getItems(sel)).filter(it => it.layer === 'CHARACTER' || it.layer === 'MOUNT') : [];
     players = (await OBR.party.getPlayers()).map(p => ({ id: p.id, name: p.name, role: p.role, s: p.metadata && p.metadata[S.META] }));
+    try { linkedInsts = new Set((await OBR.scene.items.getItems(it => !!(it.metadata && it.metadata[MONLINK]))).map(it => it.metadata[MONLINK].inst)); } catch (e) { }
     const mine = await OBR.player.getMetadata(); const s = mine && mine[S.META];
     if (s && !players.some(p => p.id === OBR.player.id)) players.push({ id: OBR.player.id, name: await OBR.player.getName(), role: 'GM', s });
     render();
@@ -118,14 +127,14 @@ input.q { width: 100% }
     // monsters: change them here and update their tokens
     const mons = items.filter(monLink);
     if (mons.length) {
-      const { all, e } = loadEnc(); const upd = {};
+      const { all, r } = loadEnc(); const upd = {};
       for (const it of mons) {
-        const m = e.mons.find(x => x.id === monLink(it).inst); if (!m) continue;
+        const f = S.encFind(r, monLink(it).inst), m = f && f.m; if (!m) continue;
         if (amount < 0) { let d = -amount; const t = Math.min(m.temp || 0, d); m.temp = (m.temp || 0) - t; d -= t; m.hp = Math.max(0, m.hp - d); }
         else m.hp = Math.min(m.max, m.hp + amount);
         upd[it.id] = bubbles(m);
       }
-      saveEnc(all, e);
+      saveEnc(all);
       await OBR.scene.items.updateItems(Object.keys(upd), drafts => { for (const d of drafts) d.metadata[S.BUBBLES] = Object.assign({}, d.metadata[S.BUBBLES] || {}, upd[d.id]); });
     }
     note = `${n} ${sign < 0 ? 'damage' : 'healing'} to ${items.length > 1 ? items.filter(it => pcLink(it) || monLink(it)).length + ' tokens' : (pcLink(items[0]) || monLink(items[0]) || {}).name}.`;
@@ -144,7 +153,7 @@ input.q { width: 100% }
       const m = { id: S.uid(), tpl: t.id, name: numbered ? t.name + ' ' + e.seq[t.id] : t.name, hp: t.hp, max: t.hp, temp: 0, ac: t.ac, cond: [], rech: {}, uses: {}, leg: 0, init: null, solo };
       e.mons.push(m); made[it.id] = m;
     }
-    saveEnc(all, e);
+    saveEnc(all);
     await OBR.scene.items.updateItems(Object.keys(made), drafts => {
       for (const d of drafts) { const m = made[d.id]; d.metadata[MONLINK] = { room, inst: m.id, name: m.name }; d.metadata[S.BUBBLES] = Object.assign({}, d.metadata[S.BUBBLES] || {}, bubbles(m)); d.name = m.name; }
     });
@@ -152,8 +161,19 @@ input.q { width: 100% }
     refresh();
   }
 
+  async function linkPrepared(tpl) {
+    const free = items.filter(it => !pcLink(it) && !monLink(it)), { e } = loadEnc();
+    const waiting = e.mons.filter(m => m.tpl === tpl && !linkedInsts.has(m.id) && m.hp > 0), made = {};
+    free.slice(0, waiting.length).forEach((it, i) => { made[it.id] = waiting[i]; });
+    if (!Object.keys(made).length) return;
+    await OBR.scene.items.updateItems(Object.keys(made), drafts => {
+      for (const d of drafts) { const m = made[d.id]; d.metadata[MONLINK] = { room, inst: m.id, name: m.name }; d.metadata[S.BUBBLES] = Object.assign({}, d.metadata[S.BUBBLES] || {}, bubbles(m)); d.name = m.name; }
+    });
+    note = `Linked ${Object.values(made).map(m => m.name).join(', ')}.`; refresh();
+  }
   document.addEventListener('click', async ev => {
     const t = ev.target.closest('button'); if (!t || t.disabled) return;
+    if (t.dataset.pre) return linkPrepared(t.dataset.pre);
     if (t.dataset.hp) return hpChange(+t.dataset.hp);
     if (t.dataset.mon) return makeMonsters(t.dataset.mon);
     if (t.hasAttribute('data-link')) {

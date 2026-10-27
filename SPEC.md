@@ -1,6 +1,6 @@
-# D&D Character Sheet App — Product Spec (v1.10)
+# D&D Character Sheet App — Product Spec (v1.11)
 
-*Working name: Grimsheet. v0.2 recorded the platform decision and first build; v0.3 added the SRD 5.2 content pack and locked skill proficiency to Edit mode; v0.4 expanded the pack; v0.5 added PDF import and documented the saved character format; v0.6 replaced the grid with a row-and-column layout; v0.7 added dice animation and a Settings panel; v0.8 added the Owlbear Rodeo extension and a backup reminder; v0.9 added panel sizes and compact mode; v1.0 added the background page and token linking; v1.1 added GM tools; v1.2 added monsters, the Encounter view and initiative; v1.3 added attacks against a target on the map; v1.4 added rerolls; v1.5 added spell areas on the map; v1.6 added combat prompts; v1.7 added the level-up wizard; v1.8 added undo; v1.9 added campaign notes; v1.10 adds GM mode.*
+*Working name: Grimsheet. v0.2 recorded the platform decision and first build; v0.3 added the SRD 5.2 content pack and locked skill proficiency to Edit mode; v0.4 expanded the pack; v0.5 added PDF import and documented the saved character format; v0.6 replaced the grid with a row-and-column layout; v0.7 added dice animation and a Settings panel; v0.8 added the Owlbear Rodeo extension and a backup reminder; v0.9 added panel sizes and compact mode; v1.0 added the background page and token linking; v1.1 added GM tools; v1.2 added monsters, the Encounter view and initiative; v1.3 added attacks against a target on the map; v1.4 added rerolls; v1.5 added spell areas on the map; v1.6 added combat prompts; v1.7 added the level-up wizard; v1.8 added undo; v1.9 added campaign notes; v1.10 added GM mode; v1.11 adds several encounters.*
 
 ## 1. Vision
 
@@ -330,6 +330,13 @@ Decisions: a party journal anyone can edit; its own view; typed entries.
 - **Group saving throw**: what it is, ability, DC, optional damage dice and type, half on success, which players. Each player gets the save prompt; a card (an area card without a map shape, targets `pc:<player>`) collects the results and applies full / half / none; the damage roll joins it.
 - **Rest call**: players get a prompt (and a notification) with "Take a short/long rest", which runs their normal rest.
 - **Encounter undo**: in GM mode Undo, Ctrl+Z and Recent changes work on the encounter (monsters added or removed, HP, conditions, initiative, turns, recharge and uses), including changes from the token menu.
+
+### Built in v2.9: Several encounters
+- **Storage**: `grimsheet.encounter.v1[room] = { multi: 1, active, order, list: { id: encounter } }`; each encounter has an id and a name. An old single encounter becomes "Encounter 1".
+- **Tabs** above the Encounter view: every encounter with its monster count, a dot on the active one, "+ New". The open encounter can be renamed, duplicated (copy at full HP, no initiative, ready to run again) or deleted (tap twice; not the last one).
+- **Active vs prepared**: only the active encounter drives the players' turn order, Owlbear's tracker and combat (Start combat / Next turn appear only there). A prepared one can be filled with monsters, edited and rolled for initiative in advance; a banner explains it, with "Make active" (ends combat in the old active one).
+- **Tokens**: monsters keep their token links whichever encounter they're in (HP bubbles, damage from the token menu and attack/area cards find them anywhere). The token menu on unlinked tokens now offers "Link to monsters in <active encounter> without a token", grouped by kind, before "Make new monsters" (which adds to the active encounter).
+- **Undo** in GM mode follows the encounter being viewed.
 
 ### Roadmap
 Ordered by when it gets built. Priority applies inside a goal.

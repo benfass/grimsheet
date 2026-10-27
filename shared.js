@@ -1,7 +1,7 @@
 /* Grimsheet helpers shared by background.html and gm.html (the panel keeps its own copy). */
 window.GS = (function () {
   const GS = {
-    VERSION: '1.12.0',
+    VERSION: '1.13.0',
     CH_ROLL: 'com.grimsheet/roll',
     CH_GM: 'com.grimsheet/gm',        // GM ↔ player: hp changes, sheet requests and replies
     CH_LOCAL: 'com.grimsheet/local',  // same browser: GM menu → GM panel
@@ -73,6 +73,17 @@ window.GS = (function () {
     return true;
   };
   GS.dropNote = (c, id, at) => { c.notes = c.notes.filter(x => x.id !== id || x.updated > at); c.gone[id] = Math.max(c.gone[id] || 0, at); };
+  // encounters: one room keeps several (the active one and prepared ones); same as the panel's encRoomOf
+  GS.ENCKEY = 'grimsheet.encounter.v1';
+  GS.blankEnc = () => ({ tpls: {}, mons: [], pcs: [], groupInit: {}, seq: {}, combat: { active: false, round: 1, turn: null } });
+  GS.encRoom = (all, room) => {
+    let r = all[room];
+    if (!r || !r.multi) { const e = r && r.mons ? r : GS.blankEnc(); e.id = e.id || GS.uid(); e.name = e.name || 'Encounter 1'; r = { multi: 1, active: e.id, order: [e.id], list: { [e.id]: e } }; all[room] = r; }
+    r.order = (r.order || []).filter(id => r.list[id]); Object.keys(r.list).forEach(id => { if (!r.order.includes(id)) r.order.push(id); });
+    if (!r.list[r.active]) r.active = r.order[0];
+    return r;
+  };
+  GS.encFind = (r, inst) => { for (const e of Object.values(r.list)) { const m = (e.mons || []).find(x => x.id === inst); if (m) return { e, m }; } return null; };
   GS.chunks = (s, n = 12000) => { const out = []; for (let i = 0; i < s.length; i += n) out.push(s.slice(i, i + n)); return out.length ? out : ['']; };
   GS.load = src => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
   GS.sdk = async () => { if (window.GrimsheetOBR) return window.GrimsheetOBR; await GS.load('vendor/owlbear-sdk-3.1.0.js'); return window.OwlbearSDK; };
