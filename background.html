@@ -8,7 +8,8 @@
    - token right-click menus: players link their own token; the GM gets a menu to link any player,
      apply damage or healing, open the sheet or unlink;
    - applies the GM's damage and healing to this player's saved character and answers the GM's
-     requests to view the sheet. */
+     requests to view the sheet;
+   - for the GM: keeps players' attacks against tokens until the GM confirms them in Grimsheet. */
 (function () {
   const S = GS;
   const ICON = new URL('icon.svg', location.href).href;
@@ -67,6 +68,13 @@
     /* ---- initiative: the GM asks for rolls; tell this player when it's their turn ---- */
     OBR.broadcast.onMessage(S.CH_GM, ev => {
       const d = ev.data;
+      if (d && d.type === 'atk' && d.v === 1 && me.role === 'GM') {
+        const key = 'grimsheet.attacks.' + room;
+        S.write(key, S.mergeAttack(S.read(key) || [], d));
+        const what = d.part === 'atk' ? d.total + ' to hit' + (d.crit ? ' (natural 20!)' : d.fumble ? ' (natural 1)' : '') : d.part === 'heal' ? d.total + ' healing' : d.total + ' ' + (d.types || '') + ' damage';
+        OBR.notification.show(`${d.attacker} → ${d.target.name}: ${what}. Confirm it in Grimsheet.`, d.crit ? 'SUCCESS' : 'DEFAULT').catch(() => { });
+        return;
+      }
       if (d && d.type === 'askInit' && me.role !== 'GM') OBR.notification.show(`${d.from} asks for initiative. Open Grimsheet and tap INIT in your Combat module.`, 'INFO').catch(() => { });
     });
     let lastTurn = null;

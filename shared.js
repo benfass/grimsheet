@@ -1,7 +1,7 @@
 /* Grimsheet helpers shared by background.html and gm.html (the panel keeps its own copy). */
 window.GS = (function () {
   const GS = {
-    VERSION: '1.4.0',
+    VERSION: '1.5.0',
     CH_ROLL: 'com.grimsheet/roll',
     CH_GM: 'com.grimsheet/gm',        // GM ↔ player: hp changes, sheet requests and replies
     CH_LOCAL: 'com.grimsheet/local',  // same browser: GM menu → GM panel
@@ -42,6 +42,17 @@ window.GS = (function () {
     const bin = atob(b64), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
     const txt = await new Response(new Blob([u]).stream().pipeThrough(new DecompressionStream('gzip'))).text();
     return JSON.parse(txt);
+  };
+  // attacks waiting for the GM: an attack roll and its damage roll share one id (same as the panel's mergeAttack)
+  GS.mergeAttack = (list, d) => {
+    let c = list.find(x => x.id === d.id);
+    if (!c) { c = { id: d.id, from: d.from, who: d.who, attacker: d.attacker, target: d.target, atk: null, dmg: null, save: null, verdict: null }; list.unshift(c); }
+    if (d.part === 'atk') c.atk = { total: d.total, nat: d.nat, crit: !!d.crit, fumble: !!d.fumble, mode: d.mode || 'normal' };
+    else c.dmg = { total: d.total, types: d.types || '', crit: !!d.isCrit, heal: d.part === 'heal' };
+    if (d.save) c.save = d.save;
+    if (d.dist) { c.dist = d.dist; c.range = d.range || ''; c.rangeOk = d.rangeOk; }
+    c.at = Date.now();
+    return list.slice(0, 30);
   };
   GS.chunks = (s, n = 12000) => { const out = []; for (let i = 0; i < s.length; i += n) out.push(s.slice(i, i + n)); return out.length ? out : ['']; };
   GS.load = src => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); });

@@ -1,6 +1,6 @@
-# D&D Character Sheet App — Product Spec (v1.2)
+# D&D Character Sheet App — Product Spec (v1.3)
 
-*Working name: Grimsheet. v0.2 recorded the platform decision and first build; v0.3 added the SRD 5.2 content pack and locked skill proficiency to Edit mode; v0.4 expanded the pack; v0.5 added PDF import and documented the saved character format; v0.6 replaced the grid with a row-and-column layout; v0.7 added dice animation and a Settings panel; v0.8 added the Owlbear Rodeo extension and a backup reminder; v0.9 added panel sizes and compact mode; v1.0 added the background page and token linking; v1.1 added GM tools; v1.2 adds monsters, the Encounter view and initiative.*
+*Working name: Grimsheet. v0.2 recorded the platform decision and first build; v0.3 added the SRD 5.2 content pack and locked skill proficiency to Edit mode; v0.4 expanded the pack; v0.5 added PDF import and documented the saved character format; v0.6 replaced the grid with a row-and-column layout; v0.7 added dice animation and a Settings panel; v0.8 added the Owlbear Rodeo extension and a backup reminder; v0.9 added panel sizes and compact mode; v1.0 added the background page and token linking; v1.1 added GM tools; v1.2 added monsters, the Encounter view and initiative; v1.3 adds attacks against a target on the map.*
 
 ## 1. Vision
 
@@ -271,11 +271,19 @@ Decisions: monster HP visibility is a GM setting; Grimsheet's tracker is primary
 - **Monster tokens**: GM menu now works on several tokens. Unlinked tokens → search the bestiary (catalog cached in `grimsheet.moncat.v1` for the menu page) → numbered monsters, token renamed, linked with `com.grimsheet/monster = { room, inst, name }`. Linked selections → damage/heal all (characters by message, monsters directly), unlink all, "Open in Encounter" (focuses the card). Selecting a monster token highlights its card. Stat Bubbles on monster tokens use `hide` unless HP visibility is Exact.
 - **Owlbear tracker**: when on, initiative and the active turn are written to linked character and monster tokens.
 
+### Built in v2.1: Attacks against a target
+- **Target**: selecting one token on the map (Character or Mount layer; hidden tokens only for the GM) makes it the target; the player's own tokens are ignored. A target button in the toolbar shows its name and distance, and opens a list of tokens sorted by distance. The target stays until another one is chosen or it is cleared.
+- **Distance**: edge to edge, from the nearest grid square of the attacker's token to the nearest square of the target, using the scene's grid measurement and scale (ft, or m converted at 1.5 m = 5 ft). Recomputed when tokens move.
+- **Range**: read from the attack's text: monster "reach X ft." / "range X/Y ft.", weapon properties (Reach, Thrown and Ammunition ranges, melee = 5 ft), spell range ("Touch", "120 feet"). Verdict: in reach, in range, long range (disadvantage), out of range/reach. It is a warning only.
+- **Flow**: an attack or damage roll with a target goes to the GM (`com.grimsheet/gm`, `type: 'atk'`, `part: atk|dmg|heal`; the damage roll after an attack on the same weapon joins it). The roll tray shows the target, distance, range and the GM's answer.
+- **GM confirms**: a card per attack above the sheet or encounter: attacker → target, distance and range, to-hit against the target's AC (monster AC, the player's published AC, or the token's Stat Bubbles AC), suggested hit/miss (natural 20 = critical, natural 1 = miss), damage, and for saving throw damage a "Roll save" button for monsters. Buttons: Hit / Miss before damage; Apply / Half / Miss after. Applying changes the monster's HP, sends the damage to the player's sheet, or changes an unlinked token's HP bubble; the attacker is told the result (`type: 'atkResult'`). The GM's own monster attacks use the same cards.
+- **Waiting attacks** are kept in the GM's browser (`grimsheet.attacks.<room>`, last 30) by the background page, so they arrive even when the GM's panel is closed, with a notification.
+
 ### Roadmap
 Ordered by when it gets built. Priority applies inside a goal.
 
 **Current goal: Choose targets on the map**
-- *High:* **Attacks against a target.** Click Attack, then click a token. The roll is compared to the target's AC, with distance and range taken from the scene grid, and damage is applied after the GM confirms. Monsters attacking characters work the same way: the hit and the damage go to that player's sheet.
+- *Done (v2.1):* **Attacks against a target** (see above).
 - *High:* **Spell areas on the map.** Casting a spell with an area (sphere, cone, line, cube) places a measured shape on the map. Tokens inside it are listed, with "roll saves for all" for monsters and a save prompt for players, then damage (half on a successful save where the spell says so).
 - *Low:* **Conditions on tokens.** Small markers on tokens for conditions and concentration, kept in step with the sheet and the monster cards.
 - *Low:* **Combat prompts.** A concentration check when a concentrating creature takes damage (DC 10 or half the damage, whichever is higher), a death save prompt when a downed player's turn starts, and turn reminders.

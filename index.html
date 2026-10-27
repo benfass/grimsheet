@@ -225,6 +225,21 @@ select.ed-inline{width:auto}
 .tray .info{flex:1;min-width:0}
 .tray .ttl{font-weight:700;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 .tray .brk{font-family:var(--f-mono);font-size:.8rem;color:var(--muted);overflow-wrap:anywhere}
+.tgtwrap{display:inline-flex;align-items:center;gap:2px}
+.btn.tgt{display:inline-flex;align-items:center;gap:6px;max-width:220px}
+.btn.tgt svg{width:15px;height:15px;flex:none}
+.btn.tgt .tg-n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.btn.tgt .tg-d{font-family:var(--f-mono);font-size:.8rem;opacity:.75}
+.btn.tgt.on{border-color:var(--accent);color:var(--accent)}
+.tgtl{font-size:.82rem;margin-top:2px;display:flex;flex-wrap:wrap;gap:0 4px;align-items:center}
+.tgtl svg,.atkc svg{width:13px;height:13px;vertical-align:-2px;margin-right:3px}
+.tgtl .ok,.atkc .ok{color:var(--ok)}.tgtl .bad,.atkc .bad{color:var(--danger)}.tgtl .warn,.atkc .warn{color:var(--gold)}
+.tgtl .res{color:var(--ink)}
+.atkq{max-width:1500px;margin:10px auto 0;display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:8px}
+.atkc{border:1px solid var(--accent);border-radius:8px;padding:8px 10px;background:var(--surface);font-size:.88rem;display:flex;flex-direction:column;gap:3px;box-shadow:var(--shadow),inset 3px 0 0 var(--accent)}
+.atkc-h{display:flex;align-items:center;gap:6px;min-width:0}
+.atkc-m{font-size:.8rem}
+.atkc .fu{display:flex;gap:6px;flex-wrap:wrap;margin-top:3px}
 .tray .fu{display:flex;gap:6px;flex-wrap:wrap;margin-top:3px}
 .badge{font-size:.7rem;letter-spacing:.08em;font-weight:700;padding:0 6px;border-radius:4px;background:var(--gold-soft);color:var(--gold)}
 .badge.red{background:var(--danger-soft);color:var(--danger)}
@@ -342,7 +357,7 @@ textarea.code{width:100%;min-height:220px;font-family:var(--f-mono);font-size:.7
 </head>
 <body>
 <header class="top"><div class="top-in gut" id="top"></div></header>
-<div class="gut"><div id="banner"></div></div>
+<div class="gut"><div id="banner"></div><div id="atkq"></div></div>
 <main class="grid gut" id="grid"></main>
 <footer class="credit gut">Grimsheet is compatible with fifth edition. Includes material from the System Reference Document 5.2 (“SRD 5.2”) by Wizards of the Coast LLC, available at dndbeyond.com/srd, licensed under CC-BY-4.0 (creativecommons.org/licenses/by/4.0/legalcode). Creature stat blocks include material from the System Reference Document 5.1 (“SRD 5.1”) by Wizards of the Coast LLC, available at dnd.wizards.com/resources/systems-reference-document, licensed under CC-BY-4.0.</footer>
 <div id="dicefx" class="dicefx gut" hidden aria-hidden="true"></div>
@@ -2377,7 +2392,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.4.0';
+const APP_VERSION = '1.5.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -2394,6 +2409,7 @@ function applyPanelSize() {
 }
 
 const ICON = {
+  target: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="2"/><path d="M8 0.5v3M8 12.5v3M0.5 8h3M12.5 8h3"/></svg>',
   edit: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 2.5l2.5 2.5L6 12.5H3.5V10z"/></svg>',
   star: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 1.8l1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.6l-3.8 2 .7-4.3-3.1-3 4.3-.6z"/></svg>',
   starOn: '<svg viewBox="0 0 16 16" fill="currentColor" stroke="currentColor" stroke-width="1.4"><path d="M8 1.8l1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.6l-3.8 2 .7-4.3-3.1-3 4.3-.6z"/></svg>',
@@ -2661,7 +2677,9 @@ function roll(title, comps, opt = {}) {
   const mode = d20 ? ui.adv : 'normal';
   const r = E.rollComps(comps, CTX, { mode, crit: opt.crit });
   const entry = { id: uid(), title, kind: opt.kind || '', total: Math.max(opt.minZero ? 0 : -999, r.total), parts: r.parts, mode, nat: r.nat, crit: false, fumble: false, fu: opt.fu || [], note: opt.note || '', isCrit: !!opt.crit };
-  if (opt.onLand) Object.defineProperty(entry, 'onLand', { value: opt.onLand, enumerable: false });
+  if (opt.target) attachTarget(entry, opt.target);
+  const land = opt.target ? (en => { opt.onLand && opt.onLand(en); landTarget(en, opt.target); }) : opt.onLand;
+  if (land) Object.defineProperty(entry, 'onLand', { value: land, enumerable: false });
   if (opt.noShare) entry.shared = true;
   if (d20 && r.nat != null) { if (r.nat >= (opt.critMin || 20)) entry.crit = true; if (r.nat === 1) entry.fumble = true; }
   if (opt.after) opt.after(entry);
@@ -2716,7 +2734,8 @@ async function startOwlbear() {
         if (d.type === 'focus') { SETTINGS.view = 'encounter'; saveSettings(); ui.monFocus = d.inst; render(); const n = document.querySelector(`[data-inst="${d.inst}"]`); if (n && n.scrollIntoView) n.scrollIntoView({ block: 'center' }); }
       });
       try { const md = await OBR.room.getMetadata(); OBRX.init = md && md[INITKEY]; OBR.room.onMetadataChange(md => { OBRX.init = md && md[INITKEY]; refreshInitView(); }); } catch (e) { }
-      OBR.player.onChange(p => { if (OBRX.me.role !== 'GM' || !p.selection) return; const sel = p.selection; const inst = Object.keys(OBRX.monTokens).find(k => OBRX.monTokens[k].some(it => sel.includes(it.id))); if (inst && inst !== ui.monFocus) { ui.monFocus = inst; if (ui.view === 'encounter') { renderGrid(); const n = document.querySelector(`[data-inst="${inst}"]`); if (n && n.scrollIntoView) n.scrollIntoView({ block: 'nearest' }); } } });
+      OBR.player.onChange(p => onSelection(p.selection));
+      OBR.player.onChange(p => { if (OBRX.me.role !== 'GM' || !p.selection) return; const sel = p.selection; const inst = Object.keys(OBRX.monTokens).find(k => OBRX.monTokens[k].some(it => sel.includes(it.id))); if (inst && inst !== ui.monFocus) { ui.monFocus = inst; if (encView()) { renderGrid(); const n = document.querySelector(`[data-inst="${inst}"]`); if (n && n.scrollIntoView) n.scrollIntoView({ block: 'nearest' }); } } });
       writeCatalog(); ENC = null; enc(); render();
       setInterval(() => { if (!document.hidden) refreshLinks(); }, 5000);
       try {
@@ -2726,7 +2745,7 @@ async function startOwlbear() {
       } catch (e) { }
       const setParty = players => { OBRX.party = (players || []).map(p => ({ id: p.id, name: p.name, role: p.role, s: p.metadata && p.metadata[META] })).filter(p => p.s); refreshParty(); };
       setParty(await OBR.party.getPlayers()); OBR.party.onChange(setParty);
-      publishStatus();
+      publishStatus(); renderAtkQueue(); paintTarget();
       applyPanelSize();
       ensurePartyModule();
       renderBanner();
@@ -2756,12 +2775,13 @@ async function refreshLinks(items) {
     if (!items) items = (await OBRX.api.scene.isReady()) ? await OBRX.api.scene.items.getItems(it => !!(it.metadata && (it.metadata[LINK] || it.metadata[MONLINK]))) : [];
   } catch (e) { items = []; }
   const hadMon = Object.keys(OBRX.monTokens).length; scanTokens(items);
-  if (OBRX.me.role === 'GM') { syncMonTokens(); if (ui.view === 'encounter' && Object.keys(OBRX.monTokens).length !== hadMon) renderGrid(); }
+  if (OBRX.me.role === 'GM') { syncMonTokens(); if (encView() && Object.keys(OBRX.monTokens).length !== hadMon) renderGrid(); }
   if (ui.viewing) return;
   const before = OBRX.links.length, cid = C().id;
   OBRX.otherLinks = items.filter(it => it.metadata && it.metadata[LINK] && it.metadata[LINK].player === OBRX.me.id && it.metadata[LINK].char !== cid).map(it => it.metadata[LINK].name || 'another character');
   OBRX.links = items.filter(it => it.metadata && it.metadata[LINK] && it.metadata[LINK].player === OBRX.me.id && it.metadata[LINK].char === cid).map(it => ({ id: it.id, name: it.name, b: it.metadata[BUBBLES] || null }));
   paintLink();
+  if (ui.target) { clearTimeout(OBRX.distT); OBRX.distT = setTimeout(updateTargetDistance, 300); }
   if (OBRX.links.length > before) syncTokens(statusOf(C()));
 }
 function linkHtml() {
@@ -2828,7 +2848,7 @@ function partyMembers() {
 }
 const CH_GM = 'com.grimsheet/gm', CH_LOCAL = 'com.grimsheet/local';
 // what still works while viewing someone else's sheet
-const VIEW_OK = new Set(['check', 'save', 'skill', 'atk', 'dmg', 'init', 'spellatk', 'tdice', 'explain', 'toggle', 'acttab', 'logtab', 'close', 'ovlbg', 'adv', 'viewend', 'viewrefresh', 'mcollapse', 'sizemenu', 'setpanel', 'setcompact', 'setanim', 'setspeed', 'setshare', 'settest', 'clearlog', 'gmview']);
+const VIEW_OK = new Set(['atkhit', 'atkmiss', 'atkdrop', 'atkapply', 'atksave', 'check', 'save', 'skill', 'atk', 'dmg', 'init', 'spellatk', 'tdice', 'explain', 'toggle', 'acttab', 'logtab', 'close', 'ovlbg', 'adv', 'viewend', 'viewrefresh', 'mcollapse', 'sizemenu', 'setpanel', 'setcompact', 'setanim', 'setspeed', 'setshare', 'settest', 'clearlog', 'gmview']);
 const gmSeen = new Set(), sheetParts = {};
 function applyHpChange(ch, amount) {
   const hp = ch.hp, before = hp.cur; let text;
@@ -2856,11 +2876,21 @@ async function receiveGm(d) {
     let p = e.pcs.find(x => x.key === key);
     if (!p) { p = { key, player: d.from, owner: d.owner, charId: d.charId, name: d.name, init: null }; e.pcs.push(p); }
     p.init = d.total; p.name = d.name; p.charId = d.charId;
-    saveEnc(); if (ui.view === 'encounter') renderGrid();
+    saveEnc(); if (encView()) renderGrid();
     toast(d.owner + ' (' + d.name + ') rolled ' + d.total + ' for initiative.');
     return;
   }
   if (d.type === 'askInit') { if (OBRX.me.role !== 'GM' && !bgAlive()) { OBRX.api.notification.show(d.from + ' asks for initiative. Tap INIT in your Combat module.', 'INFO').catch(() => { }); } if (OBRX.me.role !== 'GM') toast(d.from + ' asks for initiative. Tap INIT in Combat.'); return; }
+  if (d.type === 'atk') {
+    if (OBRX.me.role !== 'GM') return;
+    if (!bgAlive()) { writeAtkQ(mergeAttack(readAtkQ(), d)); OBRX.api.notification.show(attackNote(d), d.crit ? 'SUCCESS' : 'DEFAULT').catch(() => { }); }
+    setTimeout(renderAtkQueue, 200); return;
+  }
+  if (d.type === 'atkResult') {
+    if (d.to !== OBRX.me.id || gmSeen.has(d.id)) return; gmSeen.add(d.id);
+    const en = ui.log.find(x => x.aid === d.aid); if (en && en.tgt) { en.tgt.result = d.text; if (ui.log[0] === en) renderTray(); }
+    toast('GM: ' + d.text + '.'); return;
+  }
   if (d.type === 'sheet' && d.to === OBRX.me.id && ui.pendingSheet && ui.pendingSheet.id === d.id) return receiveSheetPart(d);
   if (d.to !== OBRX.me.id || gmSeen.has(d.id)) return;
   gmSeen.add(d.id);
@@ -2875,6 +2905,10 @@ async function receiveGm(d) {
     const s = await packJSON(ch), parts = []; for (let i = 0; i < s.length; i += 12000) parts.push(s.slice(i, i + 12000));
     for (let i = 0; i < parts.length; i++) await OBRX.api.broadcast.sendMessage(CH_GM, { type: 'sheet', id: d.id, to: d.from, part: i, parts: parts.length, data: parts[i], owner: OBRX.me.name }, { destination: 'REMOTE' }).catch(() => { });
   }
+}
+function attackNote(d) {
+  const what = d.part === 'atk' ? d.total + ' to hit' + (d.crit ? ' (natural 20!)' : d.fumble ? ' (natural 1)' : '') : d.part === 'heal' ? d.total + ' healing' : d.total + ' ' + (d.types || '') + ' damage';
+  return `${d.attacker} → ${d.target.name}: ${what}. Confirm it in Grimsheet.`;
 }
 function requestSheet(player, charId, name, owner) {
   if (!OBRX.ready) return;
@@ -2937,7 +2971,7 @@ function saveEnc(opts = {}) {
   if (!opts.quiet) { publishInit(); syncMonTokens(); }
 }
 window.addEventListener('storage', ev => {
-  if (ev.key === ENCKEY) { ENC = null; enc(); if (ui.view === 'encounter') renderGrid(); syncMonTokens(); publishInit(); }
+  if (ev.key === ENCKEY) { ENC = null; enc(); if (encView()) renderGrid(); syncMonTokens(); publishInit(); }
   if (ev.key === BESTKEY) { bestiary = readJSON(BESTKEY) || []; }
 });
 
@@ -3107,15 +3141,19 @@ function writeTrackerTokens(e) {
 function actOf(m, ref) { const [list, i] = ref.split(':'); const t = tplOf(m); return (t[list] || [])[+i]; }
 function monAttack(m, ref) {
   const a = actOf(m, ref); if (!a) return;
+  const key = 'm:' + m.id + '|' + ref, T = targetFor(monTokenIds(m), 'atk', key);
+  if (T) Object.assign(T, { part: 'atk', key, from: monTokenIds(m)[0], ri: rangeInfo(a.text), attacker: m.name }); else ui.lastAtk = null;
   roll(m.name + ' · ' + a.name + ' to hit', [{ d20: true }, { src: 'Attack bonus', f: String(a.attack || 0) }], {
-    noShare: !SETTINGS.monShare, fu: a.damage.length ? [{ label: 'Damage', act: 'mondmg', id: m.id + '|' + ref }] : [],
+    noShare: !SETTINGS.monShare, target: T, fu: a.damage.length ? [{ label: 'Damage', act: 'mondmg', id: m.id + '|' + ref }] : [],
     after: en => { if (en.crit && a.damage.length) en.fu = [{ label: 'Crit damage', act: 'mondmg', id: m.id + '|' + ref, crit: 1 }, ...en.fu]; },
   });
 }
 function monDamage(m, ref, crit) {
   const a = actOf(m, ref); if (!a) return;
   const comps = []; a.damage.forEach(d => { if (d.dice) comps.push({ f: d.dice, suffix: d.type }); if (d.mod) comps.push({ f: d.mod, src: d.dice ? '' : d.type }); });
-  roll(m.name + ' · ' + a.name + ' damage' + (crit ? ' (crit)' : ''), comps, { crit, kind: 'dmg', minZero: true, noShare: !SETTINGS.monShare, note: [...new Set(a.damage.map(d => d.type))].join(', ') });
+  const key = 'm:' + m.id + '|' + ref, T = targetFor(monTokenIds(m), 'dmg', key);
+  if (T) Object.assign(T, { part: 'dmg', key, attacker: m.name, save: a.save && a.attack == null ? { dc: a.save.dc, ability: a.save.ability } : null });
+  roll(m.name + ' · ' + a.name + ' damage' + (crit ? ' (crit)' : ''), comps, { crit, kind: 'dmg', minZero: true, noShare: !SETTINGS.monShare, target: T, note: [...new Set(a.damage.map(d => d.type))].join(', ') });
 }
 function monCheck(m, ab, save) {
   const t = tplOf(m), md = MONSTERS.mod(t.abilities[ab] || 10), sv = save && t.saves[ab] != null ? t.saves[ab] : md;
@@ -3219,6 +3257,251 @@ function addMonHtml(md) {
     <div class="dlg-f"><button class="btn primary" data-act="close">Done</button></div>`;
 }
 
+/* ---------- TARGETS: attacks against a token on the map ---------- */
+// Select a token on the map (or pick one from the list), then roll. The roll goes to the GM with the
+// distance and range, the GM sees hit or miss against the target's AC and confirms the damage.
+function encView() { return isGM() && SETTINGS.view === 'encounter'; }
+const atkKey = () => 'grimsheet.attacks.' + (OBRX.room || 'room');
+ui.target = null; ui.lastAtk = null; OBRX.tokCache = {};
+function readAtkQ() { const q = readJSON(atkKey()); return Array.isArray(q) ? q : []; }
+function writeAtkQ(q) { writeJSON(atkKey(), q.slice(0, 30)); }
+// same merge as GS.mergeAttack in shared.js (the background page uses that one)
+function mergeAttack(list, d) {
+  let c = list.find(x => x.id === d.id);
+  if (!c) { c = { id: d.id, from: d.from, who: d.who, attacker: d.attacker, target: d.target, atk: null, dmg: null, save: null, verdict: null }; list.unshift(c); }
+  if (d.part === 'atk') c.atk = { total: d.total, nat: d.nat, crit: !!d.crit, fumble: !!d.fumble, mode: d.mode || 'normal' };
+  else c.dmg = { total: d.total, types: d.types || '', crit: !!d.isCrit, heal: d.part === 'heal' };
+  if (d.save) c.save = d.save;
+  if (d.dist) { c.dist = d.dist; c.range = d.range || ''; c.rangeOk = d.rangeOk; }
+  c.at = Date.now();
+  return list;
+}
+window.addEventListener('storage', ev => { if (ev.key && ev.key.startsWith('grimsheet.attacks.')) renderAtkQueue(); });
+
+/* ---- choosing a target ---- */
+function myTokenIds() { return OBRX.links.map(l => l.id); }
+function monTokenIds(m) { return (OBRX.monTokens[m.id] || []).map(i => i.id); }
+function tokenLabel(it) {
+  const ml = it.metadata && it.metadata[MONLINK], pl = it.metadata && it.metadata[LINK];
+  return (ml && ml.name) || (pl && pl.name) || (it.text && it.text.plainText && it.text.plainText.trim()) || it.name || 'Token';
+}
+const isCreature = it => it && (it.layer === 'CHARACTER' || it.layer === 'MOUNT') && (OBRX.me.role === 'GM' || it.visible !== false);
+async function onSelection(sel) {
+  if (!OBRX.ready || !sel || sel.length !== 1) return;
+  const id = sel[0]; if (ui.target && ui.target.id === id) return;
+  if (OBRX.me.role !== 'GM' && myTokenIds().includes(id)) return;
+  let it; try { [it] = await OBRX.api.scene.items.getItems([id]); } catch (e) { return; }
+  if (!isCreature(it)) return;
+  setTarget(it);
+}
+function setTarget(it) {
+  OBRX.tokCache[it.id] = it;
+  ui.target = it ? { id: it.id, name: tokenLabel(it) } : null;
+  paintTarget(); updateTargetDistance();
+}
+async function updateTargetDistance() {
+  const t = ui.target, from = myTokenIds()[0];
+  if (!t || !from || OBRX.me.role === 'GM') return;
+  const d = await tokenDistance(from, t.id);
+  if (ui.target === t) { t.dist = d ? d.label : ''; paintTarget(); }
+}
+function targetChipHtml() {
+  if (!IN_OBR || !OBRX.ready || ui.viewing) return '';
+  const t = ui.target;
+  return t ? `<button class="btn tgt on" data-act="tgtpick" title="Attacks and damage go against this token. Select another token on the map to change it.">${ICON.target}<span class="tg-n">${esc(t.name)}</span>${t.dist ? `<span class="tg-d">${esc(t.dist)}</span>` : ''}</button><button class="ico" data-act="tgtclear" title="Clear target" aria-label="Clear target">✕</button>`
+    : `<button class="btn tgt" data-act="tgtpick" title="Select a token on the map, or pick one here, and your attacks go against it">${ICON.target}<span class="tg-n">No target</span></button>`;
+}
+function paintTarget() { const n = document.getElementById('tgtwrap'); if (n) n.innerHTML = targetChipHtml(); }
+async function openTargetPicker() {
+  openModal('targets', { loading: true });
+  let items = [];
+  try { items = (await OBRX.api.scene.items.getItems(isCreature)).filter(it => OBRX.me.role === 'GM' || !myTokenIds().includes(it.id)); } catch (e) { }
+  const from = myTokenIds()[0];
+  const rows = await Promise.all(items.map(async it => { OBRX.tokCache[it.id] = it; const d = from && OBRX.me.role !== 'GM' ? await tokenDistance(from, it.id) : null; return { id: it.id, name: tokenLabel(it), dist: d ? d.label : '', ft: d ? d.ft : 1e9, kind: it.metadata && it.metadata[MONLINK] ? 'Monster' : it.metadata && it.metadata[LINK] ? 'Character' : '' }; }));
+  rows.sort((a, b) => a.ft - b.ft || a.name.localeCompare(b.name));
+  if (ui.modal && ui.modal.type === 'targets') { ui.modal = { type: 'targets', rows }; renderModal(); }
+}
+function targetsHtml(md) {
+  return dlgHead('Choose a target') + `<div class="dlg-b" style="gap:8px">
+    <div class="muted" style="font-size:.88rem">Tip: selecting a token on the map makes it your target too.</div>
+    ${md.loading ? '<div class="empty">Looking at the map…</div>' : md.rows.length ? md.rows.map(r => `<div class="list-i"><div class="grow"><b>${esc(r.name)}</b>${r.kind ? ` <span class="chip">${r.kind}</span>` : ''}</div>${r.dist ? `<span class="mono muted">${esc(r.dist)}</span>` : ''}<button class="btn small ${ui.target && ui.target.id === r.id ? '' : 'primary'}" data-act="tgtset" data-id="${esc(r.id)}">${ui.target && ui.target.id === r.id ? 'Targeted' : 'Target'}</button></div>`).join('') : '<div class="empty">No tokens on the Character layer in this scene.</div>'}
+  </div><div class="dlg-f">${ui.target ? '<button class="btn" data-act="tgtclear">Clear target</button>' : ''}<button class="btn primary" data-act="close">Done</button></div>`;
+}
+
+/* ---- distance and range ---- */
+// edge to edge: from the nearest grid square of one token to the nearest square of the other
+async function tokenDistance(aId, bId) {
+  try {
+    const g = OBRX.api.scene.grid, it = OBRX.api.scene.items;
+    const [A, B, dpi, sc] = await Promise.all([it.getItemBounds([aId]), it.getItemBounds([bId]), g.getDpi(), g.getScale()]);
+    const h = dpi / 2, cl = (v, lo, hi) => lo > hi ? (lo + hi) / 2 : Math.max(lo, Math.min(hi, v));
+    const pa = { x: cl(B.center.x, A.min.x + h, A.max.x - h), y: cl(B.center.y, A.min.y + h, A.max.y - h) };
+    const pb = { x: cl(pa.x, B.min.x + h, B.max.x - h), y: cl(pa.y, B.min.y + h, B.max.y - h) };
+    const cells = await g.getDistance(pa, pb);
+    const p = (sc && sc.parsed) || { multiplier: 5, unit: 'ft', digits: 0 };
+    const v = Math.round(cells * (p.multiplier || 5) * 10) / 10, unit = p.unit || 'ft';
+    const ft = /^(ft|feet|foot|')$/i.test(unit) ? v : /^m$/i.test(unit) ? v * 10 / 3 : cells * 5;
+    return { ft, label: v + ' ' + unit };
+  } catch (e) { return null; }
+}
+// "reach 5 ft.", "range 80/320 ft.", weapon properties, or a spell's "120 feet" / "Touch"
+function rangeInfo(text, spellRange) {
+  const low = String(text || '').toLowerCase(); let reach = null, range = null, m;
+  if (spellRange) {
+    const s = String(spellRange).toLowerCase();
+    if (/touch/.test(s)) reach = 5; else if ((m = s.match(/(\d+)\s*(?:feet|ft|foot)/))) range = [+m[1], +m[1]]; else if (/self/.test(s)) return null;
+  }
+  if ((m = low.match(/(?:range|ammunition|thrown)\s*\(?\s*(\d+)\s*\/\s*(\d+)/))) range = [+m[1], +m[2]];
+  if ((m = low.match(/reach\s+(\d+)\s*(?:ft|feet)/))) reach = +m[1];
+  else if (!reach && /properties:[^.\n]*\breach\b/.test(low)) reach = 10;
+  else if (!reach && /\bmelee\b/.test(low)) reach = 5;
+  return reach || range ? { reach, range } : null;
+}
+function rangeVerdict(ri, ft) {
+  if (!ri || ft == null) return null;
+  if (ri.reach && ft <= ri.reach + 0.01) return { ok: true, text: 'in reach' };
+  if (ri.range && ft <= ri.range[0] + 0.01) return { ok: true, text: 'in range' };
+  if (ri.range && ft <= ri.range[1] + 0.01) return { ok: true, text: 'long range: disadvantage' };
+  return { ok: false, text: ri.range ? 'out of range (' + Math.max(ri.range[0], ri.range[1]) + ' ft)' : 'out of reach (' + ri.reach + ' ft)' };
+}
+
+/* ---- rolling at a target ---- */
+// T = { tgt, from, ri, part: 'atk'|'dmg'|'heal', key, attacker, save }
+function targetFor(attackerIds, part, key) {
+  if (!IN_OBR || !OBRX.ready || ui.viewing) return null;
+  const la = ui.lastAtk;
+  // damage after an attack goes to the same target, even if the selection moved on
+  if (part !== 'atk' && la && la.key === key && Date.now() - la.at < 5 * 60e3) return { tgt: la.tgt, aid: la.aid };
+  const t = ui.target; if (!t || (attackerIds || []).includes(t.id)) return null;
+  return { tgt: { id: t.id, name: t.name } };
+}
+function attachTarget(entry, T) {
+  entry.aid = T.aid || uid();
+  entry.tgt = { name: T.tgt.name, part: T.part };
+  Object.defineProperty(entry, 'tgtP', {
+    enumerable: false, value: (async () => {
+      const info = { id: T.tgt.id, name: T.tgt.name };
+      if (T.from && T.part === 'atk') {
+        const d = await tokenDistance(T.from, T.tgt.id);
+        if (d) { info.dist = d.label; const v = rangeVerdict(T.ri, d.ft); if (v) { info.range = v.text; info.rangeOk = v.ok; } }
+      }
+      Object.assign(entry.tgt, { dist: info.dist, range: info.range, rangeOk: info.rangeOk });
+      if (ui.log[0] === entry) renderTray();
+      return info;
+    })(),
+  });
+}
+async function landTarget(entry, T) {
+  const info = await entry.tgtP;
+  if (T.part === 'atk') ui.lastAtk = { aid: entry.aid, key: T.key, tgt: T.tgt, at: Date.now() };
+  const msg = { type: 'atk', v: 1, id: entry.aid, part: T.part, from: OBRX.me.id, who: OBRX.me.name, attacker: T.attacker, target: { id: info.id, name: info.name }, dist: info.dist || '', range: info.range || '', rangeOk: info.rangeOk, total: entry.total, nat: entry.nat, crit: entry.crit, fumble: entry.fumble, isCrit: entry.isCrit, types: entry.note || '', mode: entry.mode, save: T.save || null };
+  if (OBRX.me.role === 'GM') { writeAtkQ(mergeAttack(readAtkQ(), msg)); renderAtkQueue(); return; }
+  entry.tgt.sent = true; if (ui.log[0] === entry) renderTray();
+  OBRX.api.broadcast.sendMessage(CH_GM, msg, { destination: 'REMOTE' }).catch(() => toast('Couldn\'t reach the GM.'));
+}
+function tgtLine(r) {
+  const t = r.tgt; if (!t) return '';
+  const bits = [`${ICON.target}<b>${esc(t.name)}</b>`];
+  if (t.dist) bits.push(esc(t.dist));
+  if (t.range) bits.push(`<span class="${t.rangeOk === false ? 'bad' : t.range.startsWith('long') ? 'warn' : 'ok'}">${esc(t.range)}</span>`);
+  if (t.result) bits.push(`<b class="res">${esc(t.result)}</b>`); else if (t.sent) bits.push('<span class="muted">sent to the GM</span>');
+  return `<div class="tgtl">${bits.join(' · ')}</div>`;
+}
+
+/* ---- GM: attacks waiting for a decision ---- */
+function resolveTarget(tokId) {
+  for (const [inst, its] of Object.entries(OBRX.monTokens || {})) if (its.some(i => i.id === tokId)) {
+    const m = enc().mons.find(x => x.id === inst); if (m) return { kind: 'mon', m, ac: m.ac, hp: m.hp + '/' + m.max };
+  }
+  for (const [player, its] of Object.entries(OBRX.pcTokens || {})) {
+    const it = its.find(i => i.id === tokId); if (!it) continue;
+    const L = it.metadata[LINK], p = (OBRX.party || []).find(x => x.id === player), s = p && p.s && p.s.charId === L.char ? p.s : null;
+    return { kind: 'pc', player, char: L.char, ac: s && typeof s.ac === 'number' ? s.ac : null, hp: s ? s.hp + '/' + s.max : '' };
+  }
+  const it = OBRX.tokCache[tokId], b = it && it.metadata && it.metadata[BUBBLES];
+  if (!it) fetchTok(tokId);
+  return { kind: 'tok', ac: b && typeof b['armor class'] === 'number' && b['armor class'] ? b['armor class'] : null, hp: b && typeof b.health === 'number' ? b.health + '/' + (b['max health'] || '?') : '' };
+}
+const tokFetching = new Set();
+async function fetchTok(id) {
+  if (tokFetching.has(id) || !OBRX.ready) return; tokFetching.add(id);
+  try { const [it] = await OBRX.api.scene.items.getItems([id]); if (it) { OBRX.tokCache[id] = it; renderAtkQueue(); } } catch (e) { }
+}
+function suggestVerdict(c, ac) {
+  if (!c.atk) return null;
+  if (c.atk.nat === 20 || c.atk.crit) return 'crit';
+  if (c.atk.nat === 1 || c.atk.fumble) return 'miss';
+  return ac == null ? null : c.atk.total >= ac ? 'hit' : 'miss';
+}
+function renderAtkQueue() {
+  const n = document.getElementById('atkq'); if (!n) return;
+  if (!IN_OBR || !OBRX.ready || OBRX.me.role !== 'GM') { n.innerHTML = ''; return; }
+  const q = readAtkQ();
+  n.innerHTML = q.length ? `<div class="atkq">${q.map(atkCard).join('')}</div>` : '';
+}
+function atkCard(c) {
+  const R = resolveTarget(c.target.id), sv = suggestVerdict(c, R.ac), heal = c.dmg && c.dmg.heal;
+  const verdict = c.verdict || sv;
+  const lines = [];
+  if (c.atk) lines.push(`<div><span class="muted">To hit</span> <b class="mono">${c.atk.total}</b>${c.atk.mode === 'adv' ? ' <span class="badge teal">ADV</span>' : c.atk.mode === 'dis' ? ' <span class="badge red">DIS</span>' : ''}${c.atk.nat === 20 ? ' <span class="badge">NAT 20</span>' : c.atk.nat === 1 ? ' <span class="badge red">NAT 1</span>' : ''} <span class="muted">vs AC ${R.ac ?? '?'}</span> → ${verdict === 'crit' ? '<b class="ok">Critical hit</b>' : verdict === 'hit' ? '<b class="ok">Hit</b>' : verdict === 'miss' ? '<b class="bad">Miss</b>' : '<span class="muted">AC unknown</span>'}</div>`);
+  if (c.save) {
+    const sr = c.saveRoll;
+    lines.push(`<div><span class="chip dc">DC ${esc(c.save.dc)} ${esc(c.save.ability)} save</span> ${sr ? `<span class="muted">rolled</span> <b class="mono">${sr.total}</b> → ${sr.ok ? '<b class="ok">saved</b>' : '<b class="bad">failed</b>'}` : R.kind === 'mon' ? `<button class="btn small" data-act="atksave" data-id="${esc(c.id)}">Roll ${esc(R.m.name)}'s save</button>` : '<span class="muted">ask for the save, then choose full or half</span>'}</div>`);
+  }
+  if (c.dmg) lines.push(`<div><b class="mono">${c.dmg.total}</b> ${heal ? 'healing' : esc(c.dmg.types || 'damage') + (c.dmg.types ? ' damage' : '')}${c.dmg.crit ? ' <span class="badge">CRIT</span>' : ''}</div>`);
+  else if (c.atk && verdict !== 'miss') lines.push(`<div class="muted">${c.verdict ? 'Waiting for the damage roll…' : 'Damage not rolled yet.'}</div>`);
+  const btns = [];
+  if (c.dmg) {
+    if (heal) btns.push(`<button class="btn small primary" data-act="atkapply" data-id="${esc(c.id)}" data-v="1">Heal ${c.dmg.total}</button>`);
+    else {
+      const half = Math.floor(c.dmg.total / 2), preferHalf = c.saveRoll && c.saveRoll.ok;
+      btns.push(`<button class="btn small ${preferHalf ? '' : 'primary'}" data-act="atkapply" data-id="${esc(c.id)}" data-v="1">Apply ${c.dmg.total}</button>`);
+      btns.push(`<button class="btn small ${preferHalf ? 'primary' : ''}" data-act="atkapply" data-id="${esc(c.id)}" data-v="0.5">Half ${half}</button>`);
+      if (c.atk) btns.push(`<button class="btn small" data-act="atkmiss" data-id="${esc(c.id)}">Miss</button>`);
+    }
+  } else if (c.atk && !c.verdict) {
+    btns.push(`<button class="btn small ${verdict !== 'miss' ? 'primary' : ''}" data-act="atkhit" data-id="${esc(c.id)}">Hit</button>`);
+    btns.push(`<button class="btn small ${verdict === 'miss' ? 'primary' : ''}" data-act="atkmiss" data-id="${esc(c.id)}">Miss</button>`);
+  }
+  const who = c.from === OBRX.me.id ? '' : esc(c.who);
+  return `<div class="atkc"><div class="atkc-h"><b>${esc(c.attacker)}</b> <span class="muted">→</span> <b>${esc(c.target.name)}</b>${R.hp ? ` <span class="muted mono">${esc(R.hp)}</span>` : ''}<span style="flex:1"></span><button class="ico" data-act="atkdrop" data-id="${esc(c.id)}" title="Dismiss" aria-label="Dismiss">✕</button></div>
+    <div class="atkc-m muted">${[who, c.dist ? esc(c.dist) : '', c.range ? `<span class="${c.rangeOk === false ? 'bad' : c.range.startsWith('long') ? 'warn' : ''}">${esc(c.range)}</span>` : ''].filter(Boolean).join(' · ')}</div>
+    ${lines.join('')}<div class="fu">${btns.join('')}</div></div>`;
+}
+function updAtk(id, fn) { const q = readAtkQ(), c = q.find(x => x.id === id); if (!c) return null; const keep = fn(c); writeAtkQ(keep === false ? q.filter(x => x.id !== id) : q); renderAtkQueue(); return c; }
+function tellAttacker(c, text) {
+  if (c.from === OBRX.me.id) { const en = ui.log.find(x => x.aid === c.id); if (en && en.tgt) { en.tgt.result = text; if (ui.log[0] === en) renderTray(); } return; }
+  OBRX.api.broadcast.sendMessage(CH_GM, { type: 'atkResult', id: uid(), to: c.from, aid: c.id, text }, { destination: 'REMOTE' }).catch(() => { });
+}
+function sendHp(player, char, amount) {
+  OBRX.api.broadcast.sendMessage(CH_GM, { type: 'hp', id: uid(), to: player, char, amount, from: OBRX.me.name }, { destination: player === OBRX.me.id ? 'LOCAL' : 'REMOTE' }).catch(() => { });
+}
+async function applyAttack(id, mult) {
+  const c = readAtkQ().find(x => x.id === id); if (!c || !c.dmg) return;
+  const heal = c.dmg.heal, amt = heal ? c.dmg.total : Math.floor(c.dmg.total * mult), delta = heal ? amt : -amt;
+  const R = resolveTarget(c.target.id);
+  if (R.kind === 'mon') { applyMonHp(R.m, delta); saveEnc(); if (encView()) renderGrid(); }
+  else if (R.kind === 'pc') sendHp(R.player, R.char, delta);
+  else {
+    let ok = false;
+    try {
+      await OBRX.api.scene.items.updateItems([c.target.id], ds => { for (const d of ds) { const b = d.metadata[BUBBLES]; if (b && typeof b.health === 'number') { b.health = Math.max(0, Math.min(b['max health'] || 1e9, b.health + delta)); ok = true; } } });
+    } catch (e) { }
+    if (!ok) toast(c.target.name + ' isn\'t linked and has no HP bubble, so nothing was changed.');
+  }
+  updAtk(id, () => false);
+  const text = heal ? `${c.target.name} regains ${amt} HP` : (c.atk ? 'Hit! ' : '') + `${amt} damage to ${c.target.name}` + (mult < 1 ? ' (half)' : '');
+  tellAttacker(c, text);
+  toast(text + '.');
+}
+function rollQueuedSave(id) {
+  updAtk(id, c => {
+    const R = resolveTarget(c.target.id); if (R.kind !== 'mon' || !c.save) return;
+    const t = tplOf(R.m), ab = c.save.ability, bonus = t.saves[ab] != null ? t.saves[ab] : MONSTERS.mod(t.abilities[ab] || 10);
+    const total = quickD20(bonus); c.saveRoll = { total, ok: total >= +c.save.dc };
+  });
+}
+
 /* ---------- dice animation ---------- */
 const DIE_SHAPE = {
   4: '<polygon points="20,3 37,35 3,35"/>',
@@ -3257,12 +3540,16 @@ function animateDice(entry) {
 }
 function rollAttack(e) {
   const fu = e.damage.length ? [{ label: 'Damage', act: 'dmg', id: e.id }] : [];
-  roll(e.name + ' · to hit', attackComps(e), { critMin: +e.attack.crit || 20, fu, after: en => { if (en.crit && e.damage.length) en.fu = [{ label: 'Crit damage', act: 'dmg', id: e.id, crit: 1 }, ...fu]; } });
+  const key = 'e:' + e.id, T = targetFor(myTokenIds(), 'atk', key);
+  if (T) Object.assign(T, { part: 'atk', key, from: myTokenIds()[0], ri: rangeInfo(e.text, e.spell && e.spell.range), attacker: C().name }); else ui.lastAtk = null;
+  roll(e.name + ' · to hit', attackComps(e), { critMin: +e.attack.crit || 20, fu, target: T, after: en => { if (en.crit && e.damage.length) en.fu = [{ label: 'Crit damage', act: 'dmg', id: e.id, crit: 1 }, ...fu]; } });
 }
 function rollDamage(e, crit, lvl) {
   const heal = isHealing(e);
   const types = [...new Set(e.damage.map(p => p.type).filter(Boolean))].join(', ');
-  roll(e.name + ' · ' + (heal ? 'healing' : 'damage') + (crit ? ' (crit)' : ''), damageComps(e, { lvl }), { crit, kind: heal ? 'heal' : 'dmg', minZero: true, note: types, fu: heal ? [{ label: 'Heal me', act: 'healme' }] : [] });
+  const key = 'e:' + e.id, T = targetFor(myTokenIds(), heal ? 'heal' : 'dmg', key);
+  if (T) Object.assign(T, { part: heal ? 'heal' : 'dmg', key, attacker: C().name, save: e.save && !e.attack ? { dc: dcValue(e), ability: e.save.ability } : null });
+  roll(e.name + ' · ' + (heal ? 'healing' : 'damage') + (crit ? ' (crit)' : ''), damageComps(e, { lvl }), { crit, kind: heal ? 'heal' : 'dmg', minZero: true, note: types, target: T, fu: heal && !T ? [{ label: 'Heal me', act: 'healme' }] : [] });
 }
 
 /* ---------- rendering ---------- */
@@ -3286,6 +3573,7 @@ function renderTop() {
         <button data-act="adv" data-v="normal" class="${ui.adv === 'normal' ? 'on' : ''}">Normal</button>
         <button data-act="adv" data-v="adv" class="${ui.adv === 'adv' ? 'on' : ''}">Adv.</button>
       </div>
+      ${IN_OBR && !ui.viewing ? `<span id="tgtwrap" class="tgtwrap">${targetChipHtml()}</span>` : ''}
       <div class="restbar"><button class="btn" data-act="rest" data-v="short">Short rest</button><button class="btn" data-act="rest" data-v="long">Long rest</button><button class="btn" data-act="rest" data-v="dawn" title="Reset anything that recharges at dawn">Dawn</button></div>
       <div class="seg" role="group" aria-label="Mode"><button data-act="mode" data-v="play" class="${!ed ? 'on' : ''}">Play</button><button data-act="mode" data-v="edit" class="${ed ? 'on' : ''}">Edit</button></div>
       <button class="btn" data-act="modal" data-v="chars">Characters</button>
@@ -3326,7 +3614,7 @@ function modHeader(m) {
 
 function renderGrid() {
   ui.view = isGM() && !ui.viewing ? (SETTINGS.view || 'sheet') : 'sheet';
-  if (ui.view === 'encounter') { $('#grid').innerHTML = `<div class="encwrap">${renderEncounter()}</div>`; return; }
+  if (encView()) { $('#grid').innerHTML = `<div class="encwrap">${renderEncounter()}</div>`; return; }
   const c = C(), L = ensureLayout(c), hid = new Set(c.hidden), ed = ui.mode === 'edit';
   const byId = id => c.modules.find(m => m.id === id);
   const modHtml = id => { const m = byId(id); return `<section class="mod ${m.collapsed ? 'collapsed' : ''} ${ui.drag === id ? 'dragging' : ''}" data-mod="${m.id}">${modHeader(m)}<div class="mod-b">${modBody(m)}</div></section>`; };
@@ -3545,7 +3833,7 @@ function renderTray(isNew, rolling) {
   if (!r) { $('#tray').innerHTML = `<div class="tot muted">d20</div><div class="info"><div class="ttl">Tap any number to roll</div><div class="brk">Every roll shows where each bonus came from.</div></div>${quick}`; return; }
   if (rolling) { $('#tray').innerHTML = `<div class="tot muted" aria-live="polite">…</div><div class="info"><div class="ttl">${esc(r.title)} ${r.mode === 'adv' ? '<span class="badge teal">ADV</span>' : r.mode === 'dis' ? '<span class="badge red">DIS</span>' : ''}</div><div class="brk">Rolling…</div></div>${quick}`; return; }
   $('#tray').innerHTML = `<div class="tot ${isNew ? 'new' : ''} ${r.crit ? 'crit' : ''} ${r.fumble ? 'fum' : ''}">${r.total}</div>
-    <div class="info"><div class="ttl">${esc(r.title)} ${badges(r)}</div><div class="brk">${breakdown(r)}</div>
+    <div class="info"><div class="ttl">${esc(r.title)} ${badges(r)}</div><div class="brk">${breakdown(r)}</div>${tgtLine(r)}
     ${r.fu.length ? `<div class="fu">${r.fu.map(f => `<button class="btn small ${f.crit ? 'primary' : ''}" data-act="${f.act}" data-id="${f.id || ''}" data-crit="${f.crit || ''}" data-lvl="${f.lvl || ''}" data-amt="${r.total}">${esc(f.label)}</button>`).join('')}</div>` : ''}</div>${quick}`;
 }
 function badges(r) {
@@ -3631,6 +3919,7 @@ function renderModal() {
   else if (m.type === 'pdf') h = pdfHtml(m);
   else if (m.type === 'settings') h = settingsHtml();
   else if (m.type === 'addmon') h = addMonHtml(m);
+  else if (m.type === 'targets') h = targetsHtml(m);
   else if (m.type === 'viewwait') h = dlgHead('Opening ' + (m.name || 'sheet')) + `<div class="dlg-b">${m.failed ? `<div class="banner warn" style="margin:0">${esc(m.owner || 'The player')}'s Grimsheet didn't answer. They need to be in the room with Grimsheet 1.3 or newer installed.</div>` : `<div class="sugg"><h3>Asking ${esc(m.owner || 'the player')}'s Grimsheet…</h3><span>The sheet opens read-only in a moment.</span></div>`}</div><div class="dlg-f"><button class="btn" data-act="close">${m.failed ? 'Close' : 'Cancel'}</button></div>`;
   $('#ovl').innerHTML = `<div class="ovl" data-act="ovlbg"><div class="dlg" role="dialog" aria-modal="true">${h}</div></div>`;
   $('#ovl .ovl').scrollTop = keepScroll;
@@ -4063,6 +4352,14 @@ document.addEventListener('click', ev => {
     case 'setshare': SETTINGS.share = v; saveSettings(); renderModal(); break;
     case 'setview': SETTINGS.view = v; saveSettings(); render(); window.scrollTo(0, 0); break;
     case 'setmonhp': SETTINGS.monHp = v; saveSettings(); syncMonTokens(); publishInit(); renderModal(); break;
+    case 'tgtpick': openTargetPicker(); break;
+    case 'tgtclear': ui.target = null; ui.lastAtk = null; paintTarget(); if (ui.modal && ui.modal.type === 'targets') renderModal(); break;
+    case 'tgtset': { const it = OBRX.tokCache[id]; if (it) setTarget(it); closeModal(); break; }
+    case 'atkhit': { const c = updAtk(id, c => { c.verdict = 'hit'; }); if (c) tellAttacker(c, 'Hit! Roll damage'); break; }
+    case 'atkmiss': { const c = updAtk(id, () => false); if (c) tellAttacker(c, 'Miss'); break; }
+    case 'atkdrop': updAtk(id, () => false); break;
+    case 'atkapply': applyAttack(id, +v || 1); break;
+    case 'atksave': rollQueuedSave(id); break;
     case 'setmonshare': SETTINGS.monShare = !SETTINGS.monShare; saveSettings(); renderModal(); break;
     case 'setobrtracker': SETTINGS.obrTracker = SETTINGS.obrTracker === false; saveSettings(); publishInit(); renderModal(); break;
     case 'addmon': openModal('addmon', { tab: 'list', q: '' }); break;
