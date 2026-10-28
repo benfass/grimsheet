@@ -346,6 +346,16 @@ select.ed-inline{width:auto}
 .flash{animation:gsflash 2.2s ease-out}
 @keyframes gsflash{0%,30%{box-shadow:0 0 0 3px var(--accent);border-radius:8px}100%{box-shadow:0 0 0 3px transparent}}
 @media (prefers-reduced-motion:reduce){.flash{animation:none;outline:3px solid var(--accent)}}
+.defn{font-size:.82rem;color:var(--accent)}
+.defm{color:var(--accent);margin-left:2px;cursor:help}
+.badge.why{background:var(--gold-soft);color:var(--ink);font-weight:500;text-transform:none;letter-spacing:0}
+.cond .dur,.chip .dur{display:inline-grid;place-items:center;min-width:16px;height:16px;padding:0 3px;margin-left:4px;border-radius:8px;background:var(--surface);color:var(--ink);font-size:.68rem;font-weight:700;font-family:var(--f-mono)}
+.tokimg{width:38px;height:38px;border-radius:50%;object-fit:cover;flex:none;border:2px solid var(--accent);background:var(--sunk);cursor:zoom-in}
+.tokimg.sm{width:26px;height:26px;border-width:1.5px}
+.pcard > .tokimg.sm{float:right}
+.insp{display:inline-flex;align-items:center;gap:6px;margin:8px 0 2px;background:none;border:1px dashed var(--line);border-radius:999px;padding:3px 10px;font:inherit;font-size:.82rem;color:var(--muted);cursor:pointer}
+.insp.on{border-style:solid;border-color:var(--gold);color:var(--ink);background:var(--gold-soft);font-weight:600}
+.btn.on-insp{color:var(--gold);border-color:var(--gold)}
 .tray .fu{display:flex;gap:6px;flex-wrap:wrap;margin-top:3px}
 .badge{font-size:.7rem;letter-spacing:.08em;font-weight:700;padding:0 6px;border-radius:4px;background:var(--gold-soft);color:var(--gold)}
 .badge.red{background:var(--danger-soft);color:var(--danger)}
@@ -624,7 +634,7 @@ const ENGINE = (() => {
       for (const { sign, node } of signedTerms(ast)) {
         const o = { roll: true, crit: !!opt.crit, rng, rolls: [], dice: [] };
         let v; try { v = sign * Math.floor(evalNode(node, ctx, o)); } catch (e) { parts.push({ label: labelFor(c, node, false, ctx), detail: e.message, value: 0, err: true }); continue; }
-        parts.push({ label: labelFor(c, node, opt.crit, ctx), detail: o.rolls.length ? o.rolls.join(', ') : '', value: v, dice: o.dice, neg: sign < 0 });
+        parts.push({ label: labelFor(c, node, opt.crit, ctx), detail: o.rolls.length ? o.rolls.join(', ') : '', value: v, dice: o.dice, neg: sign < 0, type: c.suffix || '' });
         total += v;
       }
     }
@@ -741,6 +751,13 @@ const ENGINE = (() => {
     // upcast + cantrip scaling
     if ((m = low.match(/by\s+(\d+d\d+)\s+for each\s+(?:spell\s+)?slot level above/))) { const u = m[1]; add('upcast', 'Upcast: +' + u + ' per slot level above', d => { d.spell = d.spell || { level: 1 }; d.spell.upcast = u; }); }
     if (/increases by \d+d\d+ when you reach (?:5th level|level 5|character level 5)/.test(low) || (level === 0 && /\b(?:5th level|level 5)\b.*\b(?:11th level|level 11)\b/s.test(low))) add('cantrip', 'Cantrip damage grows at levels 5, 11, 17', d => { d.spell = d.spell || { level: 0 }; d.spell.cantrip = true; });
+    // resistances, immunities, vulnerabilities ("you have resistance to fire damage")
+    const def = { res: [], imm: [], vul: [] };
+    for (const mm of low.matchAll(/\b(resistance|immunity|vulnerability|resistant|immune|vulnerable) to ([a-z ,]+?) damage/g)) {
+      const k = /^resist/.test(mm[1]) ? 'res' : /^immun/.test(mm[1]) ? 'imm' : 'vul';
+      for (const ty of ['acid', 'bludgeoning', 'cold', 'fire', 'force', 'lightning', 'necrotic', 'piercing', 'poison', 'psychic', 'radiant', 'slashing', 'thunder']) if (new RegExp('\\b' + ty + '\\b').test(mm[2]) && !def[k].includes(ty)) def[k].push(ty);
+    }
+    if (def.res.length || def.imm.length || def.vul.length) add('defense', [def.res.length ? 'Resistance: ' + def.res.join(', ') : '', def.imm.length ? 'Immunity: ' + def.imm.join(', ') : '', def.vul.length ? 'Vulnerability: ' + def.vul.join(', ') : ''].filter(Boolean).join('; '), d => { d.defense = { res: def.res.join(', '), imm: def.imm.join(', '), vul: def.vul.join(', ') }; });
     // rerolls
     const rr = rerollOf(t);
     if (rr) add('reroll', rerollText(rr), d => { d.reroll = rr; });
@@ -1532,6 +1549,7 @@ const SRD = (() => {
     if (it.dmg) base.damage = dmgList(it.dmg);
     if (it.counter) base.counter = { used: 0, ...it.counter };
     const rr = it.reroll || ENGINE.rerollOf(base.text); if (rr) base.reroll = { ...rr };
+    { const sg = ENGINE.scan(base.text).find(x => x.key === 'defense'); if (sg) sg.apply(base); }
     if (it.fx && Object.keys(it.fx).length) base.effect = Object.assign({ active: false, attack: '', damage: '', save: '', ac: '', check: '', only: '' }, it.fx);
     return base;
   }
@@ -2602,7 +2620,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.17.0';
+const APP_VERSION = '1.19.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -2888,7 +2906,9 @@ function dmgLabel(e, opt) { const s = E.staticSum(damageComps(e, opt), CTX); con
 function roll(title, comps, opt = {}) {
   CTX = ctxFor(C());
   const d20 = comps.some(c => c.d20);
-  const mode = d20 ? ui.adv : 'normal';
+  const cr = d20 && opt.test ? condRules(opt.test) : null;
+  if (cr && cr.add.length) comps = comps.concat(cr.add);
+  const mode = d20 ? (cr ? rollMode(ui.adv, cr) : ui.adv) : 'normal';
   const r = E.rollComps(comps, CTX, { mode, crit: opt.crit });
   const entry = { id: uid(), title, kind: opt.kind || '', total: Math.max(opt.minZero ? 0 : -999, r.total), parts: r.parts, mode, nat: r.nat, crit: false, fumble: false, fu: opt.fu || [], note: opt.note || '', isCrit: !!opt.crit };
   Object.assign(entry, { minZero: !!opt.minZero, critMin: opt.critMin || 20, fu0: (opt.fu || []).slice(), hidden: !!opt.noShare, monId: opt.mon || null });
@@ -2899,6 +2919,7 @@ function roll(title, comps, opt = {}) {
   if (land) Object.defineProperty(entry, 'onLand', { value: land, enumerable: false });
   if (opt.noShare) entry.shared = true;
   if (d20 && r.nat != null) { if (r.nat >= (opt.critMin || 20)) entry.crit = true; if (r.nat === 1) entry.fumble = true; }
+  if (cr) { const why = []; if (cr.adv.length) why.push('adv: ' + cr.adv.join(', ')); if (cr.dis.length) why.push('dis: ' + cr.dis.join(', ')); why.push(...cr.notes); if (why.length) entry.why = why.join(' · '); if (cr.critClose) entry.critClose = true; if (cr.autoFail) entry.autoFail = cr.autoFail; }
   if (opt.after) opt.after(entry);
   ui.log.unshift(entry); if (ui.log.length > 60) ui.log.pop();
   if (SETTINGS.diceAnim && entry.parts.some(p => p.dice && p.dice.length)) animateDice(entry);
@@ -2976,7 +2997,7 @@ async function startOwlbear() {
 }
 function statusOf(c) {
   const ac = (() => { try { return E.staticSum(acComps(), CTX).flat; } catch (e) { return '?'; } })();
-  return { charId: c.id, char: c.name, cls: [c.species, c.cls].filter(Boolean).join(' '), level: c.level, hp: c.hp.cur, max: c.hp.max, temp: c.hp.temp, ac, cond: c.conditions.concat(c.exhaustion ? ['Exhaustion ' + c.exhaustion] : []), dead: c.death.f >= 3, down: c.hp.cur <= 0, conc: c.conc ? c.conc.name : '', death: c.death };
+  return { charId: c.id, char: c.name, cls: [c.species, c.cls].filter(Boolean).join(' '), level: c.level, hp: c.hp.cur, max: c.hp.max, temp: c.hp.temp, ac, cond: c.conditions.concat(c.exhaustion ? ['Exhaustion ' + c.exhaustion] : []), dead: c.death.f >= 3, down: c.hp.cur <= 0, conc: c.conc ? c.conc.name : '', death: c.death, def: charDefenses(c), insp: !!c.inspiration };
 }
 let statusT = null;
 function publishStatus() {
@@ -3002,8 +3023,10 @@ async function refreshLinks(items) {
   if (ui.viewing) return;
   const before = OBRX.links.length, cid = C().id;
   OBRX.otherLinks = items.filter(it => it.metadata && it.metadata[LINK] && it.metadata[LINK].player === OBRX.me.id && it.metadata[LINK].char !== cid).map(it => it.metadata[LINK].name || 'another character');
-  OBRX.links = items.filter(it => it.metadata && it.metadata[LINK] && it.metadata[LINK].player === OBRX.me.id && it.metadata[LINK].char === cid).map(it => ({ id: it.id, name: it.name, b: it.metadata[BUBBLES] || null }));
+  OBRX.links = items.filter(it => it.metadata && it.metadata[LINK] && it.metadata[LINK].player === OBRX.me.id && it.metadata[LINK].char === cid).map(it => ({ id: it.id, name: it.name, b: it.metadata[BUBBLES] || null, img: tokImg(it) }));
+  const img = OBRX.links.length ? OBRX.links[0].img : ''; if (img !== OBRX.linkImg) { OBRX.linkImg = img; if (!gmMode()) renderTop(); }
   paintLink(); if (OBRX.links.length !== before && !gmMode()) renderTop();
+  if (ui.target && items) { const it = items.find(x => x.id === ui.target.id); if (it) OBRX.tokCache[it.id] = it; }
   if (ui.target) { clearTimeout(OBRX.distT); OBRX.distT = setTimeout(updateTargetDistance, 300); }
   if (OBRX.links.length > before) syncTokens(statusOf(C()));
 }
@@ -3066,7 +3089,7 @@ function partyMembers() {
   return others.map(p => {
     const s = p.s, pct = s.max ? Math.max(0, Math.min(100, s.hp / s.max * 100)) : 0;
     const ptok = (OBRX.pcTokens[p.id] || []).length;
-    return `<div class="entry" data-pm="${esc(p.id)}"><div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap"><b ${ptok ? `data-dblfocus="pc|${esc(p.id)}" title="Double-click to find their token"` : ''}>${esc(s.char)}</b>${ptok ? locateBtn('focus', `data-v="pc|${esc(p.id)}"`, 'Find their token on the map') : ''}<span class="muted" style="font-size:.85rem">${esc(p.name)}${p.role === 'GM' ? ' · GM' : ''}${s.cls ? ' · ' + esc(s.cls) : ''}${s.level ? ' ' + esc(s.level) : ''}</span></div>
+    return `<div class="entry" data-pm="${esc(p.id)}"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${tokImg((OBRX.pcTokens[p.id] || [])[0]) ? `<img class="tokimg sm" src="${esc(tokImg(OBRX.pcTokens[p.id][0]))}" alt="">` : ''}<b ${ptok ? `data-dblfocus="pc|${esc(p.id)}" title="Double-click to find their token"` : ''}>${esc(s.char)}</b>${ptok ? locateBtn('focus', `data-v="pc|${esc(p.id)}"`, 'Find their token on the map') : ''}<span class="muted" style="font-size:.85rem">${esc(p.name)}${p.role === 'GM' ? ' · GM' : ''}${s.cls ? ' · ' + esc(s.cls) : ''}${s.level ? ' ' + esc(s.level) : ''}</span></div>
       <div class="inline" style="margin-top:4px"><span class="pool">${esc(s.hp)}<small>/${esc(s.max)} HP</small></span>${s.temp ? `<span class="temp">+${esc(s.temp)}</span>` : ''}<span class="chip">AC ${esc(s.ac)}</span>${s.dead ? '<span class="chip" style="color:var(--danger);border-color:var(--danger)">Dead</span>' : s.down ? '<span class="chip" style="color:var(--danger);border-color:var(--danger)">Down</span>' : ''}${(s.cond || []).map(k => `<span class="chip" style="color:var(--danger);border-color:var(--danger)">${esc(k)}</span>`).join('')}${s.conc ? `<span class="chip conc">◉ ${esc(s.conc)}</span>` : ''}</div>
       <div class="hpbar" style="margin-top:6px"><i class="${pct < 25 ? 'low' : pct < 55 ? 'mid' : ''}" style="width:${pct}%"></i></div>
       ${OBRX.me.role === 'GM' && s.charId ? `<div class="inline" style="margin-top:6px"><input class="qm" id="gmhp-${esc(p.id)}" data-qm="gmhp" data-player="${esc(p.id)}" data-char="${esc(s.charId)}" data-name="${esc(s.char)}" style="width:104px" placeholder="−12 or +8" aria-label="Damage or heal ${esc(s.char)}"><button class="btn small" data-act="gmview" data-player="${esc(p.id)}" data-char="${esc(s.charId)}" data-name="${esc(s.char)}" data-owner="${esc(p.name)}">View sheet</button></div>` : ''}</div>`;
@@ -3116,6 +3139,11 @@ async function receiveGm(d) {
     if (d.to !== OBRX.me.id || gmSeen.has(d.id)) return; gmSeen.add(d.id);
     if (!bgAlive()) { writeSaves([{ id: d.id, aid: d.aid, from: d.from, ability: d.ability, dc: d.dc, what: d.what }].concat(readSaves())); OBRX.api.notification.show(`${d.from} asks for a ${d.ability} save (DC ${d.dc}) against ${d.what}.`, 'WARNING').catch(() => { }); }
     setTimeout(renderAtkQueue, 200); toast(`${d.from}: ${d.ability} save, DC ${d.dc}, against ${d.what}.`); return;
+  }
+  if (d.type === 'inspire') {
+    if (d.to !== OBRX.me.id || gmSeen.has(d.id)) return; gmSeen.add(d.id);
+    if (!bgAlive()) { const ch = store.chars[d.char] || C(); ch.inspiration = true; save(); render(); publishStatus(); OBRX.api.notification.show(`${d.from} gives you Heroic Inspiration.`, 'SUCCESS').catch(() => { }); }
+    toast(`${d.from} gives you Heroic Inspiration ★`); return;
   }
   if (d.type === 'restCall') {
     if (OBRX.me.role === 'GM' || gmSeen.has(d.id)) return; gmSeen.add(d.id);
@@ -3309,7 +3337,7 @@ function addParty() {
     const key = 'pc:' + p.id;
     const ex = e.pcs.find(x => x.key === key);
     if (ex) { ex.name = p.s.char; ex.charId = p.s.charId; continue; }
-    e.pcs.push({ key, player: p.id, owner: p.name, charId: p.s.charId, name: p.s.char, init: null }); n++;
+    e.pcs.push({ key, player: p.id, owner: p.name, charId: p.s.charId, name: p.s.char, init: null, level: p.s.level }); n++;
   }
   saveEnc(); renderGrid();
   return n;
@@ -3333,10 +3361,28 @@ function nextTurn(dir = 1) {
 }
 function endCombat() {
   const e = enc(); e.combat = { active: false, round: 1, turn: null };
-  saveEnc(); renderGrid(); toast('Combat ended.');
+  saveEnc(); renderGrid();
+  const xp = e.mons.filter(m => m.hp <= 0).reduce((a, m) => a + (+tplOf(m).xp || 0), 0), n = partyLevels(e).length;
+  toast('Combat ended.' + (xp ? ` Defeated monsters: ${xp.toLocaleString()} XP${n > 1 ? `, ${Math.floor(xp / n).toLocaleString()} each for ${n} characters` : ''}.` : ''));
+}
+// 2024 rules: XP budget per character by level (low, moderate, high), against the monsters' total XP
+const XP_BUDGET = [null, [50, 75, 100], [100, 150, 200], [150, 225, 400], [250, 375, 500], [500, 750, 1100], [600, 1000, 1400], [750, 1300, 1700], [1000, 1700, 2100], [1300, 2000, 2600], [1600, 2300, 3100],
+  [1900, 2900, 4100], [2200, 3700, 4700], [2600, 4200, 5400], [2900, 4900, 6200], [3300, 5400, 7800], [3800, 6100, 9800], [4500, 7200, 11700], [5000, 8700, 14200], [5500, 10700, 17200], [6400, 13200, 22000]];
+function partyLevels(e) {
+  if (IN_OBR && OBRX.ready) { const ls = (OBRX.party || []).filter(p => p.role !== 'GM' && p.s && +p.s.level).map(p => Math.min(20, +p.s.level)); if (ls.length) return ls; }
+  return (e.pcs || []).map(p => +p.level || 0).filter(Boolean);
+}
+function difficulty(e) {
+  const xp = e.mons.reduce((a, m) => a + (+tplOf(m).xp || 0), 0); if (!xp) return null;
+  const ls = partyLevels(e);
+  if (!ls.length) return { xp, label: '', tip: 'Add the party to see how hard this is.' };
+  const b = [0, 1, 2].map(k => ls.reduce((a, l) => a + XP_BUDGET[l][k], 0));
+  const label = xp < b[0] ? 'Easy' : xp < b[1] ? 'Low' : xp < b[2] ? 'Moderate' : xp < b[2] * 1.5 ? 'High' : 'Very high';
+  return { xp, label, cls: label === 'Very high' || label === 'High' ? 'bad' : label === 'Moderate' ? 'warn' : 'ok', tip: `Monsters ${xp.toLocaleString()} XP against a party of ${ls.length} (levels ${ls.join(', ')}): low ${b[0].toLocaleString()}, moderate ${b[1].toLocaleString()}, high ${b[2].toLocaleString()}.` };
 }
 // start of a monster's turn: legendary actions come back and recharge abilities roll
 function onTurnStart(row) {
+  if (row && row.kind === 'mon') { const ended = tickMonsters(row); if (ended.length) { saveEnc({ quiet: true }); toast(ended.join('; ') + '.'); } }
   if (row) showTurnReminders(row);
   if (!row || row.kind !== 'mon') { selectRowTokens(row); return; }
   const msgs = [];
@@ -3389,11 +3435,11 @@ async function syncMonTokens() {
   const hide = (SETTINGS.monHp || 'hidden') !== 'exact', want = {};
   for (const m of allMons()) for (const it of OBRX.monTokens[m.id] || []) {
     const w = { health: m.hp, 'max health': m.max, 'temporary health': m.temp || 0, 'armor class': m.ac, hide };
-    const b = it.metadata[BUBBLES] || {};
-    if (Object.keys(w).some(k => b[k] !== w[k])) want[it.id] = w;
+    const b = it.metadata[BUBBLES] || {}, ml = it.metadata[MONLINK] || {}, cond = (m.cond || []).filter(k => k !== 'Concentrating');
+    if (Object.keys(w).some(k => b[k] !== w[k]) || JSON.stringify(ml.cond || []) !== JSON.stringify(cond)) want[it.id] = Object.assign(w, { _cond: cond });
   }
   const ids = Object.keys(want); if (!ids.length) return;
-  OBRX.api.scene.items.updateItems(ids, drafts => { for (const d of drafts) d.metadata[BUBBLES] = Object.assign({}, d.metadata[BUBBLES] || {}, want[d.id]); }).catch(() => { });
+  OBRX.api.scene.items.updateItems(ids, drafts => { for (const d of drafts) { const { _cond, ...w } = want[d.id]; d.metadata[BUBBLES] = Object.assign({}, d.metadata[BUBBLES] || {}, w); if (d.metadata[MONLINK]) d.metadata[MONLINK] = Object.assign({}, d.metadata[MONLINK], { cond: _cond }); } }).catch(() => { });
 }
 function rowTokenIds(row) {
   if (!row) return [];
@@ -3415,8 +3461,8 @@ function monAttack(m, ref) {
   const key = 'm:' + m.id + '|' + ref, T = targetFor(monTokenIds(m), 'atk', key);
   if (T) Object.assign(T, { part: 'atk', key, from: monTokenIds(m)[0], ri: rangeInfo(a.text), attacker: m.name, mon: m.id }); else ui.lastAtk = null;
   roll(m.name + ' · ' + a.name + ' to hit', [{ d20: true }, { src: 'Attack bonus', f: String(a.attack || 0) }], {
-    noShare: !SETTINGS.monShare, target: T, mon: m.id, fu: a.damage.length ? [{ label: 'Damage', act: 'mondmg', id: m.id + '|' + ref }] : [],
-    after: en => { if (en.crit && a.damage.length) en.fu = [{ label: 'Crit damage', act: 'mondmg', id: m.id + '|' + ref, crit: 1 }, ...en.fu]; },
+    noShare: !SETTINGS.monShare, target: T, mon: m.id, test: { kind: 'atk', self: m.cond, target: ui.target && !monTokenIds(m).includes(ui.target.id) ? targetConds(ui.target.id) : [], melee: isMelee(rangeInfo(a.text)) }, fu: a.damage.length ? [{ label: 'Damage', act: 'mondmg', id: m.id + '|' + ref }] : [],
+    after: en => { if ((en.crit || en.critClose) && a.damage.length) en.fu = [{ label: 'Crit damage', act: 'mondmg', id: m.id + '|' + ref, crit: 1 }, ...en.fu]; },
   });
 }
 function monDamage(m, ref, crit) {
@@ -3428,7 +3474,7 @@ function monDamage(m, ref, crit) {
 }
 function monCheck(m, ab, save) {
   const t = tplOf(m), md = MONSTERS.mod(t.abilities[ab] || 10), sv = save && t.saves[ab] != null ? t.saves[ab] : md;
-  roll(m.name + ' · ' + ab + (save ? ' save' : ' check'), [{ d20: true }, { src: save && t.saves[ab] != null ? 'Save bonus' : ab, f: String(save ? sv : md) }], { noShare: !SETTINGS.monShare, mon: m.id });
+  roll(m.name + ' · ' + ab + (save ? ' save' : ' check'), [{ d20: true }, { src: save && t.saves[ab] != null ? 'Save bonus' : ab, f: String(save ? sv : md) }], { noShare: !SETTINGS.monShare, mon: m.id, test: { kind: save ? 'save' : 'check', ab, self: m.cond } });
 }
 
 /* ---- rendering ---- */
@@ -3440,7 +3486,7 @@ function renderEncounter() {
       ${R.order.length > 1 ? `<button class="btn small ${ui.confirm === 'encdel-' + e.id ? 'danger' : 'ghost'}" data-act="encdel">${ui.confirm === 'encdel-' + e.id ? 'Delete this encounter?' : 'Delete'}</button>` : ''}</div>`;
   const prep = prepared ? `<div class="banner" style="margin:8px 0 0"><span style="flex:1;min-width:220px"><b>Prepared encounter.</b> Not running yet: initiative, tokens and the players' turn order follow the active one${encActive().combat.active ? ' (in combat now)' : ''}. Make it active when the fight starts, then right-click tokens → Grimsheet to link them to these monsters.</span><button class="btn small primary" data-act="encactivate">Make active</button></div>` : '';
   const head = tabs + `<div class="enc-head">
-    <div class="enc-title"><b>${esc(e.name || 'Encounter')}</b>${prepared ? '<span class="chip">Prepared</span>' : '<span class="chip tag-action">Active</span>'}${e.combat.active ? `<span class="chip tag-action">Round ${e.combat.round}</span>` : ''}${manage}</div>
+    <div class="enc-title"><b>${esc(e.name || 'Encounter')}</b>${(() => { const d = difficulty(e); return d ? `<span class="chip diff ${d.cls || ''}" title="${esc(d.tip)}">${d.label ? esc(d.label) + ' · ' : ''}${d.xp.toLocaleString()} XP</span>` : ''; })()}${prepared ? '<span class="chip">Prepared</span>' : '<span class="chip tag-action">Active</span>'}${e.combat.active ? `<span class="chip tag-action">Round ${e.combat.round}</span>` : ''}${manage}</div>
     <div class="enc-tools">
       <button class="btn small primary" data-act="addmon">+ Monsters</button>
       ${IN_OBR ? '<button class="btn small" data-act="addparty">+ Party</button><button class="btn small" data-act="askinit">Ask for initiative</button>' : '<button class="btn small" data-act="addpc">+ Character</button>'}
@@ -3501,7 +3547,7 @@ function monCard(m, cur) {
       ${t.hpDice ? `<button class="btn small" data-act="monrollhp" data-id="${m.id}">Roll HP (${esc(t.hpDice)})</button>` : ''}
     </div>` : '';
   return `<section class="mcard ${isCur ? 'cur' : ''} ${m.hp <= 0 ? 'down' : ''} ${ui.monFocus === m.id ? 'focus' : ''}" data-inst="${m.id}">
-    <div class="mhead"><b class="mtitle" data-dblfocus="mon|${m.id}" title="${tok ? 'Double-click to find its token' : ''}">${esc(m.name)}</b><span class="chip">AC ${m.ac}</span>${tok ? `<span class="chip tag-action" title="Linked to ${tok} token${tok > 1 ? 's' : ''}">Token</span>${locateBtn('focus', `data-v="mon|${m.id}"`, 'Find its token on the map')}` : ''}${IN_OBR ? tgtMini() : ''}
+    <div class="mhead">${tokImg((OBRX.monTokens[m.id] || [])[0]) ? `<img class="tokimg sm" src="${esc(tokImg(OBRX.monTokens[m.id][0]))}" alt="" data-dblfocus="mon|${m.id}" title="Double-click to find its token">` : ''}<b class="mtitle" data-dblfocus="mon|${m.id}" title="${tok ? 'Double-click to find its token' : ''}">${esc(m.name)}</b><span class="chip">AC ${m.ac}</span>${tok ? `<span class="chip tag-action" title="Linked to ${tok} token${tok > 1 ? 's' : ''}">Token</span>${locateBtn('focus', `data-v="mon|${m.id}"`, 'Find its token on the map')}` : ''}${IN_OBR ? tgtMini() : ''}
       <span style="flex:1"></span>
       <button class="ico" data-act="monedit" data-id="${m.id}" title="Edit name, HP, AC">${ICON.edit}</button>
       <button class="ico" data-act="monopen" data-id="${m.id}" title="${open ? 'Hide' : 'Show'} stat block">${open ? ICON.chev : ICON.chevR}</button>
@@ -3511,7 +3557,7 @@ function monCard(m, cur) {
     <div class="mhp"><span class="pool">${m.hp}<small>/${m.max}</small></span>${m.temp ? `<span class="temp">+${m.temp}</span>` : ''}${m.hp <= 0 ? '<span class="chip" style="color:var(--danger);border-color:var(--danger)">Down</span>' : m.hp <= m.max / 2 ? '<span class="chip" style="color:var(--gold);border-color:var(--gold)">Bloodied</span>' : ''}
       <span style="flex:1"></span><input class="qm" id="mq-${m.id}" data-qm="monhp" data-id="${m.id}" placeholder="−7 or +5" style="width:84px" aria-label="Damage or heal ${esc(m.name)}"></div>
     <div class="hpbar"><i class="${pct < 25 ? 'low' : pct < 55 ? 'mid' : ''}" style="width:${pct}%"></i></div>
-    <div class="cond" style="margin-top:6px">${m.cond.map(k => `<button class="on" data-act="moncond" data-id="${m.id}" data-v="${esc(k)}" title="Remove">${esc(k)} ✕</button>`).join('')}
+    <div class="cond" style="margin-top:6px">${m.cond.map(k => `<button class="on" data-act="moncond" data-id="${m.id}" data-v="${esc(k)}" title="Remove">${esc(k)}${durTag((m.condDur || {})[k])} ✕</button>`).join('')}
       ${m.concNote && m.cond.includes('Concentrating') ? `<span class="muted" style="font-size:.78rem">${esc(m.concNote)}</span>` : ''}
       <select class="ed-inline" id="mc-${m.id}" data-moncond="${m.id}" aria-label="Add a condition" style="width:auto;font-size:.78rem"><option value="">+ condition</option>${CONDITIONS.concat(['Concentrating']).filter(k => !m.cond.includes(k)).map(k => `<option>${k}</option>`).join('')}</select></div>
     ${ab}${acts}${spells}${leg}${details}
@@ -3544,6 +3590,142 @@ function addMonHtml(md) {
     <div class="dlg-f"><button class="btn primary" data-act="close">Done</button></div>`;
 }
 
+/* ---------- CONDITION DURATIONS ---------- */
+// In combat, switching a condition on asks how long it lasts (ignore it for "until removed"). Timed conditions
+// count down at the start of that creature's turn and end with a reminder. 1-minute concentration spells too.
+function inCombatPlayer() { return !!(IN_OBR && OBRX.init && OBRX.init.active); }
+function inCombatGM() { try { return !!encActive().combat.active; } catch (e) { return false; } }
+function durPop(el, who, cond) {
+  showPop(el, `<b style="font-family:var(--f-display)">${esc(cond)}: how long?</b><div style="margin-top:4px">
+    ${[[0, 'Until removed'], [1, '1 round'], [10, '1 minute (10 rounds)']].map(([n, l]) => `<button class="opt" data-act="cdur" data-v="${esc(who)}|${esc(cond)}|${n}">${l}</button>`).join('')}
+    <div class="inline" style="margin-top:6px"><input class="ed-inline" id="cdur-n" type="number" min="1" max="100" value="3" style="width:60px" aria-label="Rounds"><button class="btn small" data-act="cdur" data-v="${esc(who)}|${esc(cond)}|custom">rounds</button></div></div>`);
+}
+function setDuration(who, cond, n) {
+  if (who === 'me') { const c = C(); c.condDur = c.condDur || {}; if (n > 0) c.condDur[cond] = n; else delete c.condDur[cond]; save(); render(); return; }
+  const m = findMon(who); if (!m) return; m.m.condDur = m.m.condDur || {}; if (n > 0) m.m.condDur[cond] = n; else delete m.m.condDur[cond]; saveEnc(); renderGrid();
+}
+// one round passes for this creature: returns the conditions that ended
+function tickConditions(conds, dur) {
+  const ended = [];
+  for (const k of Object.keys(dur || {})) { dur[k]--; if (dur[k] <= 0) { delete dur[k]; const i = conds.indexOf(k); if (i >= 0) { conds.splice(i, 1); ended.push(k); } } }
+  return ended;
+}
+function tickMyTurn() {
+  const c = C(), ended = tickConditions(c.conditions, c.condDur || (c.condDur = {}));
+  const msgs = ended.map(k => k + ' ended');
+  if (c.conc && c.conc.rounds) { c.conc.rounds--; if (c.conc.rounds <= 0) { const n = c.conc.name; save(); endConc(n + ' ends: its duration is up.'); } }
+  if (ended.length || (c.conc && c.conc.rounds)) { save(); render(); }
+  if (msgs.length) toast(msgs.join(', ') + '.');
+}
+function tickMonsters(row) {
+  const out = [];
+  for (const m of row.members || []) { const ended = tickConditions(m.cond, m.condDur || (m.condDur = {})); if (ended.length) out.push(m.name + ': ' + ended.join(', ') + ' ended'); }
+  return out;
+}
+const durTag = n => n ? ` <span class="dur" title="${n} round${n > 1 ? 's' : ''} left">${n}</span>` : '';
+
+/* ---------- CONDITIONS THAT CHANGE ROLLS ---------- */
+// t = { kind: 'atk'|'check'|'save', ab, self: [conditions], target: [conditions], melee, exh }
+const SELF_ATK_DIS = ['Poisoned', 'Frightened', 'Blinded', 'Prone', 'Restrained'];
+const TGT_ATK_ADV = ['Restrained', 'Stunned', 'Paralyzed', 'Unconscious', 'Petrified', 'Blinded'];
+const AUTO_FAIL = ['Paralyzed', 'Stunned', 'Unconscious', 'Petrified'];
+function condRules(t) {
+  const r = { adv: [], dis: [], add: [], notes: [], autoFail: null, critClose: false };
+  if (!t) return r;
+  const S = t.self || [], T = t.target || [];
+  if (t.kind === 'atk') {
+    S.forEach(c => { if (SELF_ATK_DIS.includes(c)) r.dis.push(c); if (c === 'Invisible') r.adv.push(c); });
+    T.forEach(c => {
+      if (TGT_ATK_ADV.includes(c)) r.adv.push('target ' + c.toLowerCase());
+      if (c === 'Invisible') r.dis.push('target invisible');
+      if (c === 'Prone') (t.melee ? r.adv : r.dis).push('target prone');
+      if ((c === 'Paralyzed' || c === 'Unconscious') && t.melee) r.critClose = true;
+    });
+    if (r.critClose) r.notes.push('a hit from within 5 ft is a critical hit');
+  }
+  if (t.kind === 'check') S.forEach(c => { if (c === 'Poisoned' || c === 'Frightened') r.dis.push(c); });
+  if (t.kind === 'save') {
+    if (t.ab === 'DEX' && S.includes('Restrained')) r.dis.push('Restrained');
+    if (t.ab === 'STR' || t.ab === 'DEX') { const f = S.find(c => AUTO_FAIL.includes(c)); if (f) { r.autoFail = f; r.notes.push('automatically fails (' + f + ')'); } }
+  }
+  if (t.exh > 0) r.add.push({ src: 'Exhaustion ' + t.exh, f: String(-2 * t.exh) });
+  return r;
+}
+// advantage and disadvantage cancel out, whatever their number
+function rollMode(base, r) {
+  const a = base === 'adv' || r.adv.length > 0, d = base === 'dis' || r.dis.length > 0;
+  return a && d ? 'normal' : a ? 'adv' : d ? 'dis' : 'normal';
+}
+const myConds = (c = C()) => c.conditions || [];
+// what the attacker knows about the target's conditions: the GM's own records, a player's status, or the monster token
+function targetConds(id) {
+  if (!id || !IN_OBR || !OBRX.ready) return [];
+  const R = resolveTarget(id);
+  if (R.kind === 'mon') return R.m.cond || [];
+  if (R.kind === 'pc') { const p = (OBRX.party || []).find(x => x.id === R.player); return (p && p.s && p.s.cond) || []; }
+  const it = OBRX.tokCache[id], ml = it && it.metadata && it.metadata[MONLINK];
+  return (ml && ml.cond) || [];
+}
+function isMelee(ri) { if (!ri) return true; if (ri.reach && !ri.range) return true; if (!ri.reach) return false; const ft = ui.target && ui.target.ft; return ft == null ? true : ft <= ri.reach + 0.01; }
+
+/* ---------- RESISTANCES, IMMUNITIES, VULNERABILITIES ---------- */
+const DMG_TYPES = ['acid', 'bludgeoning', 'cold', 'fire', 'force', 'lightning', 'necrotic', 'piercing', 'poison', 'psychic', 'radiant', 'slashing', 'thunder'];
+const typesIn = s => DMG_TYPES.filter(t => new RegExp('\\b' + t + '\\b', 'i').test(String(s || '')));
+// damage of a roll by type: a modifier without a type belongs to the dice before it ("1d8 slashing + STR")
+function dmgByType(entry) {
+  const out = {}; let last = '', firstTyped = '';
+  for (const p of entry.parts || []) {
+    if (p.err || p.label === 'd20') continue;
+    const t = String(p.type || '').toLowerCase(), typed = DMG_TYPES.includes(t);
+    if (typed) { last = t; if (!firstTyped) firstTyped = t; }
+    const k = typed ? t : last || '_'; out[k] = (out[k] || 0) + p.value;
+  }
+  if (out._ != null && firstTyped) { out[firstTyped] += out._; delete out._; }
+  return Object.keys(out).some(k => k !== '_') ? out : null;
+}
+// "Fire; Bludgeoning, Piercing, and Slashing from Nonmagical Attacks": the first applies, the second is only a reminder
+function parseDefenses(details) {
+  const d = { res: [], imm: [], vul: [], notes: [] };
+  for (const { k, v } of details || []) {
+    const key = /resist/i.test(k) ? 'res' : /immun/i.test(k) ? 'imm' : /vulnerab/i.test(k) ? 'vul' : null; if (!key) continue;
+    for (const part of String(v).split(';')) {
+      const ts = typesIn(part); if (!ts.length) continue;
+      if (/nonmagical|not made with|that aren|except|while|unless|from (?!.*\bdamage\b)/i.test(part)) d.notes.push((key === 'res' ? 'Resists ' : key === 'imm' ? 'Immune to ' : 'Vulnerable to ') + part.trim().replace(/^\w/, c => c.toLowerCase()));
+      else d[key].push(...ts);
+    }
+  }
+  return d;
+}
+function monDefenses(t) { if (!t) return null; if (!t._def) Object.defineProperty(t, '_def', { value: parseDefenses(t.details), enumerable: false, writable: true }); return t._def; }
+// a character's defenses: features always, effects while on, items while equipped; Petrified resists everything
+function charDefenses(c) {
+  const d = { res: [], imm: [], vul: [] };
+  for (const { e } of allEntries(c)) {
+    if (!e.defense) continue;
+    const on = e.effect ? (e.item ? e.item.equipped : e.effect.active) : (!e.spell && (!e.item || e.item.equipped));
+    if (!on) continue;
+    for (const k of ['res', 'imm', 'vul']) d[k].push(...typesIn(e.defense[k]));
+  }
+  if ((c.conditions || []).includes('Petrified')) d.res.push(...DMG_TYPES);
+  for (const k of ['res', 'imm', 'vul']) d[k] = [...new Set(d[k])];
+  return d.res.length || d.imm.length || d.vul.length ? d : null;
+}
+// apply a save's multiplier (1, ½, 0) and then resistance / immunity / vulnerability, type by type
+function withDefenses(byType, total, def, mult = 1) {
+  if (!byType || !def || mult === 0) return { amt: Math.floor(total * mult), notes: [] };
+  let amt = 0; const notes = [];
+  for (const [t, v0] of Object.entries(byType)) {
+    let v = v0 * mult;
+    if ((def.imm || []).includes(t)) { notes.push('immune to ' + t); v = 0; }
+    else {
+      if ((def.res || []).includes(t)) { notes.push('resists ' + t); v = Math.floor(v / 2); }
+      if ((def.vul || []).includes(t)) { notes.push('vulnerable to ' + t); v = v * 2; }
+    }
+    amt += v;
+  }
+  return { amt: Math.max(0, Math.floor(amt)), notes };
+}
+
 /* ---------- TARGETS: attacks against a token on the map ---------- */
 // Select a token on the map (or pick one from the list), then roll. The roll goes to the GM with the
 // distance and range, the GM sees hit or miss against the target's AC and confirms the damage.
@@ -3558,7 +3740,7 @@ function mergeAttack(list, d) {
   if (!c) { c = { id: d.id, from: d.from, who: d.who, attacker: d.attacker, target: d.target, atk: null, dmg: null, save: null, verdict: null }; list.unshift(c); }
   if (d.part === 'area') { c.kind = 'area'; Object.assign(c, { name: d.name, areaLabel: d.areaLabel, itemId: d.itemId, half: !!d.half, keep: !!d.keep, heal: !!d.heal, targets: d.targets || [], excl: d.excl || [], res: c.res || {}, asked: c.asked || {} }); }
   else if (d.part === 'atk') c.atk = { total: d.total, nat: d.nat, crit: !!d.crit, fumble: !!d.fumble, mode: d.mode || 'normal', rr: d.rr || '' };
-  else c.dmg = { total: d.total, types: d.types || '', crit: !!d.isCrit, heal: d.part === 'heal', rr: d.rr || '' };
+  else c.dmg = { total: d.total, types: d.types || '', crit: !!d.isCrit, heal: d.part === 'heal', rr: d.rr || '', byType: d.byType || null };
   if (d.save) c.save = d.save;
   if (d.srcMon) c.srcMon = d.srcMon;
   if (d.dist) { c.dist = d.dist; c.range = d.range || ''; c.rangeOk = d.rangeOk; }
@@ -3687,7 +3869,7 @@ async function landTarget(entry, T) {
   const info = await entry.tgtP;
   if (T.part === 'atk') ui.lastAtk = { aid: entry.aid, key: T.key, tgt: T.tgt, at: Date.now() };
   if (T.area && ui.lastArea && ui.lastArea.aid === entry.aid) ui.lastArea = null;
-  const msg = { type: 'atk', v: 1, id: entry.aid, part: T.part, from: OBRX.me.id, who: OBRX.me.name, attacker: T.attacker, target: { id: info.id, name: info.name }, dist: info.dist || '', range: info.range || '', rangeOk: info.rangeOk, total: entry.total, nat: entry.nat, crit: entry.crit, fumble: entry.fumble, isCrit: entry.isCrit, types: entry.note || '', mode: entry.mode, save: T.save || null, rr: T.rr || '', srcMon: T.mon || null };
+  const msg = { type: 'atk', v: 1, id: entry.aid, part: T.part, from: OBRX.me.id, who: OBRX.me.name, attacker: T.attacker, target: { id: info.id, name: info.name }, dist: info.dist || '', range: info.range || '', rangeOk: info.rangeOk, total: entry.total, nat: entry.nat, crit: entry.crit, fumble: entry.fumble, isCrit: entry.isCrit, types: entry.note || '', mode: entry.mode, save: T.save || null, rr: T.rr || '', srcMon: T.mon || null, byType: T.part === 'atk' ? null : dmgByType(entry) };
   if (OBRX.me.role === 'GM') { writeAtkQ(mergeAttack(readAtkQ(), msg)); renderAtkQueue(); return; }
   entry.tgt.sent = true; if (ui.log[0] === entry) renderTray();
   OBRX.api.broadcast.sendMessage(CH_GM, msg, { destination: 'REMOTE' }).catch(() => toast('Couldn\'t reach the GM.'));
@@ -3705,15 +3887,15 @@ function tgtLine(r) {
 function resolveTarget(tokId) {
   if (String(tokId).startsWith('pc:')) {
     const player = tokId.slice(3), p = (OBRX.party || []).find(x => x.id === player), s = p && p.s;
-    return { kind: 'pc', player, char: s ? s.charId : null, ac: s && typeof s.ac === 'number' ? s.ac : null, hp: s ? s.hp + '/' + s.max : '' };
+    return { kind: 'pc', player, char: s ? s.charId : null, ac: s && typeof s.ac === 'number' ? s.ac : null, hp: s ? s.hp + '/' + s.max : '', def: s && s.def };
   }
   for (const [inst, its] of Object.entries(OBRX.monTokens || {})) if (its.some(i => i.id === tokId)) {
-    const f = findMon(inst); if (f) return { kind: 'mon', m: f.m, ac: f.m.ac, hp: f.m.hp + '/' + f.m.max };
+    const f = findMon(inst); if (f) return { kind: 'mon', m: f.m, ac: f.m.ac, hp: f.m.hp + '/' + f.m.max, def: monDefenses(tplOf(f.m)) };
   }
   for (const [player, its] of Object.entries(OBRX.pcTokens || {})) {
     const it = its.find(i => i.id === tokId); if (!it) continue;
     const L = it.metadata[LINK], p = (OBRX.party || []).find(x => x.id === player), s = p && p.s && p.s.charId === L.char ? p.s : null;
-    return { kind: 'pc', player, char: L.char, ac: s && typeof s.ac === 'number' ? s.ac : null, hp: s ? s.hp + '/' + s.max : '' };
+    return { kind: 'pc', player, char: L.char, ac: s && typeof s.ac === 'number' ? s.ac : null, hp: s ? s.hp + '/' + s.max : '', def: s && s.def };
   }
   const it = OBRX.tokCache[tokId], b = it && it.metadata && it.metadata[BUBBLES];
   if (!it) fetchTok(tokId);
@@ -3767,15 +3949,18 @@ function atkCard(c) {
     const sr = c.saveRoll;
     lines.push(`<div><span class="chip dc">DC ${esc(c.save.dc)} ${esc(c.save.ability)} save</span> ${sr ? `<span class="muted">rolled</span> <b class="mono">${sr.total}</b> → ${sr.ok ? '<b class="ok">saved</b>' : '<b class="bad">failed</b>'}` : R.kind === 'mon' ? `<button class="btn small" data-act="atksave" data-id="${esc(c.id)}">Roll ${esc(R.m.name)}'s save</button>` : '<span class="muted">ask for the save, then choose full or half</span>'}</div>`);
   }
-  if (c.dmg) lines.push(`<div><b class="mono">${c.dmg.total}</b> ${heal ? 'healing' : esc(c.dmg.types || 'damage') + (c.dmg.types ? ' damage' : '')}${c.dmg.crit ? ' <span class="badge">CRIT</span>' : ''}${c.dmg.rr ? ` <span class="warn" title="${esc(c.dmg.rr)}">↻ rerolled</span>` : ''}</div>`);
+  const defNotes = c.dmg && !heal && R.def && R.def.notes ? R.def.notes.filter(n => !c.dmg.byType || typesIn(n).some(t => c.dmg.byType[t] != null)) : [];
+  if (defNotes.length) lines.push(`<div class="defn muted">⛨ ${esc(defNotes.join('; '))}</div>`);
+  if (c.dmg) lines.push(`<div><b class="mono">${c.dmg.total}</b> ${heal ? 'healing' : c.dmg.byType && Object.keys(c.dmg.byType).length > 1 ? Object.entries(c.dmg.byType).map(([t, v]) => v + ' ' + t).join(' + ') + ' damage' : esc(c.dmg.types || 'damage') + (c.dmg.types ? ' damage' : '')}${c.dmg.crit ? ' <span class="badge">CRIT</span>' : ''}${c.dmg.rr ? ` <span class="warn" title="${esc(c.dmg.rr)}">↻ rerolled</span>` : ''}</div>`);
   if (!c.dmg && c.atk && verdict !== 'miss') lines.push(`<div class="muted">${c.verdict ? 'Waiting for the damage roll…' : 'Damage not rolled yet.'}</div>`);
   const rrs = [c.atk && c.atk.rr, c.dmg && c.dmg.rr].filter(Boolean); if (rrs.length) lines.push(`<div class="atkc-m warn">↻ ${rrs.map(esc).join(' · ')}</div>`);
   const btns = [];
   if (c.dmg) {
     if (heal) btns.push(`<button class="btn small primary" data-act="atkapply" data-id="${esc(c.id)}" data-v="1">Heal ${c.dmg.total}</button>`);
     else {
-      const half = Math.floor(c.dmg.total / 2), preferHalf = c.saveRoll && c.saveRoll.ok;
-      btns.push(`<button class="btn small ${preferHalf ? '' : 'primary'}" data-act="atkapply" data-id="${esc(c.id)}" data-v="1">Apply ${c.dmg.total}</button>`);
+      const full = withDefenses(c.dmg.byType, c.dmg.total, R.def, 1), half = withDefenses(c.dmg.byType, c.dmg.total, R.def, 0.5).amt, preferHalf = c.saveRoll && c.saveRoll.ok;
+      if (full.notes.length) lines.push(`<div class="defn">⛨ ${esc(c.target.name)} ${esc([...new Set(full.notes)].join(', '))}: <b>${full.amt}</b> instead of ${c.dmg.total}</div>`);
+      btns.push(`<button class="btn small ${preferHalf ? '' : 'primary'}" data-act="atkapply" data-id="${esc(c.id)}" data-v="1">Apply ${full.amt}</button>`);
       btns.push(`<button class="btn small ${preferHalf ? 'primary' : ''}" data-act="atkapply" data-id="${esc(c.id)}" data-v="0.5">Half ${half}</button>`);
       if (c.atk) btns.push(`<button class="btn small" data-act="atkmiss" data-id="${esc(c.id)}">Miss</button>`);
     }
@@ -3798,8 +3983,8 @@ function sendHp(player, char, amount) {
 }
 async function applyAttack(id, mult) {
   const c = readAtkQ().find(x => x.id === id); if (!c || !c.dmg) return;
-  const heal = c.dmg.heal, amt = heal ? c.dmg.total : Math.floor(c.dmg.total * mult), delta = heal ? amt : -amt;
   const R = resolveTarget(c.target.id);
+  const heal = c.dmg.heal, amt = heal ? c.dmg.total : withDefenses(c.dmg.byType, c.dmg.total, R.def, mult).amt, delta = heal ? amt : -amt;
   if (R.kind === 'mon') { applyMonHp(R.m, delta); saveEnc(); if (encView()) renderGrid(); }
   else if (R.kind === 'pc') sendHp(R.player, R.char, delta);
   else {
@@ -3932,6 +4117,7 @@ function searchSrd(q) {
 }
 
 /* ---------- FIND TOKENS and FOG OF WAR ---------- */
+const tokImg = it => (it && it.image && typeof it.image.url === 'string' && /^https?:/.test(it.image.url)) ? it.image.url : '';
 // Double-click a name (or use the ◎ button) to pan the map to that creature's token and select it.
 async function focusTokens(ids, select = true) {
   if (!IN_OBR || !OBRX.ready) return;
@@ -4144,10 +4330,11 @@ function placeMonsterArea(m, ref) {
 /* ---- GM: the area card ---- */
 function areaOutcome(c, t) {
   const r = c.res && c.res[t.id], ok = r ? r.ok : null;
-  if (!c.dmg) return { ok, amt: 0 };
-  if (c.dmg.heal || c.heal) return { ok, amt: c.dmg.total };
-  if (!c.save || ok !== true) return { ok, amt: c.dmg.total };
-  return { ok, amt: c.half ? Math.floor(c.dmg.total / 2) : 0 };
+  if (!c.dmg) return { ok, amt: 0, notes: [] };
+  if (c.dmg.heal || c.heal) return { ok, amt: c.dmg.total, notes: [] };
+  const mult = !c.save || ok !== true ? 1 : c.half ? 0.5 : 0;
+  const w = withDefenses(c.dmg.byType, c.dmg.total, resolveTarget(t.id).def, mult);
+  return { ok, amt: w.amt, notes: w.notes };
 }
 function areaCard(c, only) {
   const heal = c.heal || (c.dmg && c.dmg.heal);
@@ -4155,12 +4342,12 @@ function areaCard(c, only) {
     const R = resolveTarget(t.id), r = c.res && c.res[t.id], o = areaOutcome(c, t);
     let save = '';
     if (c.save && !heal) {
-      if (r) save = `<span class="mono">${r.total}</span> ${r.ok ? '<b class="ok">saved</b>' : '<b class="bad">failed</b>'}${r.by === 'player' ? ' <span class="muted">(player)</span>' : ''}`;
+      if (r) save = `<span class="mono" ${r.note ? `title="${esc(r.note)}"` : ''}>${r.total}</span> ${r.ok ? '<b class="ok">saved</b>' : '<b class="bad">failed</b>'}${r.by === 'player' ? ' <span class="muted">(player)</span>' : ''}${r.note ? ` <span class="muted" style="font-size:.75rem">${esc(r.note)}</span>` : ''}`;
       else if (R.kind === 'mon') save = `<button class="btn small" data-act="arearoll1" data-id="${esc(c.id)}" data-v="${esc(t.id)}">Roll save</button>`;
       else if (R.kind === 'pc') save = c.asked && c.asked[t.id] ? '<span class="muted">asked…</span>' : `<button class="btn small" data-act="areaask1" data-id="${esc(c.id)}" data-v="${esc(t.id)}">Ask</button>`;
       save += ` <button class="chip ${r && !r.ok ? 'on-bad' : ''}" data-act="areaset" data-id="${esc(c.id)}" data-v="${esc(t.id)}|0" title="Mark as failed">✗</button><button class="chip ${r && r.ok ? 'on-ok' : ''}" data-act="areaset" data-id="${esc(c.id)}" data-v="${esc(t.id)}|1" title="Mark as saved">✓</button>`;
     }
-    const amt = c.dmg ? `<b class="mono ${heal ? 'ok' : ''}">${o.amt}</b>${!heal && c.save && o.ok == null ? '<span class="muted">?</span>' : ''}` : '';
+    const amt = c.dmg ? `<b class="mono ${heal ? 'ok' : ''}" ${o.notes.length ? `title="${esc([...new Set(o.notes)].join(', '))}"` : ''}>${o.amt}</b>${o.notes.length ? '<span class="defm" title="' + esc([...new Set(o.notes)].join(', ')) + '">⛨</span>' : ''}${!heal && c.save && o.ok == null ? '<span class="muted">?</span>' : ''}` : '';
     return `<div class="arow"><span class="an">${esc(t.name)}${R.hp ? ` <span class="muted mono">${esc(R.hp)}</span>` : ''}</span><span class="as">${save}</span><span class="aa">${amt}</span><button class="ico" data-act="areadrop1" data-id="${esc(c.id)}" data-v="${esc(t.id)}" title="Leave out" aria-label="Leave ${esc(t.name)} out">✕</button></div>`;
   }).join('') || '<div class="muted">Nobody inside. Move the area on the map, then Recheck.</div>';
   if (only) {
@@ -4186,7 +4373,11 @@ function areaCard(c, only) {
 function rollMonSave(c, t) {
   const R = resolveTarget(t.id); if (R.kind !== 'mon' || !c.save) return;
   const tp = tplOf(R.m), ab = c.save.ability, bonus = tp.saves[ab] != null ? tp.saves[ab] : MONSTERS.mod(tp.abilities[ab] || 10);
-  const total = quickD20(bonus); c.res = c.res || {}; c.res[t.id] = { total, ok: total >= +c.save.dc, by: 'gm' };
+  const cr = condRules({ kind: 'save', ab, self: R.m.cond });
+  c.res = c.res || {};
+  if (cr.autoFail) { c.res[t.id] = { total: '—', ok: false, by: 'gm', note: 'fails: ' + cr.autoFail }; return; }
+  const a = quickD20(bonus), b = cr.dis.length ? quickD20(bonus) : a, total = Math.min(a, b);
+  c.res[t.id] = { total, ok: total >= +c.save.dc, by: 'gm', note: cr.dis.length ? 'disadvantage: ' + cr.dis.join(', ') : '' };
 }
 function askSave(c, t) {
   const R = resolveTarget(t.id); if (R.kind !== 'pc') return;
@@ -4262,18 +4453,18 @@ function promptHtml(p) {
 function rollPromptedSave(id) {
   const p = readSaves().find(x => x.id === id); if (!p) return;
   const a = C().abilities.find(x => x.key === p.ability);
-  roll((a ? a.name : p.ability) + ' save · ' + (p.kind === 'conc' ? 'concentration (' + p.what + ')' : p.what), saveComps(p.ability), { onLand: en => answerSave(p, en) });
+  roll((a ? a.name : p.ability) + ' save · ' + (p.kind === 'conc' ? 'concentration (' + p.what + ')' : p.what), saveComps(p.ability), { test: { kind: 'save', ab: p.ability, self: myConds(), exh: C().exhaustion }, onLand: en => answerSave(p, en) });
 }
 function answerSave(p, en) {
   writeSaves(readSaves().filter(x => x.id !== p.id)); renderAtkQueue();
   if (p.kind === 'conc') {
-    const ok = en.total >= +p.dc;
+    const ok = !en.autoFail && en.total >= +p.dc;
     en.note = (ok ? 'Kept ' : 'Lost ') + p.what + ` (DC ${p.dc}).`; if (ui.log[0] === en) renderTray();
     if (ok) toast(`You keep concentrating on ${p.what}.`); else endConc(`Lost concentration: ${p.what} ends.`);
     return;
   }
   if (!IN_OBR || !OBRX.ready) return;
-  OBRX.api.broadcast.sendMessage(CH_GM, { type: 'saveRes', id: uid(), aid: p.aid, from: OBRX.me.id, char: C().id, total: en.total, nat: en.nat }, { destination: 'REMOTE' }).catch(() => { });
+  OBRX.api.broadcast.sendMessage(CH_GM, { type: 'saveRes', id: uid(), aid: p.aid, from: OBRX.me.id, char: C().id, total: en.autoFail ? -99 : en.total, nat: en.nat }, { destination: 'REMOTE' }).catch(() => { });
   en.tgt = { name: p.what, result: 'sent to the GM' }; if (ui.log[0] === en) renderTray();
 }
 // a plain save roll of the asked ability answers the request too
@@ -4282,7 +4473,7 @@ function answerByRoll(ab, en) { const q = readSaves(), p = q.find(x => x.ability
 function mergeSaveRes(list, d) {
   const c = list.find(x => x.id === d.aid); if (!c || !c.save) return list;
   c.res = c.res || {};
-  for (const t of c.targets || []) if (t.player === d.from && (!d.char || !t.char || t.char === d.char)) c.res[t.id] = { total: d.total, ok: d.total >= +c.save.dc, nat: d.nat, by: 'player' };
+  for (const t of c.targets || []) if (t.player === d.from && (!d.char || !t.char || t.char === d.char)) c.res[t.id] = d.total === -99 ? { total: '—', ok: false, by: 'player', note: 'automatic failure' } : { total: d.total, ok: d.total >= +c.save.dc, nat: d.nat, by: 'player' };
   return list;
 }
 
@@ -4479,14 +4670,15 @@ function renderGmParty() {
     const s = p.s, pct = s.max ? Math.max(0, Math.min(100, s.hp / s.max * 100)) : 0, d = s.death || { s: 0, f: 0 };
     const state = s.dead ? '<span class="chip bad">Dead</span>' : s.down ? `<span class="chip bad">Down</span><span class="muted mono" title="Death saves">✓${d.s} ✗${d.f}</span>` : s.hp <= s.max / 2 ? '<span class="chip warn">Bloodied</span>' : '';
     return `<section class="pcard ${s.down ? 'down' : ''}" data-pcard="${esc(p.id)}">
-      <div class="pc-h"><b ${(OBRX.pcTokens[p.id] || []).length ? `data-dblfocus="pc|${esc(p.id)}" title="Double-click to find their token"` : ''}>${esc(s.char)}${(OBRX.pcTokens[p.id] || []).length ? ' ' + locateBtn('focus', `data-v="pc|${esc(p.id)}"`, 'Find their token on the map') : ''}</b><span class="muted">${esc(p.name)}${s.cls ? ' · ' + esc(s.cls) : ''}${s.level ? ' ' + esc(s.level) : ''}</span></div>
+      ${tokImg((OBRX.pcTokens[p.id] || [])[0]) ? `<img class="tokimg sm" src="${esc(tokImg(OBRX.pcTokens[p.id][0]))}" alt="" data-dblfocus="pc|${esc(p.id)}">` : ''}<div class="pc-h"><b ${(OBRX.pcTokens[p.id] || []).length ? `data-dblfocus="pc|${esc(p.id)}" title="Double-click to find their token"` : ''}>${esc(s.char)}${(OBRX.pcTokens[p.id] || []).length ? ' ' + locateBtn('focus', `data-v="pc|${esc(p.id)}"`, 'Find their token on the map') : ''}</b><span class="muted">${esc(p.name)}${s.cls ? ' · ' + esc(s.cls) : ''}${s.level ? ' ' + esc(s.level) : ''}</span></div>
       <div class="inq" data-inq="pc:${esc(p.id)}" hidden></div>
       <div class="inline"><span class="pool">${esc(s.hp)}<small>/${esc(s.max)}</small></span>${s.temp ? `<span class="temp">+${esc(s.temp)}</span>` : ''}<span class="chip">AC ${esc(s.ac)}</span>${state}</div>
       <div class="hpbar"><i class="${pct < 25 ? 'low' : pct < 55 ? 'mid' : ''}" style="width:${pct}%"></i></div>
       ${(s.cond || []).length || s.conc ? `<div class="inline">${(s.cond || []).map(k => `<span class="chip bad">${esc(k)}</span>`).join('')}${s.conc ? `<span class="chip conc">◉ ${esc(s.conc)}</span>` : ''}</div>` : ''}
       <div class="inline"><input class="qm" id="gmhp-${esc(p.id)}" data-qm="gmhp" data-player="${esc(p.id)}" data-char="${esc(s.charId)}" data-name="${esc(s.char)}" style="width:104px" placeholder="−12 or +8" aria-label="Damage or heal ${esc(s.char)}">
         <button class="btn small" data-act="gmview" data-player="${esc(p.id)}" data-char="${esc(s.charId)}" data-name="${esc(s.char)}" data-owner="${esc(p.name)}">View sheet</button>
-        <button class="btn small" data-act="groupsave" data-v="${esc(p.id)}">Ask for a save</button></div>
+        <button class="btn small" data-act="groupsave" data-v="${esc(p.id)}">Ask for a save</button>
+        <button class="btn small ${s.insp ? 'on-insp' : ''}" data-act="giveinsp" data-v="${esc(p.id)}" data-char="${esc(s.charId)}" ${s.insp ? 'disabled title="Has Heroic Inspiration"' : 'title="Give Heroic Inspiration"'}>${s.insp ? '★ Inspired' : '☆ Inspire'}</button></div>
     </section>`;
   }).join('');
   const empty = ps.length ? '' : '<div class="empty">Nobody in this room has Grimsheet open yet. Players appear here as soon as they do.</div>';
@@ -4981,7 +5173,9 @@ function startConc(e) {
   const c = C(), prev = concOf(c);
   if (prev && prev.id === e.id) return;
   if (prev) endConc(`You start concentrating on ${e.name}, so ${prev.name} ends.`, { keepAreas: false });
-  c.conc = { id: e.id, name: e.name, at: Date.now() }; save(); publishStatus(); render();
+  c.conc = { id: e.id, name: e.name, at: Date.now() };
+  if (e.spell && /\b1 minute\b|up to 1 minute/i.test(e.spell.duration || '')) c.conc.rounds = 10;
+  save(); publishStatus(); render();
 }
 // ends the spell: its effect switches off and its area leaves the map
 function endConc(reason, opt = {}) {
@@ -5004,7 +5198,7 @@ function concDamage(dmg, c = C()) {
 }
 function concHtml(c) {
   const k = concOf(c); if (!k) return '';
-  return `<div class="concrow"><span class="chip conc" title="Taking damage asks for a CON save; casting another concentration spell ends this one">◉ Concentrating on <b>${esc(k.name)}</b></span><button class="btn small ghost" data-act="concend">End</button></div>`;
+  return `<div class="concrow"><span class="chip conc" title="Taking damage asks for a CON save; casting another concentration spell ends this one">◉ Concentrating on <b>${esc(k.name)}</b>${k.rounds ? ` · ${k.rounds} round${k.rounds > 1 ? 's' : ''} left` : ''}</span><button class="btn small ghost" data-act="concend">End</button></div>`;
 }
 function deathSave() {
   const c = C();
@@ -5033,6 +5227,7 @@ function checkMyTurn() {
   if (!I || !I.active || !I.rows || ui.viewing) { lastTurnKey = null; return; }
   const key = I.round + '|' + I.turn; if (key === lastTurnKey) return; lastTurnKey = key;
   const cur = I.rows.find(r => r.k === I.turn); if (!cur || cur.pc !== OBRX.me.id) return;
+  if (C().lastTick !== key) { C().lastTick = key; tickMyTurn(); }
   const c = C();
   if (c.hp.cur <= 0 && c.death.s < 3 && c.death.f < 3) addPrompt({ id: 'death:' + key, kind: 'death', char: c.id });
   const rem = turnReminders(c);
@@ -5110,6 +5305,7 @@ function rrSources(entry) {
       const ref = list + ':' + i; out.push({ id: 'm|' + ref, name: a.name, r, left: a.uses ? a.uses - (m.uses[ref] || 0) : null, mon: m, ref });
     });
   } else {
+    if (C().inspiration && !allEntries().some(({ e }) => /heroic inspiration/i.test(e.name) && e.reroll)) out.push({ id: 'insp', name: 'Heroic Inspiration', r: { on: 'any', dice: 'one', low: 0, keep: 'new', bonus: '' }, left: 1, insp: true });
     for (const { e } of allEntries()) {
       if (!e.reroll) continue;
       const left = e.counter && e.counter.kind !== 'succfail' ? counterMax(e.counter) - (+e.counter.used || 0) : null;
@@ -5163,6 +5359,7 @@ function doReroll(entry, S, dice) {
   entry.rrUsed = (entry.rrUsed || []).concat([S.id]);
   // spend a use
   if (S.e && S.left != null) { S.e.counter.used = (+S.e.counter.used || 0) + 1; save(); renderGrid(); }
+  if (S.insp) { C().inspiration = false; save(); renderGrid(); publishStatus(); }
   if (S.mon && S.left != null) { S.mon.uses[S.ref] = (S.mon.uses[S.ref] || 0) + 1; saveEnc({ quiet: true }); if (encView()) renderGrid(); }
   renderTray(true); paintDiceBox(entry, changes.map(c => c.x.k));
   announceReroll(entry, S, text, before);
@@ -5287,7 +5484,9 @@ function rollAttack(e) {
   const fu = e.damage.length ? [{ label: 'Damage', act: 'dmg', id: e.id }] : [];
   const key = 'e:' + e.id, T = targetFor(myTokenIds(), 'atk', key);
   if (T) Object.assign(T, { part: 'atk', key, from: myTokenIds()[0], ri: rangeInfo(e.text, e.spell && e.spell.range), attacker: C().name }); else ui.lastAtk = null;
-  roll(e.name + ' · to hit', attackComps(e), { critMin: +e.attack.crit || 20, fu, target: T, after: en => { if (en.crit && e.damage.length) en.fu = [{ label: 'Crit damage', act: 'dmg', id: e.id, crit: 1 }, ...fu]; } });
+  const ri = rangeInfo(e.text, e.spell && e.spell.range);
+  const test = { kind: 'atk', self: myConds(), exh: C().exhaustion, target: ui.target ? targetConds(ui.target.id) : [], melee: isMelee(ri) };
+  roll(e.name + ' · to hit', attackComps(e), { critMin: +e.attack.crit || 20, fu, target: T, test, after: en => { if ((en.crit || en.critClose) && e.damage.length) en.fu = [{ label: 'Crit damage', act: 'dmg', id: e.id, crit: 1 }, ...fu]; } });
 }
 function rollDamage(e, crit, lvl) {
   const heal = isHealing(e);
@@ -5311,7 +5510,7 @@ function renderTop() {
       <input id="f-cls" data-bind="cls" value="${esc(c.cls)}" placeholder="Class" style="width:170px" aria-label="Class">
       <label class="muted">Lvl <input id="f-level" data-bind="level" data-num value="${esc(c.level)}" style="width:46px" aria-label="Level"></label>
       <label class="muted">Prof <input id="f-prof" data-bind="profOverride" value="${esc(c.profOverride)}" placeholder="+${profBonus(c)}" style="width:46px" title="Leave empty for automatic"></label></div>`
-      : `<span class="nm-row"><span class="nm" ${IN_OBR && OBRX.links.length ? 'data-dblfocus="me" title="Double-click to find your token"' : ''}>${esc(c.name)}</span>${IN_OBR && OBRX.links.length && !ui.viewing ? locateBtn('focus', 'data-v="me"', 'Find my token on the map') : ''}</span><span class="sub">${esc(sub)} · Proficiency ${signed(profBonus(c))}${!ui.viewing && (+c.level || 1) < 20 ? ' <button class="lvlup" data-act="levelup" title="Level up: hit points, new features, ability scores and spell slots">Level up</button>' : ''}</span>`}
+      : `<span class="nm-row">${IN_OBR && OBRX.linkImg && !ui.viewing ? `<img class="tokimg" src="${esc(OBRX.linkImg)}" alt="" data-dblfocus="me" title="Your token: double-click to find it">` : ''}<span class="nm" ${IN_OBR && OBRX.links.length ? 'data-dblfocus="me" title="Double-click to find your token"' : ''}>${esc(c.name)}</span>${IN_OBR && OBRX.links.length && !ui.viewing ? locateBtn('focus', 'data-v="me"', 'Find my token on the map') : ''}</span><span class="sub">${esc(sub)} · Proficiency ${signed(profBonus(c))}${!ui.viewing && (+c.level || 1) < 20 ? ' <button class="lvlup" data-act="levelup" title="Level up: hit points, new features, ability scores and spell slots">Level up</button>' : ''}</span>`}
     </div>
     <div class="tools">
       <div class="seg adv" role="group" aria-label="Advantage">
@@ -5437,6 +5636,7 @@ function renderCombat() {
       <div class="vt"><span class="k">SPEED</span>${ed ? `<input id="f-speed" data-bind="speed" value="${esc(c.speed)}" aria-label="Speed">` : `<span class="v" style="font-size:1.05rem;padding-top:3px">${esc(c.speed)}</span>`}</div>
       <div class="vt"><span class="k">PROF</span><span class="v">${signed(profBonus(c))}</span></div>
     </div>
+    <button class="insp ${c.inspiration ? 'on' : ''}" data-act="insp" aria-pressed="${!!c.inspiration}" title="${c.inspiration ? 'You have Heroic Inspiration: spend it to reroll any die (the button appears after a roll). Tap to clear.' : 'No Heroic Inspiration. Tap if your GM gives you one.'}">${c.inspiration ? '★' : '☆'} Heroic Inspiration</button>
     <div class="hp">
       <div class="cur mono">${c.hp.cur}<small> / ${ed ? `<input id="f-hpmax" class="ed-inline" data-bind="hp.max" data-num value="${esc(c.hp.max)}" aria-label="Max HP">` : c.hp.max}</small></div>
       ${c.hp.temp ? `<span class="temp">+${c.hp.temp} temp</span>` : ''}
@@ -5457,7 +5657,7 @@ function renderCombat() {
     </div>
     ${concHtml(c)}
     <div class="sub-h">Conditions</div>
-    <div class="cond">${CONDITIONS.map(k => `<button class="${c.conditions.includes(k) ? 'on' : ''}" data-act="cond" data-v="${k}">${k}</button>`).join('')}
+    <div class="cond">${CONDITIONS.map(k => `<button class="${c.conditions.includes(k) ? 'on' : ''}" data-act="cond" data-v="${k}">${k}${c.conditions.includes(k) ? durTag((c.condDur || {})[k]) : ''}</button>`).join('')}
       <button class="${c.exhaustion ? 'on' : ''}" data-act="exh" title="Tap to raise, tap at 6 to clear">Exhaustion ${c.exhaustion || 0}</button></div>`;
 }
 
@@ -5595,7 +5795,7 @@ function renderTray(isNew, rolling) {
     ${r.fu.length ? `<div class="fu">${r.fu.map(f => `<button class="btn small ${f.crit ? 'primary' : ''}" data-act="${f.act}" data-id="${f.id || ''}" data-crit="${f.crit || ''}" data-lvl="${f.lvl || ''}" data-amt="${r.total}">${esc(f.label)}</button>`).join('')}</div>` : ''}</div>${quick}`;
 }
 function badges(r) {
-  return (r.mode === 'adv' ? '<span class="badge teal">ADV</span>' : r.mode === 'dis' ? '<span class="badge red">DIS</span>' : '') + (r.crit ? '<span class="badge">NAT 20 · CRIT</span>' : '') + (r.fumble ? '<span class="badge red">NAT 1</span>' : '') + (r.isCrit ? '<span class="badge">CRIT ×2 DICE</span>' : '') + (r.note ? `<span class="muted" style="font-weight:400;font-size:.85rem">${esc(r.note)}</span>` : '');
+  return (r.why ? `<span class="badge why" title="Conditions">${esc(r.why)}</span>` : '') + (r.mode === 'adv' ? '<span class="badge teal">ADV</span>' : r.mode === 'dis' ? '<span class="badge red">DIS</span>' : '') + (r.crit ? '<span class="badge">NAT 20 · CRIT</span>' : '') + (r.fumble ? '<span class="badge red">NAT 1</span>' : '') + (r.isCrit ? '<span class="badge">CRIT ×2 DICE</span>' : '') + (r.note ? `<span class="muted" style="font-weight:400;font-size:.85rem">${esc(r.note)}</span>` : '');
 }
 const breakdown = r => r.parts.map(p => `${esc(p.label)}${p.detail ? ' [' + esc(p.detail) + ']' : ''} ${p.err ? '⚠' : signed(p.value)}`).join(' · ');
 
@@ -5933,6 +6133,9 @@ function editorHtml(m) {
       <label class="fld"><span>Keep</span><select id="d-rr-keep" data-d="reroll.keep">${[['new', 'The new roll'], ['best', 'Whichever is higher']].map(([v, l]) => `<option value="${v}" ${d.reroll.keep === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       ${fld('Bonus to the new roll', 'reroll.bonus', d.reroll.bonus, { formula: 'num', ph: 'LEVEL', hint: 'Optional, e.g. Indomitable' })}</div>` : '');
 
+  h += sec('defense', 'Resistances', 'Applied to damage from the GM\'s attack and area cards. Effects count while on, items while equipped.', !!d.defense, d.defense ? `<div class="frow">
+      ${fld('Resistance to', 'defense.res', d.defense.res, { ph: 'fire, cold' })}${fld('Immunity to', 'defense.imm', d.defense.imm, { ph: 'poison' })}${fld('Vulnerability to', 'defense.vul', d.defense.vul, { ph: 'radiant' })}</div>` : '');
+
   h += sec('counter', 'Limited uses', 'Checkboxes, a points pool or success/failure track, with a reset rule.', !!d.counter, d.counter ? `<div class="frow">
       <label class="fld"><span>Style</span><select id="d-ct-kind" data-d="counter.kind"><option value="boxes" ${d.counter.kind === 'boxes' ? 'selected' : ''}>Checkboxes</option><option value="pool" ${d.counter.kind === 'pool' ? 'selected' : ''}>Points pool</option><option value="succfail" ${d.counter.kind === 'succfail' ? 'selected' : ''}>Success / failure</option></select></label>
       ${d.counter.kind !== 'succfail' ? fld('Maximum', 'counter.max', d.counter.max, { formula: 'num', ph: '3, PROF, max(1, CHA)' }) : ''}
@@ -5975,6 +6178,7 @@ const SEC_DEFAULT = {
   save: d => ({ ability: 'DEX', dc: d.spell ? 'SPELLDC' : '8 + PROF + CON' }),
   counter: () => ({ kind: 'boxes', max: '1', used: 0, reset: 'long', recover: 'all' }),
   reroll: () => ({ on: 'd20', dice: 'one', low: 1, keep: 'new', bonus: '' }),
+  defense: () => ({ res: '', imm: '', vul: '' }),
   effect: () => ({ active: false, attack: '', damage: '', save: '', ac: '', check: '', only: '' }),
   spell: () => ({ level: 1, school: '', castTime: '', range: '', duration: '', components: '', upcast: '', cantrip: false }),
   item: () => ({ qty: 1, weight: 0, equipped: false }),
@@ -6005,15 +6209,15 @@ document.addEventListener('click', ev => {
     case 'gmview': requestSheet(el.dataset.player, el.dataset.char, el.dataset.name, el.dataset.owner); break;
     case 'adv': ui.adv = v; renderTop(); break;
     case 'rest': doRest(v); break;
-    case 'check': { const a = c.abilities.find(x => x.key === v); roll(a.name + ' check', checkComps(v, 0)); break; }
-    case 'save': { const a = c.abilities.find(x => x.key === v); roll(a.name + ' save', saveComps(v), { onLand: IN_OBR && !ui.viewing ? en => answerByRoll(v, en) : undefined }); break; }
+    case 'check': { const a = c.abilities.find(x => x.key === v); roll(a.name + ' check', checkComps(v, 0), { test: { kind: 'check', self: myConds(), exh: c.exhaustion } }); break; }
+    case 'save': { const a = c.abilities.find(x => x.key === v); roll(a.name + ' save', saveComps(v), { test: { kind: 'save', ab: v, self: myConds(), exh: c.exhaustion }, onLand: IN_OBR && !ui.viewing ? en => answerByRoll(v, en) : undefined }); break; }
     case 'saveprof': if (ed) { c.abilities[i].save = !c.abilities[i].save; rerender(); } break;
-    case 'skill': { const s = c.skills[i]; roll(s.name + ' check', checkComps(s.ab, s.prof)); break; }
+    case 'skill': { const s = c.skills[i]; roll(s.name + ' check', checkComps(s.ab, s.prof), { test: { kind: 'check', self: myConds(), exh: c.exhaustion } }); break; }
     case 'skprof': if (ed) { c.skills[i].prof = (c.skills[i].prof + 1) % 3; rerender(); } break;
     case 'delskill': c.skills.splice(i, 1); rerender(); break;
     case 'addskill': c.skills.push({ id: uid(), name: 'New skill', ab: 'INT', prof: 0 }); rerender(); break;
     case 'addabil': { let k = 'NEW', n = 1; while (c.abilities.some(a => a.key === k)) k = 'NEW' + (++n); c.abilities.push({ key: k, name: 'Custom', score: 10, save: false, custom: true }); ui.mode = 'edit'; rerender(); toast('Rename it, then set its key in formulas (e.g. SAN).'); break; }
-    case 'init': roll('Initiative', initComps(), { onLand: en => { sendInitiative(en); reportInit(en); } }); break;
+    case 'init': roll('Initiative', initComps(), { test: { kind: 'check', self: myConds(), exh: c.exhaustion }, onLand: en => { sendInitiative(en); reportInit(en); } }); break;
     case 'explain': {
       if (v === 'ac') showPop(el, explainHtml('Armor Class', acComps()));
       else if (v === 'spelldc') showPop(el, explainHtml('Spell save DC', [{ src: 'Base', f: '8' }, { f: 'SPELL', src: c.spellAbility ? c.spellAbility + ' (spellcasting)' : 'Spellcasting' }, { f: 'PROF' }]));
@@ -6030,7 +6234,8 @@ document.addEventListener('click', ev => {
       c.hdUsed++; const before = c.hp.cur; c.hp.cur = Math.min(c.hp.max, c.hp.cur + Math.max(0, en.total)); en.note = 'Healed ' + (c.hp.cur - before) + ' HP';
       rerender(); break;
     }
-    case 'cond': { const k = c.conditions.indexOf(v); if (k >= 0) c.conditions.splice(k, 1); else c.conditions.push(v); rerender(); break; }
+    case 'cond': { const k = c.conditions.indexOf(v); if (k >= 0) { c.conditions.splice(k, 1); if (c.condDur) delete c.condDur[v]; } else c.conditions.push(v); rerender(); if (k < 0 && inCombatPlayer()) { const b = document.querySelector(`[data-act=cond][data-v="${v}"]`); if (b) durPop(b, 'me', v); } break; }
+    case 'cdur': { const [who, cond, n] = String(v).split('|'); const rounds = n === 'custom' ? Math.max(1, Math.min(100, parseInt(($('#cdur-n') || {}).value, 10) || 1)) : +n; hidePop(); setDuration(who, cond, rounds); if (rounds) toast(cond + ' for ' + rounds + ' round' + (rounds > 1 ? 's' : '') + '.'); break; }
     case 'exh': c.exhaustion = ((c.exhaustion || 0) + 1) % 7; rerender(); break;
     case 'acttab': ui.actTab[id] = v; renderGrid(); break;
     case 'hideused': { const m = c.modules.find(x => x.id === id); m.hideUsed = el.checked; rerender(); break; }
@@ -6133,6 +6338,8 @@ document.addEventListener('click', ev => {
     case 'saveroll': rollPromptedSave(id); break;
     case 'savedrop': writeSaves(readSaves().filter(x => x.id !== id)); renderAtkQueue(); break;
     case 'levelup': openLevelUp(); break;
+    case 'insp': c.inspiration = !c.inspiration; rerender(); publishStatus(); break;
+    case 'giveinsp': OBRX.api.broadcast.sendMessage(CH_GM, { type: 'inspire', id: uid(), to: v, char: el.dataset.char, from: OBRX.me.name }, { destination: v === OBRX.me.id ? 'LOCAL' : 'REMOTE' }).catch(() => { }); toast('Heroic Inspiration sent.'); break;
     case 'gsearch': openSearch(); break;
     case 'srchgo': searchGo(i); break;
     case 'srchsrd': { const q = ui.modal ? ui.modal.q : ''; closeModal(); searchSrd(q); break; }
@@ -6202,7 +6409,7 @@ document.addEventListener('click', ev => {
     case 'amadd': { const t = tplById(id); if (!t) break; const n = Math.max(1, Math.min(30, +(document.querySelector(`[data-amn="${CSS.escape(id)}"]`) || {}).value || 1)); addMonsters(t, n, { group: SETTINGS.groupInit !== false }); SETTINGS.view = 'encounter'; saveSettings(); render(); toast('Added ' + n + ' ' + t.name + (n > 1 ? 's' : '') + '.'); break; }
     case 'amdel': bestiary = bestiary.filter(t => t.id !== id); saveBestiary(); renderModal(); break;
     case 'addparty': { const n = addParty(); toast(n ? 'Added ' + n + ' character' + (n > 1 ? 's' : '') + ' from the party.' : 'No new party members with Grimsheet open.'); break; }
-    case 'addpc': { const e = enc(); e.pcs.push({ key: 'pc:local:' + uid(), player: null, charId: c.id, name: c.name, init: null }); saveEnc(); renderGrid(); break; }
+    case 'addpc': { const e = enc(); e.pcs.push({ key: 'pc:local:' + uid(), player: null, charId: c.id, name: c.name, init: null, level: c.level }); saveEnc(); renderGrid(); break; }
     case 'askinit': askInitiative(); break;
     case 'rollmoninit': rollMonsterInit(true); break;
     case 'startcombat': startCombat(); break;
@@ -6222,7 +6429,7 @@ document.addEventListener('click', ev => {
     case 'monedit': ui.monEdit = ui.monEdit === id ? null : id; renderGrid(); break;
     case 'monopen': ui.monOpen = ui.monOpen || new Set(); if (ui.monOpen.has(id)) ui.monOpen.delete(id); else ui.monOpen.add(id); renderGrid(); break;
     case 'mondel': { if (ui.confirm !== 'mondel-' + id) { ui.confirm = 'mondel-' + id; renderGrid(); break; } ui.confirm = null; const e = enc(); e.mons = e.mons.filter(x => x.id !== id); saveEnc(); renderGrid(); break; }
-    case 'moncond': { const m = enc().mons.find(x => x.id === id); if (!m) break; m.cond = m.cond.filter(k => k !== v); saveEnc(); renderGrid(); break; }
+    case 'moncond': { const m = enc().mons.find(x => x.id === id); if (!m) break; m.cond = m.cond.filter(k => k !== v); if (m.condDur) delete m.condDur[v]; saveEnc(); renderGrid(); break; }
     case 'monrollhp': { const m = enc().mons.find(x => x.id === id); if (!m) break; const t = tplOf(m); const r = E.rollComps([{ f: t.hpDice }], CTX, {}).total; m.max = Math.max(1, r); m.hp = m.max; saveEnc(); renderGrid(); toast(m.name + ' has ' + m.max + ' HP (rolled ' + t.hpDice + ').'); break; }
     case 'setcompact': SETTINGS.compact = !SETTINGS.compact; saveSettings(); document.documentElement.classList.toggle('compact', SETTINGS.compact); if (ui.modal) renderModal(); else hidePop(); break;
     case 'setpanel': SETTINGS.panel = v; saveSettings(); applyPanelSize(); hidePop(); if (ui.modal) renderModal(); break;
@@ -6366,7 +6573,7 @@ document.addEventListener('change', ev => {
     else { const n = Math.max(0, Math.round(+t.value || 0)); if (k === 'max') { m.max = Math.max(1, n); m.hp = Math.min(m.hp, m.max); } else m[k] = n; }
     saveEnc(); renderGrid(); return;
   }
-  if (t.dataset.moncond) { const m = enc().mons.find(x => x.id === t.dataset.moncond); if (m && t.value) { m.cond.push(t.value); saveEnc(); renderGrid(); } return; }
+  if (t.dataset.moncond) { const m = enc().mons.find(x => x.id === t.dataset.moncond); if (m && t.value) { const k = t.value; m.cond.push(k); saveEnc(); renderGrid(); if (inCombatGM() && k !== 'Concentrating') { const b = document.querySelector(`[data-inst="${m.id}"] [data-act=moncond][data-v="${k}"]`); if (b) durPop(b, m.id, k); } } return; }
   if (t.dataset.amgroup) { SETTINGS.groupInit = t.checked; saveSettings(); return; }
   if (t.dataset.amf && ui.modal && ui.modal.parsed) { const k = t.dataset.amf; ui.modal.parsed[k] = ['ac', 'hp', 'init'].includes(k) ? Math.round(+t.value || 0) : t.value.trim(); return; }
   if (t.id === 'pdf-file' && t.files && t.files[0]) { readPdf(t.files[0]); return; }

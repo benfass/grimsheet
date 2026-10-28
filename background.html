@@ -74,6 +74,14 @@
         }
         OBR.notification.show(`${d.from}: ${r.text} to ${ch.name}. HP ${r.hp}/${r.max}${r.temp ? ' (+' + r.temp + ' temp)' : ''}.${conc}`, d.amount < 0 ? 'WARNING' : 'SUCCESS').catch(() => { });
       }
+      if (d.type === 'inspire') {
+        if (!ch) return;
+        ch.inspiration = true; S.write(S.STORE, store);
+        const all = S.read(S.STATUS) || {}; const st = Object.assign({}, all[ch.id] || {}, { insp: true }); all[ch.id] = st; S.write(S.STATUS, all);
+        if (store.active === ch.id) OBR.player.setMetadata({ [S.META]: st }).catch(() => { });
+        OBR.notification.show(`${d.from} gives ${ch.name} Heroic Inspiration ★`, 'SUCCESS').catch(() => { });
+        return;
+      }
       if (d.type === 'sheetReq') {
         if (!ch) { OBR.broadcast.sendMessage(S.CH_GM, { type: 'sheet', id: d.id, to: d.from, error: 'no character' }, { destination: 'REMOTE' }).catch(() => { }); return; }
         const parts = S.chunks(await S.pack(ch));
