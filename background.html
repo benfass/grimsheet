@@ -175,8 +175,8 @@
       if (d && d.type === 'saveRes' && me.role === 'GM') { const key = 'grimsheet.attacks.' + room; S.write(key, S.mergeSaveRes(S.read(key) || [], d)); return; }
       if (d && d.type === 'saveReq' && d.to === me.id) {
         const key = 'grimsheet.saves.' + room, q = S.read(key) || [];
-        if (!q.some(x => x.id === d.id)) { q.unshift({ id: d.id, aid: d.aid, from: d.from, ability: d.ability, dc: d.dc, what: d.what }); S.write(key, q.slice(0, 10)); }
-        OBR.notification.show(`${d.from} asks for a ${d.ability} save (DC ${d.dc}) against ${d.what}. Roll it in Grimsheet.`, 'WARNING').catch(() => { });
+        if (!q.some(x => x.id === d.id)) { q.unshift({ id: d.id, aid: d.aid, from: d.from, ability: d.ability, dc: d.dc, what: d.what, skill: d.skill || '' }); S.write(key, q.slice(0, 10)); }
+        OBR.notification.show(d.skill ? `${d.from} asks for a ${d.skill} check${d.dc ? ' (DC ' + d.dc + ')' : ''}. Roll it in Grimsheet.` : `${d.from} asks for a ${d.ability} save (DC ${d.dc}) against ${d.what}. Roll it in Grimsheet.`, 'WARNING').catch(() => { });
         return;
       }
       if (d && d.type === 'askInit' && me.role !== 'GM') OBR.notification.show(`${d.from} asks for initiative. Open Grimsheet and tap INIT in your Combat module.`, 'INFO').catch(() => { });
@@ -223,7 +223,7 @@
         await OBR.scene.items.updateItems([ctx.items[0].id], drafts => {
           for (const it of drafts) {
             it.metadata[S.LINK] = { player: me.id, char: ch.id, name: ch.name, owner: me.name };
-            if (st) it.metadata[S.BUBBLES] = Object.assign({}, it.metadata[S.BUBBLES] || {}, { health: st.hp, 'max health': st.max, 'temporary health': st.temp || 0, 'armor class': typeof st.ac === 'number' ? st.ac : 0 });
+            if (st) it.metadata[S.BUBBLES] = Object.assign({}, it.metadata[S.BUBBLES] || {}, { health: st.hp, 'max health': st.max, 'temporary health': st.temp || 0, 'armor class': typeof st.ac === 'number' ? st.ac : 0, hide: false });
           }
         });
         OBR.notification.show(`${ch.name} is linked to this token. HP, AC and initiative now follow your sheet.`, 'SUCCESS');

@@ -1,7 +1,7 @@
 /* Grimsheet helpers shared by background.html and gm.html (the panel keeps its own copy). */
 window.GS = (function () {
   const GS = {
-    VERSION: '1.21.1',
+    VERSION: '1.22.0',
     CH_ROLL: 'com.grimsheet/roll',
     CH_GM: 'com.grimsheet/gm',        // GM ↔ player: hp changes, sheet requests and replies
     CH_LOCAL: 'com.grimsheet/local',  // same browser: GM menu → GM panel
@@ -44,12 +44,25 @@ window.GS = (function () {
     return JSON.parse(txt);
   };
   // attacks waiting for the GM: an attack roll and its damage roll share one id (same as the panel's mergeAttack)
+  GS.sumDamage = parts => {
+    const ps = Object.entries(parts);
+    if (ps.length === 1) { const [w, p] = ps[0]; return Object.assign({}, p, { srcs: [{ what: w === '_' ? '' : w, total: p.total }] }); }
+    const byType = {}; let typed = true;
+    for (const [, p] of ps) { if (p.byType) for (const [t, v] of Object.entries(p.byType)) byType[t] = (byType[t] || 0) + v; else if (p.types && !p.types.includes(',')) byType[p.types] = (byType[p.types] || 0) + p.total; else typed = false; }
+    return { total: ps.reduce((n, [, p]) => n + p.total, 0), types: [...new Set(ps.flatMap(([, p]) => (p.types || '').split(', ').filter(Boolean)))].join(', '), crit: ps.some(([, p]) => p.crit), heal: ps.every(([, p]) => p.heal), rr: ps.map(([, p]) => p.rr).filter(Boolean).join(' · '), byType: typed ? byType : null, srcs: ps.map(([w, p]) => ({ what: w === '_' ? '' : w, total: p.total })) };
+  };
   GS.mergeAttack = (list, d) => {
     let c = list.find(x => x.id === d.id);
     if (!c) { c = { id: d.id, from: d.from, who: d.who, attacker: d.attacker, target: d.target, atk: null, dmg: null, save: null, verdict: null }; list.unshift(c); }
     if (d.part === 'area') { c.kind = 'area'; Object.assign(c, { name: d.name, areaLabel: d.areaLabel, itemId: d.itemId, half: !!d.half, keep: !!d.keep, heal: !!d.heal, targets: d.targets || [], excl: d.excl || [], res: c.res || {}, asked: c.asked || {} }); }
     else if (d.part === 'atk') c.atk = { total: d.total, nat: d.nat, crit: !!d.crit, fumble: !!d.fumble, mode: d.mode || 'normal', rr: d.rr || '' };
-    else c.dmg = { total: d.total, types: d.types || '', crit: !!d.isCrit, heal: d.part === 'heal', rr: d.rr || '', byType: d.byType || null };
+    else {
+      const one = { total: d.total, types: d.types || '', crit: !!d.isCrit, heal: d.part === 'heal', rr: d.rr || '', byType: d.byType || null };
+      if (!d.what) c.dparts = {}; c.dparts = c.dparts || {}; c.dparts[d.what || '_'] = one;
+      c.dmg = GS.sumDamage(c.dparts);
+    }
+    if (d.what) { if (d.part === 'atk' || !c.what) c.what = d.what; }
+    if (d.key && d.part === 'atk') c.key = d.key; if (d.dmgF) c.dmgF = d.dmgF;
     if (d.save) c.save = d.save;
     if (d.srcMon) c.srcMon = d.srcMon;
     if (d.dist) { c.dist = d.dist; c.range = d.range || ''; c.rangeOk = d.rangeOk; }
@@ -60,7 +73,7 @@ window.GS = (function () {
   GS.mergeSaveRes = (list, d) => {
     const c = list.find(x => x.id === d.aid); if (!c || !c.save) return list;
     c.res = c.res || {};
-    for (const t of c.targets || []) if (t.player === d.from && (!d.char || !t.char || t.char === d.char)) c.res[t.id] = d.total === -99 ? { total: '—', ok: false, by: 'player', note: 'automatic failure' } : { total: d.total, ok: d.total >= +c.save.dc, nat: d.nat, by: 'player' };
+    for (const t of c.targets || []) if (t.player === d.from && (!d.char || !t.char || t.char === d.char)) c.res[t.id] = d.total === -99 ? { total: '—', ok: false, by: 'player', note: 'automatic failure' } : { total: d.total, ok: c.save.dc === '' || c.save.dc == null ? null : d.total >= +c.save.dc, nat: d.nat, by: 'player' };
     return list;
   };
   // campaign notes (same rules as the panel): newest edit wins, deletions are remembered

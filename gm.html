@@ -95,6 +95,7 @@ input.q { width: 100% }
         const g = Object.values(groups); if (!g.length) return '';
         return `<div class="m">Link to monsters in ${esc(e.name || 'the encounter')} without a token:</div><div class="list">${g.map(ms => `<button data-pre="${esc(ms[0].tpl)}"><span><b>${esc(ms.length > 1 ? (e.tpls[ms[0].tpl] || ms[0]).name : ms[0].name)}</b></span><span class="m">${ms.length > 1 ? ms.length + ' waiting' : 'HP ' + ms[0].hp}</span></button>`).join('')}</div><div class="sep"></div>`;
       })()}
+      <div class="row"><button data-paste>Paste a stat block…</button><span class="m">opens Grimsheet; the new monster${free.length > 1 ? 's take' : ' takes'} ${free.length > 1 ? 'these tokens' : 'this token'}</span></div><div class="sep"></div>
       <div class="m">Make ${free.length === 1 ? 'it a new monster' : 'them new monsters'}:</div>
       ${cat.length ? `<input class="q" id="q" value="${esc(q)}" placeholder="Search: goblin, ogre…" aria-label="Search monsters">
         <div class="list">${matches.map(t => `<button data-mon="${esc(t.id)}"><span><b>${esc(t.name)}</b>${t.srd ? '' : ' <span class="m">mine</span>'}</span><span class="m">CR ${esc(t.cr || '?')} · HP ${t.hp}</span></button>`).join('') || '<div class="m">No match.</div>'}</div>`
@@ -189,6 +190,14 @@ input.q { width: 100% }
     if (t.hasAttribute('data-unlink')) {
       await OBR.scene.items.updateItems(items.map(i => i.id), drafts => { for (const it of drafts) { delete it.metadata[S.LINK]; delete it.metadata[MONLINK]; } });
       note = 'Unlinked.'; refresh();
+    }
+    if (t.hasAttribute('data-paste')) {
+      const ids = items.filter(it => !pcLink(it) && !monLink(it)).map(it => it.id);
+      const ask = { type: 'pasteFor', items: ids, at: Date.now() };
+      S.write('grimsheet.pending.v1', ask);
+      await OBR.broadcast.sendMessage(S.CH_LOCAL, ask, { destination: 'LOCAL' }).catch(() => { });
+      try { await OBR.action.open(); } catch (e) { }
+      note = 'Paste the stat block in the Grimsheet panel.'; render(); return;
     }
     if (t.hasAttribute('data-view')) {
       const L = pcLink(items[0]);
