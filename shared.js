@@ -1,7 +1,7 @@
 /* Grimsheet helpers shared by background.html and gm.html (the panel keeps its own copy). */
 window.GS = (function () {
   const GS = {
-    VERSION: '1.19.0',
+    VERSION: '1.20.0',
     CH_ROLL: 'com.grimsheet/roll',
     CH_GM: 'com.grimsheet/gm',        // GM ↔ player: hp changes, sheet requests and replies
     CH_LOCAL: 'com.grimsheet/local',  // same browser: GM menu → GM panel
@@ -85,6 +85,25 @@ window.GS = (function () {
     return r;
   };
   GS.encFind = (r, inst) => { for (const e of Object.values(r.list)) { const m = (e.mons || []).find(x => x.id === inst); if (m) return { e, m }; } return null; };
+  // room homebrew (same rules as the panel): the GM's pack and players' copies live under HB[room];
+  // entries added to a sheet remember where they came from (e.hb = {id, v}) so GM updates can be offered
+  GS.HB = 'grimsheet.homebrew.v1'; GS.CH_HB = 'com.grimsheet/homebrew';
+  GS.HB_MOD = { item: 'inventory', spell: 'spells', feature: 'features', attack: 'attacks', creature: 'companions' };
+  GS.HB_TITLE = { inventory: 'Inventory', spells: 'Spells', features: 'Features & Traits', attacks: 'Attacks', companions: 'Companions' };
+  GS.hbKind = e => e.spell ? 'spell' : e.creature ? 'creature' : e.item ? 'item' : e.attack ? 'attack' : 'feature';
+  GS.hbPrep = src => { const e = JSON.parse(JSON.stringify(src.e)); e.id = GS.uid(); e.hb = { id: src.id, v: src.updated }; if (e.counter) e.counter.used = 0; return e; };
+  GS.hbPlace = (ch, e) => {
+    const t = GS.HB_MOD[GS.hbKind(e)];
+    let m = (ch.modules || []).find(x => x.type === t && !(ch.hidden || []).includes(x.id)) || (ch.modules || []).find(x => x.type === t);
+    if (!m) { m = { id: GS.uid(), type: t, title: GS.HB_TITLE[t], collapsed: false, wide: false, entries: [] }; ch.modules.push(m); }
+    ch.hidden = (ch.hidden || []).filter(x => x !== m.id);
+    if (t === 'inventory' && !e.item) e.item = { qty: 1, weight: 0, equipped: false };
+    m.entries.push(e); return m;
+  };
+  GS.hbRoom = (all, room) => { const h = all[room] || { items: [] }; h.items = h.items || []; all[room] = h; return h; };
+  GS.hbMerge = (h, it) => { if (!it || !it.id) return false; const i = h.items.findIndex(x => x.id === it.id); if (i >= 0 && h.items[i].updated >= it.updated) return false; if (i >= 0) h.items[i] = it; else h.items.push(it); return true; };
+  // the GM's list of what players may see: drop the rest; true when something is missing or newer
+  GS.hbList = (h, list) => { const m = new Map(list || []); h.items = h.items.filter(x => m.has(x.id)); return [...m].some(([id, at]) => { const x = h.items.find(y => y.id === id); return !x || x.updated < at; }); };
   GS.chunks = (s, n = 12000) => { const out = []; for (let i = 0; i < s.length; i += n) out.push(s.slice(i, i + n)); return out.length ? out : ['']; };
   GS.load = src => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
   GS.sdk = async () => { if (window.GrimsheetOBR) return window.GrimsheetOBR; await GS.load('vendor/owlbear-sdk-3.1.0.js'); return window.OwlbearSDK; };

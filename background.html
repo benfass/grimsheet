@@ -82,12 +82,47 @@
         OBR.notification.show(`${d.from} gives ${ch.name} Heroic Inspiration ★`, 'SUCCESS').catch(() => { });
         return;
       }
+      if (d.type === 'hbGive') {
+        if (!ch || !d.entry) return;
+        const m = S.hbPlace(ch, d.entry); S.write(S.STORE, store);
+        OBR.notification.show(`${d.from} gives ${ch.name} ${d.entry.name} (added to ${m.title}).`, 'SUCCESS').catch(() => { });
+        return;
+      }
       if (d.type === 'sheetReq') {
         if (!ch) { OBR.broadcast.sendMessage(S.CH_GM, { type: 'sheet', id: d.id, to: d.from, error: 'no character' }, { destination: 'REMOTE' }).catch(() => { }); return; }
         const parts = S.chunks(await S.pack(ch));
         for (let i = 0; i < parts.length; i++) await OBR.broadcast.sendMessage(S.CH_GM, { type: 'sheet', id: d.id, to: d.from, part: i, parts: parts.length, data: parts[i], owner: me.name }, { destination: 'REMOTE' }).catch(() => { });
       }
     });
+
+    /* ---- room homebrew: the GM answers who asks; players keep a copy of what the GM shows ---- */
+    const hbAll = () => S.read(S.HB) || {};
+    const hbSend = x => OBR.broadcast.sendMessage(S.CH_HB, x, { destination: 'REMOTE' }).catch(() => { });
+    let hbAt = 0;
+    const hbHello = () => { hbAt = Date.now(); hbSend({ type: 'hello', from: me.id, have: S.hbRoom(hbAll(), room).items.map(x => [x.id, x.updated]) }); };
+    let hbAsk = null;
+    OBR.broadcast.onMessage(S.CH_HB, ev => {
+      const d = ev.data; if (!d) return;
+      if (me.role === 'GM') {
+        if (d.type !== 'hello') return;
+        const vis = S.hbRoom(hbAll(), room).items.filter(x => !x.hidden), have = new Map(d.have || []);
+        hbSend({ type: 'list', items: vis.map(x => [x.id, x.updated]) });
+        vis.filter(x => !have.has(x.id) || have.get(x.id) < x.updated).forEach(x => hbSend({ type: 'up', item: x }));
+        return;
+      }
+      const all = hbAll(), h = S.hbRoom(all, room);
+      if (d.type === 'up') {
+        const fresh = d.item && !h.items.some(x => x.id === d.item.id);
+        if (S.hbMerge(h, d.item)) S.write(S.HB, all);
+        // something newly shown (not the catch-up after joining): tell the player where to find it
+        if (fresh && Date.now() - hbAt > 5000) OBR.notification.show(`The GM shared ${d.item.e.name}. Add it from Grimsheet: Browse → Room homebrew.`, 'INFO').catch(() => { });
+      }
+      if (d.type === 'list') {
+        const miss = S.hbList(h, d.items); S.write(S.HB, all);
+        if (miss) { clearTimeout(hbAsk); hbAsk = setTimeout(() => { if (S.hbList(JSON.parse(JSON.stringify(S.hbRoom(hbAll(), room))), d.items)) hbHello(); }, 1500); }
+      }
+    });
+    if (me.role !== 'GM') setTimeout(hbHello, 2000);
 
     /* ---- campaign notes: keep the party journal up to date and answer newcomers ---- */
     const campGet = () => { const a = S.read(S.CAMP) || {}, c = a[room] || { name: '', notes: [], gone: {} }; c.notes = c.notes || []; c.gone = c.gone || {}; return c; };

@@ -1,6 +1,6 @@
-# D&D Character Sheet App — Product Spec (v1.16)
+# D&D Character Sheet App — Product Spec (v1.17)
 
-*Working name: Grimsheet. v0.2 recorded the platform decision and first build; v0.3 added the SRD 5.2 content pack and locked skill proficiency to Edit mode; v0.4 expanded the pack; v0.5 added PDF import and documented the saved character format; v0.6 replaced the grid with a row-and-column layout; v0.7 added dice animation and a Settings panel; v0.8 added the Owlbear Rodeo extension and a backup reminder; v0.9 added panel sizes and compact mode; v1.0 added the background page and token linking; v1.1 added GM tools; v1.2 added monsters, the Encounter view and initiative; v1.3 added attacks against a target on the map; v1.4 added rerolls; v1.5 added spell areas on the map; v1.6 added combat prompts; v1.7 added the level-up wizard; v1.8 added undo; v1.9 added campaign notes; v1.10 added GM mode; v1.11 added several encounters; v1.12 added finding tokens, fog-aware targets and target buttons; v1.13 showed prompts next to what they're about; v1.14 read monster spellcasting; v1.15 added search; v1.16 adds rules automation (resistances, conditions, durations), token pictures, encounter difficulty and Heroic Inspiration.*
+*Working name: Grimsheet. v0.2 recorded the platform decision and first build; v0.3 added the SRD 5.2 content pack and locked skill proficiency to Edit mode; v0.4 expanded the pack; v0.5 added PDF import and documented the saved character format; v0.6 replaced the grid with a row-and-column layout; v0.7 added dice animation and a Settings panel; v0.8 added the Owlbear Rodeo extension and a backup reminder; v0.9 added panel sizes and compact mode; v1.0 added the background page and token linking; v1.1 added GM tools; v1.2 added monsters, the Encounter view and initiative; v1.3 added attacks against a target on the map; v1.4 added rerolls; v1.5 added spell areas on the map; v1.6 added combat prompts; v1.7 added the level-up wizard; v1.8 added undo; v1.9 added campaign notes; v1.10 added GM mode; v1.11 added several encounters; v1.12 added finding tokens, fog-aware targets and target buttons; v1.13 showed prompts next to what they're about; v1.14 read monster spellcasting; v1.15 added search; v1.16 adds rules automation (resistances, conditions, durations), token pictures, encounter difficulty and Heroic Inspiration; v1.17 adds room homebrew.*
 
 ## 1. Vision
 
@@ -368,6 +368,14 @@ Decisions: a party journal anyone can edit; its own view; typed entries.
 - **Encounter difficulty**: a chip in the encounter header (Easy / Low / Moderate / High / Very high · total XP) from the 2024 XP budget for the party's levels (players in the room, or characters added outside Owlbear); its tooltip shows the budget. Ending combat tells the GM the XP of defeated monsters and the share per character.
 - **Heroic Inspiration**: a toggle in the Combat module; the GM gives it from the Party view (players get a notification, even with the panel closed). While you have it, "Heroic Inspiration" is a reroll on any roll; using it clears it.
 
+### Built in v2.15: Room homebrew
+- **Only the GM shares.** Party view → **Room homebrew** (also "Manage room homebrew" in the Browse dialog for a GM who plays): share entries from the GM's library (visible, or **Add hidden**), or make new items, spells and features there (new ones start hidden). Each entry can be shown or hidden, edited, removed, or **Given** to a player.
+- **Hidden entries** are never sent to players. Revealing one makes it appear for everyone, with a notification ("The GM shared … Browse → Room homebrew").
+- **Give**: puts a copy straight onto the player's sheet in the module for its kind (items → Inventory, spells → Spells, features → Features & Traits, attacks → Attacks, creatures → Companions; the module is created or unhidden if needed), with a notification, even with the panel closed. Works for hidden entries (loot).
+- **Players**: Browse (in any list) → **Room homebrew** tab, grouped by kind; tap a name to read it; **Add** (to the list you browsed from when it fits, otherwise the right module); save to your own library. The Browse button shows "N from GM".
+- **Updates**: entries on a sheet remember their source (`e.hb = {id, v}`). When the GM edits a visible entry, players who have it get a **↻ GM update** button (and a toast); taking it keeps uses spent, quantity, equipped, on/off and companion HP, and replaces their own edits. Removing or hiding an entry never takes it off sheets.
+- **Sync**: the pack lives in the GM's browser (`grimsheet.homebrew.v1[room]`); players keep a copy of the visible entries. Channel `com.grimsheet/homebrew`: `list` (visible ids and versions) after every GM change and when the GM joins, `up` (one entry), `hello` (a player's ids, sent on joining; the GM answers with `list` and the missing `up`s). The background page handles all of it when the panel is closed. Entries over ~14 KB are refused (shorten the text).
+
 ### Roadmap
 Ordered by when it gets built. Priority applies inside a goal.
 
@@ -376,7 +384,7 @@ Ordered by when it gets built. Priority applies inside a goal.
 - *Done (v2.3):* **Spell areas on the map** (see above).
 - *Low:* **Conditions on tokens.** Small markers on tokens for conditions and concentration, kept in step with the sheet and the monster cards.
 - *Done (v2.4):* **Combat prompts** (see above).
-- *Low:* **Shared homebrew.** The GM shares a homebrew pack (items, spells, monsters) with the room and players add it in one click.
+- *Done (v2.15):* **Shared homebrew** (see above).
 
 **Mid goals**
 - *Done (v2.5):* **Level-up wizard** (see above).

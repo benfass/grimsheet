@@ -381,6 +381,9 @@ select.ed-inline{width:auto}
 .tray .fu.rr .muted{font-size:.82rem}
 .rrl{font-size:.8rem;display:flex;flex-direction:column;gap:1px;margin-top:2px;color:var(--ink)}
 .rrchip{color:var(--accent);border-color:var(--accent)}
+.chip.hbup{color:var(--accent);border-color:var(--accent);cursor:pointer;background:transparent;white-space:nowrap}
+.hb-hidden b{opacity:.7}
+.hb-i .e-name{background:none;border:0;text-align:left;cursor:pointer;color:inherit;font:inherit}
 .dicefx.out{opacity:0}
 .die{position:relative;width:52px;height:52px;display:grid;place-items:center;animation:tumble var(--t) cubic-bezier(.2,.75,.3,1) var(--d) both}
 .die svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible;filter:drop-shadow(0 4px 6px rgba(0,0,0,.18))}
@@ -2620,7 +2623,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.19.0';
+const APP_VERSION = '1.20.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -2969,6 +2972,7 @@ async function startOwlbear() {
       OBR.broadcast.onMessage(CH_ROLL, ev => receiveRoll(ev.data));
       OBR.broadcast.onMessage(CH_GM, ev => receiveGm(ev.data));
       OBR.broadcast.onMessage(CH_NOTES, ev => notesReceive(ev.data));
+      OBR.broadcast.onMessage(CH_HB, ev => hbReceive(ev.data));
       OBR.broadcast.onMessage(CH_LOCAL, ev => {
         const d = ev.data; if (!d) return;
         if (d.type === 'view') requestSheet(d.player, d.char, d.name, d.owner);
@@ -2987,7 +2991,7 @@ async function startOwlbear() {
       const setParty = players => { OBRX.players = (players || []).map(p => ({ id: p.id, name: p.name, role: p.role })); OBRX.party = (players || []).map(p => ({ id: p.id, name: p.name, role: p.role, s: p.metadata && p.metadata[META] })).filter(p => p.s); refreshParty(); if (gmMode()) { renderTop(); if (gmView() === 'party') renderGrid(); } };
       setParty(await OBR.party.getPlayers()); OBR.party.onChange(setParty);
       if (gmMode()) clearMyStatus();
-      publishStatus(); renderAtkQueue(); paintTarget(); checkMyTurn(); setTimeout(notesHello, 800); render();
+      publishStatus(); renderAtkQueue(); paintTarget(); checkMyTurn(); setTimeout(notesHello, 800); setTimeout(() => { if (bgAlive()) return; if (hbIsGM()) hbSend({ type: 'list', items: hbVisible(hb()).map(x => [x.id, x.updated]) }); else hbHello(); }, 900); render();
       if (concOf() && C().hp.cur <= 0) endConc(concOf().name + ' ends: you dropped to 0 HP.');
       applyPanelSize();
       ensurePartyModule();
@@ -3144,6 +3148,11 @@ async function receiveGm(d) {
     if (d.to !== OBRX.me.id || gmSeen.has(d.id)) return; gmSeen.add(d.id);
     if (!bgAlive()) { const ch = store.chars[d.char] || C(); ch.inspiration = true; save(); render(); publishStatus(); OBRX.api.notification.show(`${d.from} gives you Heroic Inspiration.`, 'SUCCESS').catch(() => { }); }
     toast(`${d.from} gives you Heroic Inspiration ★`); return;
+  }
+  if (d.type === 'hbGive') {
+    if (d.to !== OBRX.me.id || gmSeen.has(d.id)) return; gmSeen.add(d.id);
+    if (!bgAlive()) hbReceiveGive(d);
+    toast(`${d.from} gives you ${d.entry ? d.entry.name : 'something'}.`); return;
   }
   if (d.type === 'restCall') {
     if (OBRX.me.role === 'GM' || gmSeen.has(d.id)) return; gmSeen.add(d.id);
@@ -4639,6 +4648,211 @@ function notesMarkdown() {
   return s;
 }
 
+/* ---------- ROOM HOMEBREW: the GM shares homebrew with the room ---------- */
+// The GM keeps a pack per room (items, spells, features…), each entry visible or hidden. Players see the
+// visible ones in "Add to …" → Room homebrew and add them in one tap; the GM can also give any entry,
+// hidden or not, straight to a player's sheet. Entries on a sheet remember their source (e.hb) so a GM
+// edit can be taken over later. Same rules as GS.hb* in shared.js (the background page).
+const HBKEY = 'grimsheet.homebrew.v1', CH_HB = 'com.grimsheet/homebrew', HB_MAX = 14000;
+const HB_KIND = { item: 'Item', spell: 'Spell', feature: 'Feature', attack: 'Attack', creature: 'Creature' };
+const HB_MOD = { item: 'inventory', spell: 'spells', feature: 'features', attack: 'attacks', creature: 'companions' };
+const hbKind = e => e.spell ? 'spell' : e.creature ? 'creature' : e.item ? 'item' : e.attack ? 'attack' : 'feature';
+const hbOn = () => IN_OBR && OBRX.ready;
+const hbIsGM = () => hbOn() && OBRX.me.role === 'GM';
+function hbAll() { return readJSON(HBKEY) || {}; }
+function hb() { const a = hbAll(), h = a[OBRX.room || 'room'] || { items: [] }; h.items = h.items || []; return h; }
+function saveHb(h) { const a = hbAll(); a[OBRX.room || 'room'] = h; writeJSON(HBKEY, a); }
+function hbMerge(h, it) { if (!it || !it.id) return false; const i = h.items.findIndex(x => x.id === it.id); if (i >= 0 && h.items[i].updated >= it.updated) return false; if (i >= 0) h.items[i] = it; else h.items.push(it); return true; }
+function hbMissing(h, list) { return (list || []).some(([id, at]) => { const x = h.items.find(y => y.id === id); return !x || x.updated < at; }); }
+function hbSend(d) { if (hbOn()) OBRX.api.broadcast.sendMessage(CH_HB, d, { destination: 'REMOTE' }).catch(() => toast('Couldn\'t reach the room right now.')); }
+function hbVisible(h) { return h.items.filter(x => !x.hidden); }
+function hbPrep(src) { const e = clone(src.e); e.id = uid(); e.hb = { id: src.id, v: src.updated }; if (e.counter) e.counter.used = 0; return normalizeEntry(e); }
+// put an entry in the module that shows its kind (making one if needed); prefer `pref` when it fits
+function hbPlace(c, e, pref) {
+  const k = hbKind(e), t = HB_MOD[k];
+  let m = pref && (pref.type === t || (k === 'attack' && pref.type === 'inventory') || (k === 'item' && e.attack && pref.type === 'attacks')) ? pref : c.modules.find(x => x.type === t && !c.hidden.includes(x.id)) || c.modules.find(x => x.type === t);
+  if (!m) { m = mkModule(t); c.modules.push(m); }
+  c.hidden = c.hidden.filter(x => x !== m.id);
+  if (m.type === 'inventory' && !e.item) e.item = { qty: 1, weight: 0, equipped: false };
+  m.entries.push(e); return m;
+}
+// a library entry or an edited draft, cleaned up for sharing
+function hbClean(e) {
+  const x = clone(e); delete x.id; delete x.hb; x.pinned = false;
+  if (x.counter) x.counter.used = 0; if (x.effect) x.effect.active = false; if (x.item) x.item.equipped = false;
+  if (x.creature) x.creature.hp = x.creature.hpMax;
+  return x;
+}
+function hbTooBig(e) { return JSON.stringify(e).length > HB_MAX; }
+
+/* ---- GM: change the pack and tell the room ---- */
+function hbChanged(h, changed) {
+  saveHb(h);
+  const vis = hbVisible(h);
+  hbSend({ type: 'list', items: vis.map(x => [x.id, x.updated]) });
+  (changed || []).filter(x => !x.hidden).forEach(x => hbSend({ type: 'up', item: x }));
+  if (ui.modal && (ui.modal.type === 'roomhb' || ui.modal.type === 'fromlib')) renderModal();
+}
+function hbAddEntry(e, hidden) {
+  const x = hbClean(e);
+  if (hbTooBig(x)) { toast(x.name + ' is too long to share. Shorten its full text and try again.'); return null; }
+  const h = hb(), it = { id: uid(), e: x, hidden: !!hidden, updated: Date.now() };
+  h.items.push(it); hbChanged(h, [it]);
+  toast(x.name + (hidden ? ' added, hidden from players.' : ' shared with the room.'));
+  return it;
+}
+function hbSetHidden(id, hidden) {
+  const h = hb(), it = h.items.find(x => x.id === id); if (!it) return;
+  it.hidden = hidden; it.updated = Date.now(); hbChanged(h, [it]);
+  toast(it.e.name + (hidden ? ' is hidden from players.' : ' is now visible to players.'));
+}
+function hbRemove(id) {
+  const h = hb(), it = h.items.find(x => x.id === id); if (!it) return;
+  h.items = h.items.filter(x => x.id !== id); hbChanged(h, []);
+  toast('Removed ' + it.e.name + ' from the room. Players keep copies already on their sheets.');
+}
+function hbGive(id, player) {
+  const it = hb().items.find(x => x.id === id), p = (OBRX.party || []).find(x => x.id === player);
+  if (!it || !p) return;
+  OBRX.api.broadcast.sendMessage(CH_GM, { type: 'hbGive', id: uid(), to: p.id, char: p.s.charId, entry: hbPrep(it), from: OBRX.me.name || 'The GM' }, { destination: 'REMOTE' })
+    .then(() => toast(`${it.e.name} given to ${p.s.char}.`)).catch(() => toast('Couldn\'t reach ' + p.name + ' right now.'));
+}
+function hbOpenEditor(id, kind) {
+  const it = id && hb().items.find(x => x.id === id);
+  let draft;
+  if (it) draft = normalizeEntry(Object.assign(clone(it.e), { id: uid() }));
+  else {
+    draft = newEntry({});
+    if (kind === 'item') draft.item = SEC_DEFAULT.item();
+    if (kind === 'spell') draft.spell = SEC_DEFAULT.spell();
+  }
+  openModal('editor', { eid: draft.id, mid: null, draft, isNew: !it, sugg: null, mtype: HB_MOD[kind || hbKind(draft)], room: it ? it.id : 'new', hidden: !it });
+}
+function hbSaveDraft(m, d) {
+  const x = hbClean(d);
+  if (hbTooBig(x)) { toast('That entry is too long to share. Shorten its full text.'); return; }
+  const h = hb();
+  if (m.room === 'new') { const it = { id: uid(), e: x, hidden: true, updated: Date.now() }; h.items.push(it); hbChanged(h, [it]); toast(x.name + ' added, hidden from players. Show it or give it from here.'); }
+  else { const it = h.items.find(y => y.id === m.room); if (!it) return; it.e = x; it.updated = Date.now(); hbChanged(h, [it]); toast(x.name + ' updated.' + (it.hidden ? '' : ' Players who have it can take the update.')); }
+  openModal('roomhb', {});
+}
+
+/* ---- players: keep a copy of what the GM shows ---- */
+let hbAskT = null, hbAt = 0;
+function hbHello() {
+  if (!hbOn() || hbIsGM()) return; hbAt = Date.now();
+  hbSend({ type: 'hello', from: OBRX.me.id, have: hb().items.map(x => [x.id, x.updated]) });
+}
+function hbReceive(d) {
+  if (!d) return;
+  if (hbIsGM()) {
+    if (d.type !== 'hello' || bgAlive()) return;
+    const vis = hbVisible(hb()), have = new Map(d.have || []);
+    hbSend({ type: 'list', items: vis.map(x => [x.id, x.updated]) });
+    vis.filter(x => !have.has(x.id) || have.get(x.id) < x.updated).forEach(x => hbSend({ type: 'up', item: x }));
+    return;
+  }
+  if (d.type !== 'up' && d.type !== 'list') return;
+  const notice = () => {
+    if (d.type === 'up' && d.item) { const has = Object.values(store.chars).some(c => c.modules.some(m => m.entries.some(e => e.hb && e.hb.id === d.item.id && e.hb.v < d.item.updated))); if (has) toast(`The GM updated ${d.item.e.name}. Tap “GM update” on it to take the changes.`); }
+    if (ui.modal && ui.modal.type === 'fromlib') renderModal();
+    if (!ui.modal || ui.modal.type !== 'editor') render();
+  };
+  if (bgAlive()) { setTimeout(notice, 250); return; }
+  const h = hb();
+  if (d.type === 'up') {
+    const fresh = d.item && !h.items.some(x => x.id === d.item.id);
+    if (hbMerge(h, d.item)) saveHb(h);
+    if (fresh && Date.now() - hbAt > 5000) OBRX.api.notification.show(`The GM shared ${d.item.e.name}. Add it from Grimsheet: Browse → Room homebrew.`, 'INFO').catch(() => { });
+  }
+  else {
+    const m = new Map(d.items || []); h.items = h.items.filter(x => m.has(x.id)); saveHb(h);
+    if (hbMissing(h, d.items)) { clearTimeout(hbAskT); hbAskT = setTimeout(() => { if (hbMissing(hb(), d.items)) hbHello(); }, 1500); }
+  }
+  notice();
+}
+window.addEventListener('storage', ev => { if (ev.key === HBKEY && ui.modal && (ui.modal.type === 'fromlib' || ui.modal.type === 'roomhb')) renderModal(); });
+// a GM update for an entry on this sheet (keeps uses spent, quantity, equipped, on/off, HP)
+function hbUpdateOf(e) { if (!e.hb || !hbOn()) return null; const src = hb().items.find(x => x.id === e.hb.id); return src && src.updated > e.hb.v ? src : null; }
+function hbTakeUpdate(id) {
+  const f = findEntry(id); if (!f) return; const src = hbUpdateOf(f.e); if (!src) return;
+  const old = f.e, e = hbPrep(src); e.id = old.id; e.pinned = old.pinned;
+  if (e.counter && old.counter) e.counter.used = Math.min(old.counter.used || 0, 99);
+  if (e.item && old.item) { e.item.qty = old.item.qty; e.item.equipped = old.item.equipped; }
+  if (e.effect && old.effect) e.effect.active = old.effect.active;
+  if (e.creature && old.creature) e.creature.hp = Math.min(old.creature.hp, e.creature.hpMax);
+  f.m.entries[f.i] = e; save(); render(); toast(e.name + ' updated from the GM\'s version.');
+}
+function hbBadge(e) { return !ui.viewing && hbUpdateOf(e) ? `<button class="chip hbup" data-act="hbupd" data-id="${e.id}" title="The GM changed this entry. Take their version (your uses, quantity and equipped state are kept; your own edits are replaced).">↻ GM update</button>` : ''; }
+
+/* ---- the "Room homebrew" tab in Add to … (players and GM) ---- */
+function hbOnSheet(c, id) { for (const m of c.modules) for (const e of m.entries) if (e.hb && e.hb.id === id) return e; return null; }
+function hbTabHtml(m) {
+  const h = hb(), gm = hbIsGM(), c = C(), list = gm ? h.items : hbVisible(h);
+  const kinds = Object.keys(HB_KIND).filter(k => list.some(x => hbKind(x.e) === k));
+  const rows = kinds.map(k => `<div class="lvl-h">${HB_KIND[k]}s</div>` + list.filter(x => hbKind(x.e) === k).sort((a, b) => a.e.name.localeCompare(b.e.name)).map(x => {
+    const mine = hbOnSheet(c, x.id), upd = mine && mine.hb.v < x.updated, open = ui.hbPeek === x.id;
+    return `<div class="list-i hb-i"><div class="grow"><button class="e-name" data-act="hbpeek" data-v="${esc(x.id)}" style="padding:0"><b>${esc(x.e.name)}</b>${x.hidden ? ' <span class="chip">Hidden</span>' : ''}</button><div class="muted" style="font-size:.85rem">${esc(x.e.short || '')}</div>${open && x.e.text ? `<div class="e-body" style="margin-top:6px">${esc(x.e.text).replace(/\n/g, '<br>')}</div>` : ''}</div>
+      ${upd ? `<button class="btn small primary" data-act="hbupd" data-id="${esc(mine.id)}">Update</button>` : `<button class="btn small ${mine ? '' : 'primary'}" data-act="hbadd" data-v="${esc(x.id)}" data-id="${esc(m.id)}">${mine ? 'Add again' : 'Add'}</button>`}
+      <button class="ico" data-act="hblib" data-v="${esc(x.id)}" title="Save to my library">${ICON.book}</button></div>`;
+  }).join('')).join('');
+  const empty = gm ? '<div class="empty">Nothing shared yet. Share entries from your library, or make new ones, in Room homebrew.</div>' : '<div class="empty">The GM hasn\'t shared any homebrew in this room yet.</div>';
+  return `<div>${rows || empty}</div>${gm ? '<div class="addrow"><button class="btn small" data-act="modal" data-v="roomhb">Manage room homebrew</button></div>' : ''}`;
+}
+
+/* ---- GM: manage the pack ---- */
+function roomHbHtml(m) {
+  const h = hb(), ps = (OBRX.party || []).filter(p => p.role !== 'GM' && p.s && p.s.charId);
+  const items = h.items.slice().sort((a, b) => hbKind(a.e).localeCompare(hbKind(b.e)) || a.e.name.localeCompare(b.e.name));
+  const shared = items.length ? items.map(x => `<div class="list-i hb-i ${x.hidden ? 'hb-hidden' : ''}"><div class="grow"><b>${esc(x.e.name)}</b> <span class="chip">${HB_KIND[hbKind(x.e)]}</span>${x.hidden ? ' <span class="chip">Hidden</span>' : ''}<div class="muted" style="font-size:.85rem">${esc(x.e.short || '')}</div>
+      ${ui.hbGiveOpen === x.id ? `<div class="inline" style="margin-top:6px">${ps.length ? ps.map(p => `<button class="btn small" data-act="hbgiveto" data-v="${esc(x.id)}" data-player="${esc(p.id)}">${esc(p.s.char)} <span class="muted">${esc(p.name)}</span></button>`).join('') : '<span class="muted">No players with Grimsheet open in this room.</span>'}<button class="btn small" data-act="hbgive" data-v="">Cancel</button></div>` : ''}</div>
+      <button class="btn small" data-act="hbhide" data-v="${esc(x.id)}" data-on="${x.hidden ? 0 : 1}" title="${x.hidden ? 'Players can\'t see it. Tap to show it to them.' : 'Players can see and add it. Tap to hide it.'}">${x.hidden ? 'Show' : 'Hide'}</button>
+      <button class="btn small" data-act="hbgive" data-v="${esc(x.id)}" title="Add it to a player's sheet now">Give…</button>
+      <button class="ico" data-act="hbedit" data-v="${esc(x.id)}" title="Edit">${ICON.edit}</button>
+      <button class="ico ${ui.confirm === 'hbdel-' + x.id ? 'danger' : ''}" data-act="hbdel" data-v="${esc(x.id)}" title="${ui.confirm === 'hbdel-' + x.id ? 'Tap again to remove' : 'Remove from the room'}">${ICON.trash}</button></div>`).join('')
+    : '<div class="empty">Nothing here yet. Share entries from your library or make new ones below.</div>';
+  const inPack = new Set(h.items.map(x => x.e.name + '|' + (x.e.text || '').length));
+  const lib = ui.hbLibOpen ? (library.length ? library.map((e, i) => `<div class="list-i"><div class="grow"><b>${esc(e.name)}</b> <span class="chip">${HB_KIND[hbKind(e)]}</span><div class="muted" style="font-size:.85rem">${esc(e.short || '')}</div></div>
+      ${inPack.has(e.name + '|' + (e.text || '').length) ? '<span class="muted" style="font-size:.85rem">Shared ✓</span>' : `<button class="btn small primary" data-act="hbshare" data-i="${i}">Share</button><button class="btn small" data-act="hbshare" data-i="${i}" data-on="1" title="Add it hidden: players can't see it until you show it or give it">Add hidden</button>`}</div>`).join('')
+    : '<div class="empty">Your library is empty. Open any entry and choose <b>Save to library</b>, or import a library pack.</div>') : '';
+  return dlgHead('Room homebrew') + `<div class="dlg-b" style="gap:10px">
+    <div class="muted" style="font-size:.88rem">Players see visible entries under <b>Browse → Room homebrew</b> in any list on their sheet and add them in one tap. Hidden ones stay with you until you show them or give them to someone, e.g. loot.</div>
+    <div class="sub-h" style="margin:0">In this room (${h.items.length})</div>
+    <div>${shared}</div>
+    <div class="sub-h" style="margin:4px 0 0">Add</div>
+    <div class="addrow" style="margin:0"><button class="btn small ${ui.hbLibOpen ? 'on' : ''}" data-act="hblibopen">From my library (${library.length})</button><button class="btn small" data-act="hbnew" data-v="item">New item</button><button class="btn small" data-act="hbnew" data-v="spell">New spell</button><button class="btn small" data-act="hbnew" data-v="feature">New feature</button></div>
+    ${lib ? `<div>${lib}</div>` : ''}
+  </div><div class="dlg-f"><button class="btn primary" data-act="close">Done</button></div>`;
+}
+// actions; returns true when handled
+function hbAct(act, el, v, c, id) {
+  switch (act) {
+    case 'hbpeek': ui.hbPeek = ui.hbPeek === v ? null : v; renderModal(); return true;
+    case 'hbadd': {
+      const src = hb().items.find(x => x.id === v); if (!src) return true;
+      const pref = c.modules.find(x => x.id === id), e = hbPrep(src), m = hbPlace(c, e, pref);
+      save(); render(); renderModal(); toast(`${e.name} added to ${m.title}.`); return true;
+    }
+    case 'hblib': { const src = hb().items.find(x => x.id === v); if (!src) return true; const e = clone(src.e); delete e.id; library.push(e); saveLib(); toast(e.name + ' saved to your library.'); renderModal(); return true; }
+    case 'hbupd': hbTakeUpdate(id); if (ui.modal && ui.modal.type === 'fromlib') renderModal(); return true;
+    case 'hbhide': hbSetHidden(v, el.dataset.on === '1'); return true;
+    case 'hbgive': ui.hbGiveOpen = v || null; renderModal(); return true;
+    case 'hbgiveto': ui.hbGiveOpen = null; hbGive(v, el.dataset.player); renderModal(); return true;
+    case 'hbedit': hbOpenEditor(v); return true;
+    case 'hbnew': hbOpenEditor(null, v); return true;
+    case 'hbdel': if (ui.confirm !== 'hbdel-' + v) { ui.confirm = 'hbdel-' + v; renderModal(); return true; } ui.confirm = null; hbRemove(v); return true;
+    case 'hblibopen': ui.hbLibOpen = !ui.hbLibOpen; renderModal(); return true;
+    case 'hbshare': { const e = library[+el.dataset.i]; if (e) hbAddEntry(e, el.dataset.on === '1'); return true; }
+  }
+  return false;
+}
+// a given entry arriving with the panel open and no background page
+function hbReceiveGive(d) {
+  const ch = store.chars[d.char] || C(); if (!d.entry) return;
+  const m = hbPlace(ch, normalizeEntry(d.entry)); save(); render();
+  OBRX.api.notification.show(`${d.from} gives ${ch.name} ${d.entry.name} (added to ${m.title}).`, 'SUCCESS').catch(() => { });
+}
+
 /* ---------- GM MODE: a GM who isn't playing a character ---------- */
 // In Owlbear, a GM without a character of their own gets GM tools instead of a sheet: Encounter, Party
 // and Notes, no example character, and nothing published to the party. "I'm also playing a character"
@@ -4665,7 +4879,7 @@ function gmTopHtml() {
 function renderGmParty() {
   const ps = (OBRX.party || []).filter(p => p.role !== 'GM'), others = (OBRX.players || []).filter(p => p.role !== 'GM' && !ps.some(x => x.id === p.id));
   const head = `<div class="enc-head"><div class="enc-title"><b>Party</b><span class="muted" style="font-size:.85rem">${ps.length} with Grimsheet open</span></div>
-    <div class="enc-tools"><button class="btn small primary" data-act="groupsave" ${ps.length ? '' : 'disabled'}>Ask for a save</button><button class="btn small" data-act="callrest" data-v="short" ${ps.length ? '' : 'disabled'}>Call a short rest</button><button class="btn small" data-act="callrest" data-v="long" ${ps.length ? '' : 'disabled'}>Call a long rest</button><button class="btn small" data-act="askinit" ${ps.length ? '' : 'disabled'}>Ask for initiative</button></div></div>`;
+    <div class="enc-tools"><button class="btn small primary" data-act="groupsave" ${ps.length ? '' : 'disabled'}>Ask for a save</button><button class="btn small" data-act="callrest" data-v="short" ${ps.length ? '' : 'disabled'}>Call a short rest</button><button class="btn small" data-act="callrest" data-v="long" ${ps.length ? '' : 'disabled'}>Call a long rest</button><button class="btn small" data-act="askinit" ${ps.length ? '' : 'disabled'}>Ask for initiative</button><button class="btn small" data-act="modal" data-v="roomhb">Room homebrew (${hb().items.length})</button></div></div>`;
   const cards = ps.map(p => {
     const s = p.s, pct = s.max ? Math.max(0, Math.min(100, s.hp / s.max * 100)) : 0, d = s.death || { s: 0, f: 0 };
     const state = s.dead ? '<span class="chip bad">Dead</span>' : s.down ? `<span class="chip bad">Down</span><span class="muted mono" title="Death saves">✓${d.s} ✗${d.f}</span>` : s.hp <= s.max / 2 ? '<span class="chip warn">Bloodied</span>' : '';
@@ -5708,7 +5922,7 @@ function renderEntries(m) {
 }
 function addRow(m) {
   return `<div class="addrow"><button class="btn small" data-act="newentry" data-id="${m.id}">+ Add</button>
-    <button class="btn small" data-act="modal" data-v="fromlib" data-id="${m.id}">${ICON.book.replace('<svg', '<svg width="13" height="13" style="vertical-align:-2px"')} Browse SRD &amp; library</button></div>`;
+    <button class="btn small" data-act="modal" data-v="fromlib" data-id="${m.id}">${ICON.book.replace('<svg', '<svg width="13" height="13" style="vertical-align:-2px"')} Browse SRD &amp; library${hbOn() && !hbIsGM() && hbVisible(hb()).length ? ` <span class="chip">${hbVisible(hb()).length} from GM</span>` : ''}</button></div>`;
 }
 
 function counterHtml(e) {
@@ -5766,7 +5980,7 @@ function entryRow(e, m, compact) {
     <div class="e-top">
       ${hasBody ? `<button class="ico" data-act="toggle" data-id="${e.id}" title="${open ? 'Hide' : 'Show'} full text" aria-expanded="${open}">${open ? ICON.chev : ICON.chevR}</button>` : '<span style="width:28px;flex:none"></span>'}
       <button class="e-name" data-act="toggle" data-id="${e.id}"><b>${esc(e.name)} ${chips}</b>${e.short ? `<span class="short">${esc(e.short)}</span>` : ''}</button>
-      <div class="e-tools">
+      <div class="e-tools">${hbBadge(e)}
         <button class="ico ${e.pinned ? 'on' : ''}" data-act="pin" data-id="${e.id}" title="${e.pinned ? 'Unpin' : 'Pin to Quick Actions'}">${e.pinned ? ICON.starOn : ICON.star}</button>
         ${ed ? `<button class="ico" data-act="emove" data-id="${e.id}" data-v="-1" title="Move up">${ICON.up}</button><button class="ico" data-act="emove" data-id="${e.id}" data-v="1" title="Move down">${ICON.down}</button>` : ''}
         <button class="ico" data-act="edit" data-id="${e.id}" title="Edit">${ICON.edit}</button>
@@ -5883,6 +6097,7 @@ function renderModal() {
   else if (m.type === 'noteedit') h = noteEditorHtml(m);
   else if (m.type === 'groupsave') h = groupSaveHtml(m);
   else if (m.type === 'search') h = searchHtml(m);
+  else if (m.type === 'roomhb') h = roomHbHtml(m);
   else if (m.type === 'viewwait') h = dlgHead('Opening ' + (m.name || 'sheet')) + `<div class="dlg-b">${m.failed ? `<div class="banner warn" style="margin:0">${esc(m.owner || 'The player')}'s Grimsheet didn't answer. They need to be in the room with Grimsheet 1.3 or newer installed.</div>` : `<div class="sugg"><h3>Asking ${esc(m.owner || 'the player')}'s Grimsheet…</h3><span>The sheet opens read-only in a moment.</span></div>`}</div><div class="dlg-f"><button class="btn" data-act="close">${m.failed ? 'Close' : 'Cancel'}</button></div>`;
   $('#ovl').innerHTML = `<div class="ovl" data-act="ovlbg"><div class="dlg" role="dialog" aria-modal="true">${h}</div></div>`;
   $('#ovl .ovl').scrollTop = keepScroll;
@@ -5920,7 +6135,8 @@ function browseHtml(m) {
   const mod = C().modules.find(x => x.id === m.id);
   const tab = m.tab || 'srd';
   const head = dlgHead('Add to ' + (mod ? mod.title : 'sheet')) + `<div class="dlg-b" style="gap:10px">
-    <div class="tabs" style="margin:0"><button class="${tab === 'srd' ? 'on' : ''}" data-act="btab" data-v="srd">SRD 5.2</button><button class="${tab === 'lib' ? 'on' : ''}" data-act="btab" data-v="lib">My library (${library.length})</button></div>`;
+    <div class="tabs" style="margin:0"><button class="${tab === 'srd' ? 'on' : ''}" data-act="btab" data-v="srd">SRD 5.2</button><button class="${tab === 'lib' ? 'on' : ''}" data-act="btab" data-v="lib">My library (${library.length})</button>${hbOn() ? `<button class="${tab === 'room' ? 'on' : ''}" data-act="btab" data-v="room">Room homebrew (${(hbIsGM() ? hb().items : hbVisible(hb())).length})</button>` : ''}</div>`;
+  if (tab === 'room') return head + hbTabHtml(m) + '</div>';
   if (tab === 'lib') return head + (library.length ? `<div>${library.map((e, i) => `<div class="list-i"><div class="grow"><b>${esc(e.name)}</b><div class="muted" style="font-size:.85rem">${esc(e.short || '')}</div></div><button class="btn small primary" data-act="libadd" data-i="${i}" data-id="${m.id}">Add</button><button class="ico" data-act="libdel" data-i="${i}" title="Remove from library">${ICON.trash}</button></div>`).join('')}</div>`
     : '<div class="empty">Your library is empty. Open any entry, then choose <b>Save to library</b> to reuse it on other characters.</div>') +
     `<div class="addrow"><button class="btn small" data-act="libexport">Export library</button><button class="btn small" data-act="modal" data-v="import" data-lib="1">Import library pack</button></div></div>`;
@@ -6099,7 +6315,7 @@ function sec(key, title, why, on, body) {
 function editorHtml(m) {
   const d = m.draft;
   const isItem = !!d.item, isSpell = !!d.spell, isCr = !!d.creature;
-  let h = dlgHead(m.isNew ? 'New entry' : 'Edit ' + (d.name || 'entry')) + `<div class="dlg-b">
+  let h = dlgHead((m.room ? 'Room homebrew: ' : '') + (m.isNew ? 'New entry' : 'Edit ' + (d.name || 'entry'))) + `<div class="dlg-b">${m.room ? `<div class="muted" style="font-size:.85rem">${m.room === 'new' ? 'Saved hidden from players; show it or give it from Room homebrew.' : 'Players who added it get a “GM update” button to take your changes.'}</div>` : ''}
     <div class="frow">${fld('Name', 'name', d.name)}
       <label class="fld"><span>Action type</span><select id="d-action" data-d="tags.action"><option value="">None</option>${[['action', 'Action'], ['bonus', 'Bonus action'], ['reaction', 'Reaction'], ['free', 'Free / other']].map(([v, l]) => `<option value="${v}" ${d.tags.action === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
     ${fld('Short description', 'short', d.short, { hint: 'One line you can glance at during play.', ph: 'What it does, in a sentence' })}
@@ -6201,7 +6417,8 @@ document.addEventListener('click', ev => {
   const c = C(); const ed = ui.mode === 'edit';
   const rerender = () => { save(); render(); };
   const f = id ? findEntry(id) : null;
-  if (!['edel', 'delchar', 'mdel', 'luundo', 'encclear', 'mondel', 'notedel', 'encdel'].includes(act)) ui.confirm = null;
+  if (!['edel', 'delchar', 'mdel', 'luundo', 'encclear', 'mondel', 'notedel', 'encdel', 'hbdel'].includes(act)) ui.confirm = null;
+  if (act.startsWith('hb') && hbAct(act, el, v, c, id)) return;
   switch (act) {
     case 'mode': ui.mode = v; render(); break;
     case 'viewend': ui.viewing = null; ui.open.clear(); render(); if (IN_OBR) refreshLinks(); break;
@@ -6474,7 +6691,7 @@ document.addEventListener('click', ev => {
     case 'applysugg': { const d = ui.modal.draft; const n = ui.modal.sugg.filter((s, k) => document.getElementById('sg-' + k)?.checked); n.forEach(s => s.apply(d)); ui.modal.sugg = null; renderModal(); toast('Applied ' + n.length + ' suggestion' + (n.length === 1 ? '' : 's') + '. Check the sections below.'); break; }
     case 'dismisssugg': ui.modal.sugg = null; renderModal(); break;
     case 'esave': saveEditor(); break;
-    case 'edel': { if (ui.confirm !== 'edel') { ui.confirm = 'edel'; renderModal(); break; } const fe = findEntry(ui.modal.eid); if (fe) fe.m.entries.splice(fe.i, 1); ui.confirm = null; closeModal(); rerender(); break; }
+    case 'edel': { if (ui.confirm !== 'edel') { ui.confirm = 'edel'; renderModal(); break; } if (ui.modal.room) { ui.confirm = null; hbRemove(ui.modal.room); openModal('roomhb', {}); break; } const fe = findEntry(ui.modal.eid); if (fe) fe.m.entries.splice(fe.i, 1); ui.confirm = null; closeModal(); rerender(); break; }
     case 'libsave': { const e = clone(ui.modal.draft); delete e.id; e.pinned = false; if (e.counter) e.counter.used = 0; library.push(e); saveLib(); toast(e.name + ' saved to your library.'); break; }
   }
 });
@@ -6501,6 +6718,7 @@ function saveEditor() {
   if (d.spell) d.spell.level = Math.max(0, Math.min(9, +d.spell.level || 0));
   if (d.creature) { d.creature.hpMax = +d.creature.hpMax || 0; d.creature.hp = Math.min(+d.creature.hp || 0, d.creature.hpMax); }
   d.damage = d.damage.filter(p => p.dice || p.mod);
+  if (m.room) return hbSaveDraft(m, d);
   const mod = C().modules.find(x => x.id === m.mid);
   const f = findEntry(d.id);
   if (f) f.m.entries[f.i] = d; else mod.entries.push(d);
