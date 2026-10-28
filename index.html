@@ -381,6 +381,12 @@ select.ed-inline{width:auto}
 .tray .fu.rr .muted{font-size:.82rem}
 .rrl{font-size:.8rem;display:flex;flex-direction:column;gap:1px;margin-top:2px;color:var(--ink)}
 .rrchip{color:var(--accent);border-color:var(--accent)}
+.tokgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px}
+.tokpick{display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 6px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);cursor:pointer;font:inherit;min-width:0}
+.tokpick:hover:not(:disabled){border-color:var(--accent)}.tokpick:disabled{opacity:.55;cursor:default}.tokpick.on{border-color:var(--accent)}
+.tokpick img,.tokpick .noimg{width:56px;height:56px;object-fit:contain;border-radius:6px}.tokpick .noimg{display:grid;place-items:center;background:var(--line);color:var(--muted)}
+.tokpick .tp-n{font-weight:600;font-size:.85rem;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.tokpick .tp-s{font-size:.75rem;color:var(--muted);min-height:1em}
+.btn.tlink{padding:2px 8px;font-size:.78rem}.btn.tlink svg{width:12px;height:12px;vertical-align:-2px}
 .chip.hbup{color:var(--accent);border-color:var(--accent);cursor:pointer;background:transparent;white-space:nowrap}
 .hb-hidden b{opacity:.7}
 .hb-i .e-name{background:none;border:0;text-align:left;cursor:pointer;color:inherit;font:inherit}
@@ -2623,7 +2629,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.20.0';
+const APP_VERSION = '1.21.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -3526,6 +3532,50 @@ function monActRow(m, list, a, i) {
       if (a.uses) btns.push(`<span class="boxes">${Array.from({ length: a.uses }, (_, k) => `<button class="box ${k < used ? 'used' : ''}" data-act="monuse" data-id="${m.id}" data-v="${ref}" data-i="${k}" aria-label="Use ${k + 1}"></button>`).join('')}</span>`);
       return `<div class="mact"><button class="mname" data-act="montxt" data-id="${m.id}" data-v="${ref}" title="${esc(a.text)}">${esc(a.name)}</button>${btns.join('')}</div>${ui.monTxt === m.id + ref ? `<div class="e-body" style="margin:2px 0 6px">${esc(a.text)}</div>` : ''}`;
 }
+/* ---- link a monster to a token from the panel: pick from a list, or select it on the map ---- */
+function startLinkPick(inst) {
+  ui.linkPick = inst; openModal('toklink', { inst, loading: true });
+  OBRX.api.scene.items.getItems(it => it.layer === 'CHARACTER' || it.layer === 'MOUNT').then(items => {
+    if (!ui.modal || ui.modal.type !== 'toklink' || ui.modal.inst !== inst) return;
+    items.forEach(it => { OBRX.tokCache[it.id] = it; });
+    ui.modal.rows = items.map(it => {
+      const ml = it.metadata && it.metadata[MONLINK], pl = it.metadata && it.metadata[LINK];
+      const other = ml && ml.room === roomKey() && ml.inst !== inst ? findMon(ml.inst) : null;
+      return { id: it.id, name: tokenLabel(it), img: tokImg(it), hidden: it.visible === false, mine: !!(ml && ml.inst === inst), pc: pl ? (pl.name || 'a player') : '', other: other ? other.m.name : '' };
+    }).sort((a, b) => (a.pc ? 1 : 0) - (b.pc ? 1 : 0) || (a.other || a.mine ? 1 : 0) - (b.other || b.mine ? 1 : 0) || a.name.localeCompare(b.name));
+    ui.modal.loading = false; renderModal();
+  }).catch(() => { if (ui.modal && ui.modal.type === 'toklink') { ui.modal.loading = false; ui.modal.rows = []; renderModal(); } });
+}
+function tokLinkHtml(md) {
+  const f = findMon(md.inst), name = f ? f.m.name : 'monster';
+  const rows = md.rows || [];
+  return dlgHead('Link ' + name + ' to a token') + `<div class="dlg-b" style="gap:8px">
+    <div class="sugg" style="margin:0"><h3>Select the token on the map</h3><span>…or pick it below. The token takes ${esc(name)}'s name, HP and AC.</span></div>
+    ${md.loading ? '<div class="muted">Looking at the map…</div>' : rows.length ? `<div class="tokgrid">${rows.map(r => `<button class="tokpick ${r.mine ? 'on' : ''}" data-act="monlinkto" data-v="${esc(r.id)}" ${r.pc || r.mine ? 'disabled' : ''} title="${r.pc ? 'Linked to ' + esc(r.pc) + '\'s character' : r.mine ? 'Already linked' : r.other ? 'Now linked to ' + esc(r.other) + '; linking moves it' : 'Link this token'}">
+        ${r.img ? `<img src="${esc(r.img)}" alt="">` : '<span class="noimg">?</span>'}<span class="tp-n">${esc(r.name)}</span>
+        <span class="tp-s">${r.pc ? 'Player' : r.mine ? 'Linked ✓' : r.other ? esc(r.other) : r.hidden ? 'Hidden' : ''}</span></button>`).join('')}</div>` : '<div class="empty">No tokens on the map. Add the monster\'s token to the scene first.</div>'}
+  </div><div class="dlg-f"><button class="btn" data-act="close">Cancel</button></div>`;
+}
+async function linkMonToken(inst, itemId) {
+  const f = findMon(inst); if (!f) return;
+  const m = f.m;
+  try {
+    await OBRX.api.scene.items.updateItems([itemId], drafts => { for (const d of drafts) { d.metadata[MONLINK] = { room: roomKey(), inst: m.id, name: m.name }; d.metadata[BUBBLES] = Object.assign({}, d.metadata[BUBBLES] || {}, { health: m.hp, 'max health': m.max, 'temporary health': m.temp || 0, 'armor class': m.ac, hide: (SETTINGS.monHp || 'hidden') !== 'exact' }); d.name = m.name; } });
+  } catch (e) { toast('Couldn\'t link that token.'); return; }
+  ui.linkPick = null; if (ui.modal && ui.modal.type === 'toklink') closeModal();
+  await refreshLinks(); renderGrid(); toast(m.name + ' is linked to its token.');
+}
+async function pickLinkFromMap(id) {
+  let it; try { [it] = await OBRX.api.scene.items.getItems([id]); } catch (e) { return; }
+  if (!it || !(it.layer === 'CHARACTER' || it.layer === 'MOUNT')) { toast('Select a creature token (on the Character layer).'); return; }
+  if (it.metadata && it.metadata[LINK]) { toast('That token belongs to a player\'s character. Select another.'); return; }
+  linkMonToken(ui.linkPick, id);
+}
+async function unlinkMon(inst) {
+  const ids = (OBRX.monTokens[inst] || []).map(i => i.id); if (!ids.length) return;
+  try { await OBRX.api.scene.items.updateItems(ids, drafts => { for (const d of drafts) delete d.metadata[MONLINK]; }); } catch (e) { return; }
+  await refreshLinks(); renderGrid(); toast('Token unlinked.');
+}
 function monCard(m, cur) {
   const t = tplOf(m), open = ui.monOpen && ui.monOpen.has(m.id), edit = ui.monEdit === m.id;
   const rowKey = m.solo ? 'm:' + m.id : 'g:' + m.tpl, isCur = cur === rowKey;
@@ -3554,9 +3604,10 @@ function monCard(m, cur) {
       <label>AC <input class="ed-inline" id="ma-${m.id}" data-monf="ac" data-id="${m.id}" value="${m.ac}" inputmode="numeric"></label>
       <label class="muted"><input type="checkbox" id="ms-${m.id}" data-monf="solo" data-id="${m.id}" ${m.solo ? 'checked' : ''}> Rolls its own initiative</label>
       ${t.hpDice ? `<button class="btn small" data-act="monrollhp" data-id="${m.id}">Roll HP (${esc(t.hpDice)})</button>` : ''}
+      ${IN_OBR && OBRX.ready ? `<button class="btn small" data-act="monlinkpick" data-id="${m.id}">${tok ? 'Link another token' : 'Link token'}</button>${tok ? `<button class="btn small" data-act="monunlink" data-id="${m.id}">Unlink token${tok > 1 ? 's' : ''}</button>` : ''}` : ''}
     </div>` : '';
   return `<section class="mcard ${isCur ? 'cur' : ''} ${m.hp <= 0 ? 'down' : ''} ${ui.monFocus === m.id ? 'focus' : ''}" data-inst="${m.id}">
-    <div class="mhead">${tokImg((OBRX.monTokens[m.id] || [])[0]) ? `<img class="tokimg sm" src="${esc(tokImg(OBRX.monTokens[m.id][0]))}" alt="" data-dblfocus="mon|${m.id}" title="Double-click to find its token">` : ''}<b class="mtitle" data-dblfocus="mon|${m.id}" title="${tok ? 'Double-click to find its token' : ''}">${esc(m.name)}</b><span class="chip">AC ${m.ac}</span>${tok ? `<span class="chip tag-action" title="Linked to ${tok} token${tok > 1 ? 's' : ''}">Token</span>${locateBtn('focus', `data-v="mon|${m.id}"`, 'Find its token on the map')}` : ''}${IN_OBR ? tgtMini() : ''}
+    <div class="mhead">${tokImg((OBRX.monTokens[m.id] || [])[0]) ? `<img class="tokimg sm" src="${esc(tokImg(OBRX.monTokens[m.id][0]))}" alt="" data-dblfocus="mon|${m.id}" title="Double-click to find its token">` : ''}<b class="mtitle" data-dblfocus="mon|${m.id}" title="${tok ? 'Double-click to find its token' : ''}">${esc(m.name)}</b><span class="chip">AC ${m.ac}</span>${tok ? `<span class="chip tag-action" title="Linked to ${tok} token${tok > 1 ? 's' : ''}">Token</span>${locateBtn('focus', `data-v="mon|${m.id}"`, 'Find its token on the map')}` : IN_OBR && OBRX.ready ? `<button class="btn small tlink ${ui.linkPick === m.id ? 'on' : ''}" data-act="monlinkpick" data-id="${m.id}" title="Pick its token from a list, or select it on the map">${ICON.target} Link token</button>` : ''}${IN_OBR ? tgtMini() : ''}
       <span style="flex:1"></span>
       <button class="ico" data-act="monedit" data-id="${m.id}" title="Edit name, HP, AC">${ICON.edit}</button>
       <button class="ico" data-act="monopen" data-id="${m.id}" title="${open ? 'Hide' : 'Show'} stat block">${open ? ICON.chev : ICON.chevR}</button>
@@ -3768,7 +3819,8 @@ function tokenLabel(it) {
 const isCreature = it => it && (it.layer === 'CHARACTER' || it.layer === 'MOUNT') && (OBRX.me.role === 'GM' || it.visible !== false);
 async function onSelection(sel) {
   if (!OBRX.ready || !sel || sel.length !== 1) return;
-  const id = sel[0]; if (ui.target && ui.target.id === id) return;
+  const id = sel[0];
+  if (ui.linkPick && OBRX.me.role === 'GM') return pickLinkFromMap(id); if (ui.target && ui.target.id === id) return;
   if (OBRX.me.role !== 'GM' && myTokenIds().includes(id)) return;
   let it; try { [it] = await OBRX.api.scene.items.getItems([id]); } catch (e) { return; }
   if (!isCreature(it)) return;
@@ -6076,7 +6128,7 @@ function applyHp(v, raw) {
 
 /* ---------- modals ---------- */
 function openModal(type, data = {}) { ui.modal = Object.assign({ type }, data); renderModal(); }
-function closeModal() { ui.modal = null; $('#ovl').innerHTML = ''; document.body.style.overflow = ''; }
+function closeModal() { if (ui.modal && ui.modal.type === 'toklink') ui.linkPick = null; ui.modal = null; $('#ovl').innerHTML = ''; document.body.style.overflow = ''; }
 function renderModal() {
   const m = ui.modal; if (!m) return closeModal();
   document.body.style.overflow = 'hidden';
@@ -6098,6 +6150,7 @@ function renderModal() {
   else if (m.type === 'groupsave') h = groupSaveHtml(m);
   else if (m.type === 'search') h = searchHtml(m);
   else if (m.type === 'roomhb') h = roomHbHtml(m);
+  else if (m.type === 'toklink') h = tokLinkHtml(m);
   else if (m.type === 'viewwait') h = dlgHead('Opening ' + (m.name || 'sheet')) + `<div class="dlg-b">${m.failed ? `<div class="banner warn" style="margin:0">${esc(m.owner || 'The player')}'s Grimsheet didn't answer. They need to be in the room with Grimsheet 1.3 or newer installed.</div>` : `<div class="sugg"><h3>Asking ${esc(m.owner || 'the player')}'s Grimsheet…</h3><span>The sheet opens read-only in a moment.</span></div>`}</div><div class="dlg-f"><button class="btn" data-act="close">${m.failed ? 'Close' : 'Cancel'}</button></div>`;
   $('#ovl').innerHTML = `<div class="ovl" data-act="ovlbg"><div class="dlg" role="dialog" aria-modal="true">${h}</div></div>`;
   $('#ovl .ovl').scrollTop = keepScroll;
@@ -6643,6 +6696,9 @@ document.addEventListener('click', ev => {
     case 'monleg': { const m = enc().mons.find(x => x.id === id); if (!m) break; m.leg = i < m.leg ? i : i + 1; saveEnc({ quiet: true }); renderGrid(); break; }
     case 'montxt': ui.monTxt = ui.monTxt === id + v ? null : id + v; renderGrid(); break;
     case 'moncheck': case 'monsave': { const m = enc().mons.find(x => x.id === id); if (m) monCheck(m, v, act === 'monsave'); break; }
+    case 'monlinkpick': startLinkPick(id); break;
+    case 'monlinkto': linkMonToken(ui.linkPick, v); break;
+    case 'monunlink': unlinkMon(id); break;
     case 'monedit': ui.monEdit = ui.monEdit === id ? null : id; renderGrid(); break;
     case 'monopen': ui.monOpen = ui.monOpen || new Set(); if (ui.monOpen.has(id)) ui.monOpen.delete(id); else ui.monOpen.add(id); renderGrid(); break;
     case 'mondel': { if (ui.confirm !== 'mondel-' + id) { ui.confirm = 'mondel-' + id; renderGrid(); break; } ui.confirm = null; const e = enc(); e.mons = e.mons.filter(x => x.id !== id); saveEnc(); renderGrid(); break; }
