@@ -2629,7 +2629,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.21.0';
+const APP_VERSION = '1.21.1';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -3535,25 +3535,47 @@ function monActRow(m, list, a, i) {
 /* ---- link a monster to a token from the panel: pick from a list, or select it on the map ---- */
 function startLinkPick(inst) {
   ui.linkPick = inst; openModal('toklink', { inst, loading: true });
-  OBRX.api.scene.items.getItems(it => it.layer === 'CHARACTER' || it.layer === 'MOUNT').then(items => {
+  OBRX.api.scene.items.getItems(it => it.layer === 'CHARACTER' || it.layer === 'MOUNT').then(async items => {
+    const area = await viewArea();
     if (!ui.modal || ui.modal.type !== 'toklink' || ui.modal.inst !== inst) return;
+    const inside = it => !area || !it.position || (it.position.x >= area.min.x && it.position.x <= area.max.x && it.position.y >= area.min.y && it.position.y <= area.max.y);
     items.forEach(it => { OBRX.tokCache[it.id] = it; });
     ui.modal.rows = items.map(it => {
       const ml = it.metadata && it.metadata[MONLINK], pl = it.metadata && it.metadata[LINK];
       const other = ml && ml.room === roomKey() && ml.inst !== inst ? findMon(ml.inst) : null;
-      return { id: it.id, name: tokenLabel(it), img: tokImg(it), hidden: it.visible === false, mine: !!(ml && ml.inst === inst), pc: pl ? (pl.name || 'a player') : '', other: other ? other.m.name : '' };
+      return { id: it.id, name: tokenLabel(it), img: tokImg(it), hidden: it.visible === false, mine: !!(ml && ml.inst === inst), pc: pl ? (pl.name || 'a player') : '', other: other ? other.m.name : '', away: !inside(it) };
     }).sort((a, b) => (a.pc ? 1 : 0) - (b.pc ? 1 : 0) || (a.other || a.mine ? 1 : 0) - (b.other || b.mine ? 1 : 0) || a.name.localeCompare(b.name));
     ui.modal.loading = false; renderModal();
   }).catch(() => { if (ui.modal && ui.modal.type === 'toklink') { ui.modal.loading = false; ui.modal.rows = []; renderModal(); } });
 }
+// the part of the scene the GM is looking at: the map under the middle of the view (a scene can hold
+// several maps), or else what's on screen. Null when Owlbear can't say, and then every token is listed.
+async function viewArea() {
+  try {
+    const vp = OBRX.api.viewport, w = await vp.getWidth(), h = await vp.getHeight();
+    const a = await vp.inverseTransformPoint({ x: 0, y: 0 }), b = await vp.inverseTransformPoint({ x: w, y: h });
+    const view = { min: { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y) }, max: { x: Math.max(a.x, b.x), y: Math.max(a.y, b.y) } };
+    const c = { x: (view.min.x + view.max.x) / 2, y: (view.min.y + view.max.y) / 2 };
+    const maps = await OBRX.api.scene.items.getItems(it => it.layer === 'MAP');
+    let best = null, bestArea = 0;
+    for (const m of maps) {
+      const bd = await OBRX.api.scene.items.getItemBounds([m.id]);
+      if (c.x >= bd.min.x && c.x <= bd.max.x && c.y >= bd.min.y && c.y <= bd.max.y) return { min: bd.min, max: bd.max };
+      const ov = Math.max(0, Math.min(bd.max.x, view.max.x) - Math.max(bd.min.x, view.min.x)) * Math.max(0, Math.min(bd.max.y, view.max.y) - Math.max(bd.min.y, view.min.y));
+      if (ov > bestArea) { bestArea = ov; best = bd; }
+    }
+    return best ? { min: best.min, max: best.max } : view;
+  } catch (e) { return null; }
+}
 function tokLinkHtml(md) {
   const f = findMon(md.inst), name = f ? f.m.name : 'monster';
-  const rows = md.rows || [];
+  const all = md.rows || [], away = all.filter(r => r.away).length, rows = md.showAll ? all : all.filter(r => !r.away);
   return dlgHead('Link ' + name + ' to a token') + `<div class="dlg-b" style="gap:8px">
     <div class="sugg" style="margin:0"><h3>Select the token on the map</h3><span>…or pick it below. The token takes ${esc(name)}'s name, HP and AC.</span></div>
     ${md.loading ? '<div class="muted">Looking at the map…</div>' : rows.length ? `<div class="tokgrid">${rows.map(r => `<button class="tokpick ${r.mine ? 'on' : ''}" data-act="monlinkto" data-v="${esc(r.id)}" ${r.pc || r.mine ? 'disabled' : ''} title="${r.pc ? 'Linked to ' + esc(r.pc) + '\'s character' : r.mine ? 'Already linked' : r.other ? 'Now linked to ' + esc(r.other) + '; linking moves it' : 'Link this token'}">
         ${r.img ? `<img src="${esc(r.img)}" alt="">` : '<span class="noimg">?</span>'}<span class="tp-n">${esc(r.name)}</span>
-        <span class="tp-s">${r.pc ? 'Player' : r.mine ? 'Linked ✓' : r.other ? esc(r.other) : r.hidden ? 'Hidden' : ''}</span></button>`).join('')}</div>` : '<div class="empty">No tokens on the map. Add the monster\'s token to the scene first.</div>'}
+        <span class="tp-s">${r.pc ? 'Player' : r.mine ? 'Linked ✓' : r.other ? esc(r.other) : r.hidden ? 'Hidden' : r.away ? 'Elsewhere' : ''}</span></button>`).join('')}</div>` : `<div class="empty">${away ? 'No tokens on the map you\'re looking at.' : 'No tokens in this scene. Add the monster\'s token first.'}</div>`}
+    ${away ? `<div><button class="btn small" data-act="toklinkall">${md.showAll ? 'Only this map' : `Show ${away} token${away === 1 ? '' : 's'} elsewhere in the scene`}</button></div>` : ''}
   </div><div class="dlg-f"><button class="btn" data-act="close">Cancel</button></div>`;
 }
 async function linkMonToken(inst, itemId) {
@@ -6698,6 +6720,7 @@ document.addEventListener('click', ev => {
     case 'moncheck': case 'monsave': { const m = enc().mons.find(x => x.id === id); if (m) monCheck(m, v, act === 'monsave'); break; }
     case 'monlinkpick': startLinkPick(id); break;
     case 'monlinkto': linkMonToken(ui.linkPick, v); break;
+    case 'toklinkall': ui.modal.showAll = !ui.modal.showAll; renderModal(); break;
     case 'monunlink': unlinkMon(id); break;
     case 'monedit': ui.monEdit = ui.monEdit === id ? null : id; renderGrid(); break;
     case 'monopen': ui.monOpen = ui.monOpen || new Set(); if (ui.monOpen.has(id)) ui.monOpen.delete(id); else ui.monOpen.add(id); renderGrid(); break;
