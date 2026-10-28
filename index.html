@@ -390,6 +390,7 @@ select.ed-inline{width:auto}
 .viewx{position:fixed;top:calc(8px + env(safe-area-inset-top,0px));right:calc(10px + env(safe-area-inset-right,0px));z-index:60;width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:var(--surface);color:var(--ink);font-size:16px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.18)}
 .viewx:hover{border-color:var(--accent);color:var(--accent)}
 .atk-src{font-weight:600;color:var(--accent)}
+.ms-prev{border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:.86rem;display:grid;gap:2px;background:var(--sunk)}
 .chip.hbup{color:var(--accent);border-color:var(--accent);cursor:pointer;background:transparent;white-space:nowrap}
 .hb-hidden b{opacity:.7}
 .hb-i .e-name{background:none;border:0;text-align:left;cursor:pointer;color:inherit;font:inherit}
@@ -1662,8 +1663,11 @@ const MONSTERS = (() => {
     // sections
     const idx = []; lines.forEach((l, i) => { const k = l.toLowerCase().replace(/:$/, ''); if (SECTIONS.includes(k)) idx.push({ i, k }); });
     const after = lines.findIndex(l => /^(challenge|cr)\s/i.test(l) || /^languages\b/i.test(l) && !lines.some(x => /^(challenge|cr)\s/i.test(x)));
-    const traitStart = after >= 0 ? after + 1 : 2, traitEnd = idx.length ? idx[0].i : lines.length;
-    const pre = lines.slice(traitStart, traitEnd).filter(l => !/^(proficiency bonus|senses|languages|skills|saving throws|damage|condition|gear|immunities|resistances|vulnerabilities)\b/i.test(l));
+    // traits: any "Name. text" line before the first section, wherever it sits among the stat lines (so a line added
+    // anywhere in an edited block still counts); the stat lines themselves are left out
+    const traitEnd = idx.length ? idx[0].i : lines.length;
+    const STAT = /^(armor class|ac|hit points|hp|speed|initiative|str|dex|con|int|wis|cha|mod|proficiency bonus|pb|senses|languages|skills|saving throws|damage|condition|gear|immunities|resistances|vulnerabilities|challenge|cr)\b/i;
+    const pre = lines.slice(1, traitEnd).filter((l, i) => !STAT.test(l) && !(i === 0 && t.meta && l === t.meta) && !/^[\d\s()+\-]+$/.test(l));
     t.traits = entries(pre.join('\n')).filter(e => e.name).map(e => readAction(e.name, e.text));
     idx.forEach((s, n) => {
       const body = lines.slice(s.i + 1, n + 1 < idx.length ? idx[n + 1].i : lines.length).join('\n');
@@ -2632,7 +2636,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.22.0';
+const APP_VERSION = '1.22.1';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -3625,7 +3629,7 @@ function monCard(m, cur) {
   const rowKey = m.solo ? 'm:' + m.id : 'g:' + m.tpl, isCur = cur === rowKey;
   const pct = m.max ? Math.max(0, Math.min(100, m.hp / m.max * 100)) : 0;
   const tok = (OBRX.monTokens[m.id] || []).length;
-  const acts = [['actions', 'Actions'], ['bonus', 'Bonus actions'], ['reactions', 'Reactions']].map(([list, label]) => {
+  const acts = [['traits', 'Traits'], ['actions', 'Actions'], ['bonus', 'Bonus actions'], ['reactions', 'Reactions']].map(([list, label]) => {
     const as = t[list] || []; if (!as.length) return '';
     return `<div class="mact-h">${label}</div>` + as.map((a, i) => monActRow(m, list, a, i)).join('');
   }).join('');
@@ -3640,7 +3644,6 @@ function monCard(m, cur) {
   const ab = `<div class="mab">${['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA'].map(k => `<div><span class="k">${k}</span><button class="md" data-act="moncheck" data-id="${m.id}" data-v="${k}" title="${k} check">${signed(MONSTERS.mod(t.abilities[k] || 10))}</button><button class="sv" data-act="monsave" data-id="${m.id}" data-v="${k}" title="${k} save">${t.saves[k] != null ? 'save ' + signed(t.saves[k]) : 'save'}</button></div>`).join('')}</div>`;
   const details = open ? `<div class="mdet">${t.meta ? `<div class="muted" style="font-style:italic">${esc(t.meta)}</div>` : ''}<div class="muted">Speed ${esc(t.speed || '')}${t.cr ? ' · CR ' + esc(t.cr) + (t.xp ? ' (' + t.xp + ' XP)' : '') : ''}${t.hpDice ? ' · HP dice ' + esc(t.hpDice) : ''}</div>
     ${(t.details || []).map(d => `<div><b>${esc(d.k)}</b> ${esc(d.v)}</div>`).join('')}
-    ${(t.traits || []).map(a => `<div><b>${esc(a.name)}.</b> ${esc(a.text)}</div>`).join('')}
     ${(t.legendary || []).map(a => `<div><b>${esc(a.name)}${a.cost > 1 ? ' (costs ' + a.cost + ')' : ''}.</b> ${esc(a.text)}</div>`).join('')}</div>` : '';
   const editRow = edit ? `<div class="medit">
       <label>Name <input class="ed-inline" id="mn-${m.id}" data-monf="name" data-id="${m.id}" value="${esc(m.name)}" style="width:140px"></label>
@@ -3684,12 +3687,45 @@ function tplText(t) {
   if ((t.legendary || []).length) { L.push('Legendary Actions', 'The ' + t.name.toLowerCase() + ' can take ' + (t.legendaryCount || 3) + ' legendary actions.'); t.legendary.forEach(a => L.push(a.name + (a.cost > 1 ? ' (Costs ' + a.cost + ' Actions)' : '') + '. ' + (a.text || ''))); }
   return L.join('\n');
 }
+// what Grimsheet reads from the text, so a line in the wrong place shows before saving
+function msPreview(text) {
+  const p = MONSTERS.parse(text); if (!p || !p.name) return '<span class="bad">Not readable yet: keep the name on the first line.</span>';
+  const L = (l, xs) => xs.length ? `<div><b>${l}:</b> ${xs.map(esc).join(', ')}</div>` : '';
+  return `<div class="muted" style="font-size:.78rem;text-transform:uppercase;letter-spacing:.05em">Grimsheet reads</div><div><b>${esc(p.name)}</b> · AC ${p.ac} · HP ${p.hp}${p.cr ? ' · CR ' + esc(p.cr) : ''}</div>`
+    + L('Traits', p.traits.map(a => a.name)) + L('Actions', p.actions.map(a => a.name + (a.attack != null ? ' ' + signed(a.attack) : ''))) + L('Bonus actions', p.bonus.map(a => a.name)) + L('Reactions', p.reactions.map(a => a.name)) + L('Legendary', p.legendary.map(a => a.name))
+    + p.details.filter(d => /resist|immun|vulner/i.test(d.k)).map(d => `<div><b>${esc(d.k)}:</b> ${esc(d.v)}</div>`).join('');
+}
+// put a new line where the parser expects it
+function msInsert(text, kind, name, desc) {
+  const lines = text.replace(/\r/g, '').split('\n'), low = lines.map(l => l.trim().toLowerCase().replace(/:$/, ''));
+  const SEC = ['traits', 'actions', 'bonus actions', 'reactions', 'legendary actions', 'mythic actions', 'lair actions'];
+  const firstSec = low.findIndex(l => SEC.includes(l));
+  const DET = { res: 'Damage Resistances', imm: 'Damage Immunities', vul: 'Damage Vulnerabilities', cimm: 'Condition Immunities' };
+  if (DET[kind]) {
+    const k = DET[kind], i = lines.findIndex(l => new RegExp('^' + k + '\\b', 'i').test(l.trim()));
+    if (i >= 0) { lines[i] = lines[i].replace(/\s*$/, '') + ', ' + name; return lines.join('\n'); }
+    let at = lines.findIndex(l => /^(senses|languages|challenge|cr)\b/i.test(l.trim())); if (at < 0) at = firstSec >= 0 ? firstSec : lines.length;
+    lines.splice(at, 0, k + ' ' + name); return lines.join('\n');
+  }
+  const entry = name.replace(/\.$/, '') + '. ' + (desc || '');
+  if (kind === 'trait') { const ti = low.indexOf('traits'), at = ti >= 0 ? (SEC.slice(1).map(h => low.indexOf(h)).filter(x => x > ti).sort((a, b) => a - b)[0] ?? lines.length) : firstSec >= 0 ? firstSec : lines.length; lines.splice(at, 0, entry); return lines.join('\n'); }
+  const head = { action: 'actions', bonus: 'bonus actions', reaction: 'reactions' }[kind], hi = low.indexOf(head);
+  if (hi < 0) { const label = { action: 'Actions', bonus: 'Bonus Actions', reaction: 'Reactions' }[kind]; const after = kind === 'action' && firstSec >= 0 && low[firstSec] !== 'traits' ? firstSec : lines.length; lines.splice(after, 0, label, entry); return lines.join('\n'); }
+  const next = low.findIndex((l, j) => j > hi && SEC.includes(l));
+  lines.splice(next >= 0 ? next : lines.length, 0, entry); return lines.join('\n');
+}
 function monStatHtml(md) {
   const f = findMon(md.inst); if (!f) return dlgHead('Edit stat block') + '<div class="dlg-b"><div class="empty">That monster is gone.</div></div>';
   const t = tplOf(f.m), n = Object.values(encs().list).reduce((k, e) => k + e.mons.filter(x => x.tpl === f.m.tpl).length, 0);
   return dlgHead('Edit ' + t.name) + `<div class="dlg-b" style="gap:8px">
     <div class="muted" style="font-size:.86rem">Change any line, or add one: <span class="mono">Damage Resistances fire</span>, <span class="mono">Condition Immunities poisoned</span>, a new trait (<span class="mono">Name. What it does.</span>) or an action under <span class="mono">Actions</span>. The same text format as pasting a stat block.</div>
-    <textarea id="ms-text" class="code" style="min-height:300px">${esc(md.text != null ? md.text : tplText(t))}</textarea>
+    <textarea id="ms-text" class="code" style="min-height:260px">${esc(md.text != null ? md.text : tplText(t))}</textarea>
+    <div id="ms-prev" class="ms-prev">${msPreview(md.text != null ? md.text : tplText(t))}</div>
+    <div class="sub-h" style="margin:2px 0 0">Add to it</div>
+    <div class="frow" style="grid-template-columns:auto 1fr 2fr auto;align-items:end"><label class="fld"><span>As</span><select id="ms-kind">${[['trait', 'Trait'], ['action', 'Action'], ['bonus', 'Bonus action'], ['reaction', 'Reaction'], ['res', 'Resistance'], ['imm', 'Immunity'], ['vul', 'Vulnerability'], ['cimm', 'Condition immunity']].map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label>
+      <label class="fld"><span>Name or damage type</span><input id="ms-name" placeholder="Keen Smell / fire"></label>
+      <label class="fld"><span>What it does</span><input id="ms-desc" placeholder="Advantage on Wisdom (Perception) checks that rely on smell."></label>
+      <button class="btn small" data-act="msadd" style="margin-bottom:2px">Add</button></div>
     ${md.err ? `<div class="banner warn" style="margin:0">${esc(md.err)}</div>` : ''}
     <div class="muted" style="font-size:.82rem">Applies to ${n > 1 ? 'all ' + n + ' ' + esc(t.name) + 's in your encounters' : 'this monster'}; current HP and conditions stay.${String(f.m.tpl).startsWith('srd:') ? ' The SRD original stays as it was; this version is kept with your encounters' + (md.keep ? ' and in My monsters' : '') + '.' : ''}</div>
     ${String(f.m.tpl).startsWith('srd:') ? `<label class="muted" style="font-size:.86rem"><input type="checkbox" id="ms-keep" ${md.keep ? 'checked' : ''}> Also save it to My monsters</label>` : ''}
@@ -6898,6 +6934,11 @@ document.addEventListener('click', ev => {
     case 'monlinkpick': startLinkPick(id); break;
     case 'monstat': openModal('monstat', { inst: id }); break;
     case 'monstatsave': saveMonStat(); break;
+    case 'msadd': {
+      const ta = $('#ms-text'), kind = ($('#ms-kind') || {}).value, name = (($('#ms-name') || {}).value || '').trim(), desc = (($('#ms-desc') || {}).value || '').trim();
+      if (!name) { toast(kind === 'res' || kind === 'imm' || kind === 'vul' ? 'Type a damage type, like fire.' : kind === 'cimm' ? 'Type a condition, like poisoned.' : 'Give it a name.'); break; }
+      ui.modal.text = msInsert(ta.value, kind, name, desc); ui.modal.err = ''; renderModal(); toast('Added. Check “Grimsheet reads”, then Save.'); break;
+    }
     case 'monlinkto': linkMonToken(ui.linkPick, v); break;
     case 'toklinkall': ui.modal.showAll = !ui.modal.showAll; renderModal(); break;
     case 'monunlink': unlinkMon(id); break;
@@ -7074,6 +7115,7 @@ document.addEventListener('change', ev => {
 });
 document.addEventListener('input', ev => {
   const t = ev.target;
+  if (t.id === 'ms-text') { clearTimeout(ui.msT); ui.msT = setTimeout(() => { const n = $('#ms-prev'); if (n) n.innerHTML = msPreview(t.value); }, 250); return; }
   if (t.dataset.gsearch && ui.modal && ui.modal.type === 'search') { ui.modal.q = t.value; ui.modal.hits = searchRun(t.value); ui.modal.sel = 0; searchPaint(); return; }
   if (t.dataset.noteq) { ui.noteQ = t.value; const pos = t.selectionStart; renderGrid(); const n = $('#note-q'); if (n) { n.focus(); n.setSelectionRange(pos, pos); } return; }
   if (ui.modal && ui.modal.type === 'levelup' && (t.dataset.lunc === 'name' || t.dataset.lusubo || t.dataset.lufeato)) {
