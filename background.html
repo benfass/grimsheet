@@ -155,6 +155,7 @@
       }
     });
 
+    const endSeen = new Set();
     /* ---- initiative: the GM asks for rolls; tell this player when it's their turn ---- */
     OBR.broadcast.onMessage(S.CH_GM, ev => {
       const d = ev.data;
@@ -164,6 +165,25 @@
         if (d.part === 'area') { OBR.notification.show(`${d.attacker}: ${d.name} (${d.areaLabel}), ${(d.targets || []).length} inside. Resolve it in Grimsheet.`, 'DEFAULT').catch(() => { }); return; }
         const what = d.part === 'atk' ? d.total + ' to hit' + (d.crit ? ' (natural 20!)' : d.fumble ? ' (natural 1)' : '') : d.part === 'heal' ? d.total + ' healing' : d.total + ' ' + (d.types || '') + ' damage';
         OBR.notification.show(`${d.attacker} → ${d.target.name}: ${what}. Confirm it in Grimsheet.`, d.crit ? 'SUCCESS' : 'DEFAULT').catch(() => { });
+        return;
+      }
+      // a player ended their turn and the GM's panel is closed: move the turn on here (the panel catches up on monster turn starts when opened)
+      if (d && d.type === 'endTurn' && me.role === 'GM') {
+        const beat = S.read('grimsheet.gmpanel.v1');
+        if (beat && beat.room === room && Date.now() - beat.at < 25000) return;
+        if (endSeen.has(d.id)) return; endSeen.add(d.id);
+        OBR.room.getMetadata().then(md => {
+          const I = md && md['com.grimsheet/initiative'];
+          if (!I || !I.active || !I.rows || !I.rows.length || I.turn !== d.key || I.round !== d.round) return;
+          const i = I.rows.findIndex(r => r.k === I.turn); let j = i + 1, round = I.round;
+          if (j >= I.rows.length) { j = 0; round++; }
+          const next = I.rows[j];
+          const all = S.read(S.ENCKEY) || {}, r = S.encRoom(all, room), e = r.list[r.active];
+          if (!e || !e.combat || !e.combat.active || e.combat.turn !== d.key) return;
+          e.combat.turn = next.k; e.combat.round = round; e.combat.pendingStart = next.k; S.write(S.ENCKEY, all);
+          OBR.room.setMetadata({ 'com.grimsheet/initiative': Object.assign({}, I, { turn: next.k, round }) }).catch(() => { });
+          OBR.notification.show(`${d.who} ended their turn. Now: ${next.name}${round !== I.round ? ' (round ' + round + ')' : ''}.`, 'INFO').catch(() => { });
+        }).catch(() => { });
         return;
       }
       if (d && d.type === 'restCall' && me.role !== 'GM') {

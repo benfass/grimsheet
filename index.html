@@ -2636,7 +2636,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.22.1';
+const APP_VERSION = '1.23.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -2996,6 +2996,7 @@ async function startOwlbear() {
       OBR.player.onChange(p => onSelection(p.selection));
       OBR.player.onChange(p => { if (OBRX.me.role !== 'GM' || !p.selection) return; const sel = p.selection; const inst = Object.keys(OBRX.monTokens).find(k => OBRX.monTokens[k].some(it => sel.includes(it.id))); if (inst && inst !== ui.monFocus) { ui.monFocus = inst; if (encView()) { renderGrid(); const n = document.querySelector(`[data-inst="${inst}"]`); if (n && n.scrollIntoView) n.scrollIntoView({ block: 'nearest' }); } } });
       writeCatalog(); ENCS = null; enc(); render();
+      gmBeat(); setInterval(gmBeat, 10000); setTimeout(catchUpTurn, 500);
       setInterval(() => { if (!document.hidden) refreshLinks(); }, 5000);
       try {
         OBR.scene.items.onChange(items => { refreshLinks(items); areaWatch(items); });
@@ -3101,7 +3102,20 @@ function renderParty() {
   if (!IN_OBR) return '<div class="empty">Open Grimsheet inside Owlbear Rodeo to see your party here: everyone\'s HP, AC and conditions, live.</div>';
   return `<div data-party>${partyList()}</div>`;
 }
-function refreshInitView() { refreshParty(); renderBanner(); checkMyTurn(); }
+function refreshInitView() { refreshParty(); renderBanner(); checkMyTurn(); renderTray(); }
+/* ---- players end their own turn ---- */
+function myTurnRow() { const I = OBRX.init; if (!IN_OBR || !OBRX.ready || ui.viewing || !I || !I.active || !I.rows) return null; const cur = I.rows.find(r => r.k === I.turn); return cur && cur.pc === OBRX.me.id ? cur : null; }
+function endTurnBtn(cls) {
+  const r = myTurnRow(); if (!r || OBRX.me.role === 'GM') return '';
+  const sent = ui.endSent === r.k + '|' + OBRX.init.round;
+  return `<button class="btn ${cls || 'small'} primary endturn" data-act="endturn" ${sent ? 'disabled' : ''} title="Tell the GM you're done; the next turn starts">${sent ? 'Ending turn…' : 'End turn'}</button>`;
+}
+function endMyTurn() {
+  const r = myTurnRow(); if (!r) { toast('It isn\'t your turn right now.'); return; }
+  ui.endSent = r.k + '|' + OBRX.init.round;
+  OBRX.api.broadcast.sendMessage(CH_GM, { type: 'endTurn', id: uid(), from: OBRX.me.id, who: C().name, key: r.k, round: OBRX.init.round }, { destination: 'REMOTE' }).catch(() => { ui.endSent = null; toast('Couldn\'t reach the GM.'); });
+  renderBanner(); renderTray(); toast('Turn ended.');
+}
 function initStrip() {
   const I = OBRX.init; if (!I || !I.active || !I.rows) return '';
   const i = I.rows.findIndex(r => r.k === I.turn), cur = I.rows[i], next = I.rows[(i + 1) % I.rows.length];
@@ -3164,6 +3178,7 @@ async function receiveGm(d) {
     toast(d.owner + ' (' + d.name + ') rolled ' + d.total + ' for initiative.');
     return;
   }
+  if (d.type === 'endTurn') { if (OBRX.me.role !== 'GM' || gmSeen.has(d.id)) return; gmSeen.add(d.id); gmEndTurn(d); return; }
   if (d.type === 'askInit') { if (OBRX.me.role !== 'GM' && !bgAlive()) { OBRX.api.notification.show(d.from + ' asks for initiative. Tap INIT in your Combat module.', 'INFO').catch(() => { }); } if (OBRX.me.role !== 'GM') toast(d.from + ' asks for initiative. Tap INIT in Combat.'); return; }
   if (d.type === 'atk') {
     if (OBRX.me.role !== 'GM') return;
@@ -3400,6 +3415,27 @@ function nextTurn(dir = 1) {
   e.combat.turn = rows[j].k;
   saveEnc(); if (dir > 0) onTurnStart(rows[j]); renderGrid();
 }
+// a player ended their turn: move on, but only if it's still that turn (a late or repeated tap does nothing)
+function gmEndTurn(d) {
+  const e = encActive(); if (!e || !e.combat.active || e.combat.turn !== d.key || e.combat.round !== d.round) return;
+  const sel = ui.encSel; ui.encSel = encs().active;
+  try { nextTurn(1); } finally { ui.encSel = sel; }
+  if (encView()) renderGrid();
+  const now = initRows(e).find(r => r.k === e.combat.turn);
+  toast(`${d.who} ended their turn.${now ? ' ' + now.name + '\'s turn.' : ''}`);
+}
+// the background page moved the turn on while this panel was closed: run what a turn start does now
+function catchUpTurn() {
+  if (!IN_OBR || OBRX.me.role !== 'GM') return;
+  const e = encActive(); if (!e || !e.combat.pendingStart) return;
+  const k = e.combat.pendingStart; delete e.combat.pendingStart; saveEnc({ quiet: true });
+  if (!e.combat.active || e.combat.turn !== k) return;
+  const sel = ui.encSel; ui.encSel = encs().active;
+  try { onTurnStart(initRows(e).find(r => r.k === k)); } finally { ui.encSel = sel; }
+}
+// tell the background page this GM panel is open, so it leaves turn changes to the panel
+function gmBeat() { if (IN_OBR && OBRX.ready && OBRX.me.role === 'GM') writeJSON('grimsheet.gmpanel.v1', { at: Date.now(), room: OBRX.room }); }
+window.addEventListener('pagehide', () => { if (IN_OBR && OBRX.ready && OBRX.me.role === 'GM') writeJSON('grimsheet.gmpanel.v1', { at: 0, room: OBRX.room }); });
 function endCombat() {
   const e = enc(); e.combat = { active: false, round: 1, turn: null };
   saveEnc(); renderGrid();
@@ -6026,7 +6062,7 @@ function renderTop() {
 function renderBanner() {
   if (gmMode()) { $('#banner').innerHTML = storageOK ? '' : '<div class="banner warn">This browser view isn\'t saving changes.</div>'; return; }
   const c = C(); let h = '';
-  if (IN_OBR && OBRX.ready && OBRX.me.role !== 'GM' && OBRX.init && OBRX.init.active && !ui.viewing) h += `<div class="banner" style="background:var(--accent-soft)"><span>⚔ ${initStrip()}</span></div>`;
+  if (IN_OBR && OBRX.ready && OBRX.me.role !== 'GM' && OBRX.init && OBRX.init.active && !ui.viewing) h += `<div class="banner" style="background:var(--accent-soft)"><span style="flex:1">⚔ ${initStrip()}</span>${endTurnBtn()}</div>`;
   if (ui.viewing) {
     const t = new Date(ui.viewing.at); const hhmm = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
     $('#banner').innerHTML = `<div class="banner" style="background:var(--accent-soft)"><span style="flex:1;min-width:200px">Viewing <b>${esc(ui.viewing.owner)}'s ${esc(c.name)}</b>, read-only, as of ${hhmm}. Rolls here stay on your screen.</span><button class="btn small" data-act="viewrefresh">Refresh</button><button class="btn small primary" data-act="viewend">Back to my sheet</button></div><button class="viewx" data-act="viewend" title="Close ${esc(c.name)} and go back" aria-label="Close this sheet">✕</button>`;
@@ -6279,7 +6315,7 @@ function fxSummary(e) {
 
 function renderTray(isNew, rolling) {
   const r = ui.log[0];
-  const quick = `<div class="quick"><input class="qm" id="free-roll" data-qm="free" placeholder="Roll 2d6+3" aria-label="Free roll"></div><button class="btn" data-act="modal" data-v="log">History${ui.log.length ? ' (' + ui.log.length + ')' : ''}</button>`;
+  const quick = `<div class="quick"><input class="qm" id="free-roll" data-qm="free" placeholder="Roll 2d6+3" aria-label="Free roll"></div>${endTurnBtn('')}<button class="btn" data-act="modal" data-v="log">History${ui.log.length ? ' (' + ui.log.length + ')' : ''}</button>`;
   if (!r) { $('#tray').innerHTML = `<div class="tot muted">d20</div><div class="info"><div class="ttl">Tap any number to roll</div><div class="brk">Every roll shows where each bonus came from.</div></div>${quick}`; return; }
   if (rolling) { $('#tray').innerHTML = `<div class="tot muted" aria-live="polite">…</div><div class="info"><div class="ttl">${esc(r.title)} ${r.mode === 'adv' ? '<span class="badge teal">ADV</span>' : r.mode === 'dis' ? '<span class="badge red">DIS</span>' : ''}</div><div class="brk">Rolling…</div></div>${quick}`; return; }
   $('#tray').innerHTML = `<div class="tot ${isNew ? 'new' : ''} ${r.crit ? 'crit' : ''} ${r.fumble ? 'fum' : ''}">${r.total}</div>
@@ -6919,6 +6955,7 @@ document.addEventListener('click', ev => {
     case 'rollmoninit': rollMonsterInit(true); break;
     case 'startcombat': startCombat(); break;
     case 'nextturn': nextTurn(1); break;
+    case 'endturn': endMyTurn(); break;
     case 'prevturn': nextTurn(-1); break;
     case 'endcombat': endCombat(); break;
     case 'encclear': { if (ui.confirm !== 'encclear') { ui.confirm = 'encclear'; renderGrid(); break; } ui.confirm = null; const e = enc(); e.mons = []; e.groupInit = {}; e.seq = {}; e.combat = { active: false, round: 1, turn: null }; saveEnc(); renderGrid(); toast('Monsters removed.'); break; }
