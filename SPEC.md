@@ -434,7 +434,7 @@ Ordered by when it gets built. Priority applies inside a goal.
 - *Done (v2.7):* **Campaign notes** (see above). The automatic session log and recap were dropped from the plan.
 
 **Long goal**
-- **Keep characters safe across devices.** Characters are kept on a sync service instead of only in one browser, so they survive a new device, a cleared browser, or Owlbear keeping its own browser storage. Works offline and syncs when back online; existing characters move over on first sign-in.
+- *First step done (v2.21):* backups held by the GM and GM saves to the Owlbear library (see above). *Still open:* automatic sync. **Keep characters safe across devices.** Characters are kept on a sync service instead of only in one browser, so they survive a new device, a cleared browser, or Owlbear keeping its own browser storage. Works offline and syncs when back online; existing characters move over on first sign-in.
 
 **Later, not scheduled**
 - Install as an app with offline use; condition durations on the initiative tracker; encounter difficulty from CR and party level.
