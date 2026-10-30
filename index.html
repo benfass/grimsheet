@@ -2639,7 +2639,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.26.0';
+const APP_VERSION = '1.27.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -2856,7 +2856,7 @@ function load() {
   const c = sampleChar(); return { chars: { [c.id]: c }, active: c.id };
 }
 let saveT = null;
-function save() { if (ui.viewing) return; const ch = store.chars[store.active]; if (ch) { ch.changedAt = Date.now(); if (downSync(ch)) setTimeout(() => { if (!ui.modal || ui.modal.type !== 'editor') render(); }, 0); } try { histRecord(); } catch (e) { } clearTimeout(saveT); saveT = setTimeout(() => { if (IN_OBR) publishStatus(); try { localStorage.setItem(KEY, JSON.stringify(store)); storageOK = true; } catch (e) { if (storageOK) { storageOK = false; renderBanner(); } } }, 250); }
+function save() { if (ui.viewing) return; if (IN_OBR && OBRX.ready && OBRX.me.role !== 'GM') pcbSoon(); const ch = store.chars[store.active]; if (ch) { ch.changedAt = Date.now(); if (downSync(ch)) setTimeout(() => { if (!ui.modal || ui.modal.type !== 'editor') render(); }, 0); } try { histRecord(); } catch (e) { } clearTimeout(saveT); saveT = setTimeout(() => { if (IN_OBR) publishStatus(); try { localStorage.setItem(KEY, JSON.stringify(store)); storageOK = true; } catch (e) { if (storageOK) { storageOK = false; renderBanner(); } } }, 250); }
 function loadLib() { try { return JSON.parse(localStorage.getItem(LIBKEY) || '[]'); } catch (e) { return []; } }
 function saveLib() { try { localStorage.setItem(LIBKEY, JSON.stringify(library)); } catch (e) { } }
 
@@ -2990,6 +2990,7 @@ async function startOwlbear() {
       OBR.broadcast.onMessage(CH_GM, ev => receiveGm(ev.data));
       OBR.broadcast.onMessage(CH_NOTES, ev => notesReceive(ev.data));
       OBR.broadcast.onMessage(CH_HB, ev => hbReceive(ev.data));
+      OBR.broadcast.onMessage(CH_BK, ev => bkReceive(ev.data));
       OBR.broadcast.onMessage(CH_LOCAL, ev => {
         const d = ev.data; if (!d) return;
         if (d.type === 'view') requestSheet(d.player, d.char, d.name, d.owner);
@@ -3015,6 +3016,7 @@ async function startOwlbear() {
       applyPanelSize();
       ensurePartyModule();
       setTimeout(takePending, 300);
+      setTimeout(() => { if (OBRX.me.role !== 'GM') { pcbSoon(5000); if (!hasRealChars()) pcbAsk(); } renderBanner(); }, 2000);
       renderBanner();
     });
   } catch (e) { OBRX.failed = true; renderBanner(); }
@@ -5251,6 +5253,204 @@ function hbReceiveGive(d) {
   OBRX.api.notification.show(`${d.from} gives ${ch.name} ${d.entry.name} (added to ${m.title}).`, 'SUCCESS').catch(() => { });
 }
 
+/* ---------- BACKUPS: players' characters kept by the GM; the GM's data saved to their Owlbear library ---------- */
+// Players: a minute after a change (and when Grimsheet opens), each changed character is sent, packed, to the
+// GM's Grimsheet, which keeps the newest copy per player and character for the room. On a new or wiped device
+// the player asks the room and restores in one tap.
+// GM: "Save to Owlbear" uploads one small picture (a prop) to the GM's own Owlbear library, carrying everything
+// for this room plus their monsters and library; "Load from Owlbear" picks it in Owlbear's library on another device.
+const CH_BK = 'com.grimsheet/backup', PCBKEY = 'grimsheet.pcbackup.v1', PCBSENT = 'grimsheet.pcbsent.v1', BK_PART = 12000;
+const bkRoom = () => OBRX.room || 'room';
+function pcbAll() { return readJSON(PCBKEY) || {}; }
+// same as GS.mergePcb in shared.js: newest copy per player and character
+function mergePcb(all, room, d) {
+  const r = all[room] = all[room] || {}, p = r[d.from] = r[d.from] || { owner: d.owner || '', chars: {} };
+  p.owner = d.owner || p.owner; const old = p.chars[d.charId];
+  if (old && old.changedAt >= d.changedAt) return false;
+  p.chars[d.charId] = { name: d.name, cls: d.cls || '', level: d.level || '', changedAt: d.changedAt, data: d.data, at: Date.now() };
+  return true;
+}
+const bkParts = {};
+// a message in several parts: returns the whole data string once every part is in
+function bkAssemble(d) {
+  const k = d.id; const b = bkParts[k] = bkParts[k] || { parts: [], n: d.parts, t: Date.now() };
+  b.parts[d.part] = d.data; for (const [x, v] of Object.entries(bkParts)) if (Date.now() - v.t > 120e3) delete bkParts[x];
+  if (b.parts.filter(x => x != null).length < b.n) return null;
+  delete bkParts[k]; return b.parts.join('');
+}
+function bkSend(d) { if (IN_OBR && OBRX.ready) return OBRX.api.broadcast.sendMessage(CH_BK, d, { destination: 'REMOTE' }).catch(() => { }); }
+async function bkSendParts(base, data) {
+  const parts = []; for (let i = 0; i < data.length; i += BK_PART) parts.push(data.slice(i, i + BK_PART)); if (!parts.length) parts.push('');
+  for (let i = 0; i < parts.length; i++) await bkSend(Object.assign({}, base, { part: i, parts: parts.length, data: parts[i] }));
+}
+
+/* ---- players: send changed characters to the GM ---- */
+let pcbT = null;
+function pcbSoon(ms) { clearTimeout(pcbT); pcbT = setTimeout(pcbPush, ms || 60e3); }
+async function pcbPush() {
+  if (!IN_OBR || !OBRX.ready || ui.viewing || OBRX.me.role === 'GM') return;
+  const sent = readJSON(PCBSENT) || {};
+  for (const c of Object.values(store.chars)) {
+    if (c.example || !c.changedAt || (sent[c.id] && sent[c.id].changedAt >= c.changedAt)) continue;
+    const data = await packJSON(c);
+    sent[c.id] = { changedAt: c.changedAt, at: Date.now(), acked: false }; writeJSON(PCBSENT, sent);
+    await bkSendParts({ type: 'pcb', id: uid(), from: OBRX.me.id, owner: OBRX.me.name, charId: c.id, name: c.name, cls: [c.species, c.cls].filter(Boolean).join(' '), level: c.level, changedAt: c.changedAt }, data);
+  }
+}
+const hasRealChars = () => Object.values(store.chars).some(c => !c.example);
+function pcbAsk() { if (IN_OBR && OBRX.ready && OBRX.me.role !== 'GM') { ui.pcbReq = uid(); ui.pcbList = null; bkSend({ type: 'pcbList', id: ui.pcbReq, from: OBRX.me.id }); } }
+async function pcbRestore(charId) {
+  ui.pcbGet = { id: uid(), charId }; bkSend({ type: 'pcbGet', id: ui.pcbGet.id, from: OBRX.me.id, charId });
+  toast('Asking the GM\'s Grimsheet for it…');
+}
+async function pcbReceived(d) {
+  const data = bkAssemble(d); if (data == null) return;
+  let ch; try { ch = await unpackJSON(data); } catch (e) { toast('That backup couldn\'t be read.'); return; }
+  const mine = store.chars[ch.id];
+  if (mine && (mine.changedAt || 0) > (ch.changedAt || 0) && !ui.pcbForce) { ui.pcbForce = ch.id; toast(`Your copy of ${mine.name} here is newer than the GM's. Tap Restore again to replace it anyway.`); renderModal(); return; }
+  ui.pcbForce = null; normalize(ch); store.chars[ch.id] = ch; store.active = ch.id;
+  Object.keys(store.chars).forEach(k => { if (store.chars[k].example && k !== ch.id) delete store.chars[k]; });
+  const sent = readJSON(PCBSENT) || {}; sent[ch.id] = { changedAt: ch.changedAt, at: Date.now(), acked: true }; writeJSON(PCBSENT, sent);
+  ui.open.clear(); save(); closeModal(); render(); if (IN_OBR) publishStatus();
+  toast(`${ch.name} restored from the GM's backup.`);
+}
+function pcbListHtml() {
+  const L = ui.pcbList;
+  if (!L) return '<div class="muted">Asking the GM\'s Grimsheet… (the GM needs to be in the room)</div>';
+  if (!L.length) return '<div class="muted">The GM has no backups of your characters in this room yet.</div>';
+  return L.map(x => `<div class="list-i"><div class="grow"><b>${esc(x.name)}</b><div class="muted" style="font-size:.85rem">${esc([x.cls, x.level ? 'Level ' + x.level : ''].filter(Boolean).join(' · '))} · saved ${esc(ago(x.changedAt))}${store.chars[x.charId] ? ' · also on this device' : ''}</div></div>
+    <button class="btn small ${ui.pcbForce === x.charId ? 'danger' : 'primary'}" data-act="pcbrestore" data-v="${esc(x.charId)}">${ui.pcbForce === x.charId ? 'Replace mine' : 'Restore'}</button></div>`).join('');
+}
+
+/* ---- GM: keep them and answer ---- */
+function pcbFor(player) { const r = pcbAll()[bkRoom()] || {}; return r[player] || { chars: {} }; }
+async function bkReceive(d) {
+  if (!d) return;
+  const gm = OBRX.me.role === 'GM';
+  if (gm && !bgAlive()) {
+    if (d.type === 'pcb') { const data = bkAssemble(d); if (data == null) return; const all = pcbAll(); if (mergePcb(all, bkRoom(), Object.assign({}, d, { data }))) writeJSON(PCBKEY, all); bkSend({ type: 'pcbAck', to: d.from, charId: d.charId, changedAt: d.changedAt }); return; }
+    if (d.type === 'pcbList') { const p = pcbFor(d.from); bkSend({ type: 'pcbIndex', to: d.from, re: d.id, list: Object.entries(p.chars).map(([charId, x]) => ({ charId, name: x.name, cls: x.cls, level: x.level, changedAt: x.changedAt })) }); return; }
+    if (d.type === 'pcbGet') { const x = pcbFor(d.from).chars[d.charId]; if (x) await bkSendParts({ type: 'pcbData', id: d.id, to: d.from, charId: d.charId }, x.data); return; }
+  }
+  if (gm || d.to !== OBRX.me.id) return;
+  if (d.type === 'pcbAck') { const sent = readJSON(PCBSENT) || {}; if (sent[d.charId] && sent[d.charId].changedAt === d.changedAt) { sent[d.charId].acked = true; sent[d.charId].at = Date.now(); writeJSON(PCBSENT, sent); renderBanner(); } return; }
+  if (d.type === 'pcbIndex' && d.re === ui.pcbReq) {
+    ui.pcbList = d.list || [];
+    if (ui.modal && ui.modal.type === 'pcbrestore') renderModal();
+    else if (!hasRealChars() && ui.pcbList.length) renderBanner();
+    return;
+  }
+  if (d.type === 'pcbData' && ui.pcbGet && d.id === ui.pcbGet.id) return pcbReceived(d);
+}
+// is this character safe with the GM? (used to quiet the "never backed up" reminder)
+function gmHasCopy(c) { const s = (readJSON(PCBSENT) || {})[c.id]; return !!(s && s.acked && Date.now() - s.at < 7 * 864e5); }
+
+/* ---- GM: save to / load from the Owlbear library ---- */
+const GSB = 'GSB1:';
+function gmPayload() {
+  const room = bkRoom(), pick = k => (readJSON(k) || {})[room] || null;
+  const set = Object.assign({}, SETTINGS); ['panel', 'panelW', 'panelH', 'view', 'gmPlays'].forEach(k => delete set[k]);
+  return { grimsheetGM: 1, v: APP_VERSION, at: Date.now(), room, roomName: camp().name || '', enc: pick(ENCKEY), camp: pick(CAMPKEY), hb: pick(HBKEY), pcb: pick(PCBKEY), bestiary, library, settings: set, chars: Object.values(store.chars).filter(c => !c.example) };
+}
+function cardPng(title, lines) {
+  return new Promise(res => {
+    const cv = document.createElement('canvas'); cv.width = 256; cv.height = 256; const g = cv.getContext('2d');
+    g.fillStyle = '#152024'; g.fillRect(0, 0, 256, 256); g.strokeStyle = '#55B8A6'; g.lineWidth = 6; g.strokeRect(8, 8, 240, 240);
+    g.fillStyle = '#55B8A6'; g.font = 'bold 22px system-ui, sans-serif'; g.fillText('Grimsheet', 24, 52);
+    g.fillStyle = '#E3EBE9'; g.font = 'bold 18px system-ui, sans-serif'; g.fillText(title.slice(0, 22), 24, 92);
+    g.font = '15px system-ui, sans-serif'; g.fillStyle = '#93A39F'; lines.forEach((l, i) => g.fillText(String(l).slice(0, 28), 24, 124 + i * 24));
+    cv.toBlob(b => res(b), 'image/png');
+  });
+}
+async function gmSaveToOwlbear() {
+  if (!IN_OBR || !OBRX.ready || OBRX.me.role !== 'GM') return;
+  const p = gmPayload(), data = GSB + (await packJSON(p));
+  const d = new Date(p.at), when = d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  const e = p.enc && p.enc.list ? Object.values(p.enc.list) : [], nPc = Object.values(p.pcb || {}).reduce((n, x) => n + Object.keys(x.chars || {}).length, 0);
+  const name = 'Grimsheet backup · ' + (p.roomName || 'room') + ' · ' + when;
+  const blob = await cardPng(p.roomName || 'GM backup', [when, e.length + ' encounter' + (e.length === 1 ? '' : 's'), ((p.camp && p.camp.notes) || []).length + ' notes', nPc + ' player character' + (nPc === 1 ? '' : 's')]);
+  const B = window.OwlbearBuild;
+  let up;
+  if (B && B.buildImageUpload) up = B.buildImageUpload(blob).name(name).description(data).plainText('').dpi(256).build();
+  else up = { file: blob, name, description: data, text: { type: 'PLAIN', plainText: '', richText: [], style: { fillColor: '#ffffff', fillOpacity: 1, strokeColor: '#222222', strokeOpacity: 1, strokeWidth: 0, textAlign: 'CENTER', textAlignVertical: 'BOTTOM', fontFamily: 'Roboto', fontSize: 24, fontWeight: 400, lineHeight: 1.5, padding: 8 }, width: 'AUTO', height: 'AUTO' }, textItemType: 'LABEL', grid: { dpi: 256, offset: { x: 128, y: 128 } }, visible: true, locked: false, rotation: 0, scale: { x: 1, y: 1 } };
+  try { await OBRX.api.assets.uploadImages([up], 'PROP'); } catch (err) { toast('Owlbear didn\'t take the backup: ' + (err && err.message || err)); return; }
+  SETTINGS.gmBackupAt = p.at; SETTINGS.gmBackupSize = data.length; saveSettings(); if (ui.modal && ui.modal.type === 'settings') renderModal();
+  toast(`Saved “${name}” to your Owlbear library (props).`);
+}
+async function gmLoadFromOwlbear() {
+  if (!IN_OBR || !OBRX.ready) return;
+  let picked; try { picked = await OBRX.api.assets.downloadImages(false, 'Grimsheet backup', 'PROP'); } catch (e) { return; }
+  const it = picked && picked[0]; if (!it) return;
+  const desc = it.description || '';
+  if (!desc.startsWith(GSB)) { toast('That picture isn\'t a Grimsheet backup. Pick one named “Grimsheet backup · …”.'); return; }
+  let p; try { p = await unpackJSON(desc.slice(GSB.length)); } catch (e) { toast('That backup is incomplete (' + desc.length.toLocaleString() + ' characters came back). Owlbear may have shortened it.'); return; }
+  openModal('gmload', { p, name: it.name });
+}
+function gmLoadHtml(md) {
+  const p = md.p, e = p.enc && p.enc.list ? Object.values(p.enc.list) : [], nPc = Object.values(p.pcb || {}).reduce((n, x) => n + Object.keys(x.chars || {}).length, 0);
+  const other = p.room !== bkRoom();
+  return dlgHead('Load Grimsheet backup') + `<div class="dlg-b">
+    <div><b>${esc(md.name)}</b><div class="muted">Saved ${esc(new Date(p.at).toLocaleString())}${p.v ? ' · Grimsheet ' + esc(p.v) : ''}</div></div>
+    <div class="ms-prev"><div><b>${e.length}</b> encounter${e.length === 1 ? '' : 's'} (${e.reduce((n, x) => n + (x.mons || []).length, 0)} monsters) · <b>${((p.camp && p.camp.notes) || []).length}</b> campaign notes · <b>${((p.hb && p.hb.items) || []).length}</b> room homebrew</div>
+      <div><b>${nPc}</b> player character backup${nPc === 1 ? '' : 's'} · <b>${(p.bestiary || []).length}</b> of your monsters · <b>${(p.library || []).length}</b> library entries · <b>${(p.chars || []).length}</b> of your own characters</div></div>
+    ${other ? '<div class="banner warn" style="margin:0">This backup is from a different Owlbear room. Loading it brings that campaign into this room.</div>' : ''}
+    <div class="muted" style="font-size:.86rem">This room's encounters, notes, homebrew and player backups are replaced by the backup's. Your monsters, library and own characters are merged: anything missing here is added and newer copies win.</div>
+  </div><div class="dlg-f"><button class="btn" data-act="close">Cancel</button><button class="btn primary" data-act="gmloadgo">Load backup</button></div>`;
+}
+function gmApplyBackup(p) {
+  const room = bkRoom(), put = (k, v) => { if (!v) return; const a = readJSON(k) || {}; a[room] = v; writeJSON(k, a); };
+  put(ENCKEY, p.enc); put(CAMPKEY, p.camp); put(HBKEY, p.hb); put(PCBKEY, p.pcb);
+  ENCS = null;
+  for (const t of p.bestiary || []) if (!bestiary.some(x => x.id === t.id)) bestiary.push(t);
+  saveBestiary();
+  for (const e of p.library || []) if (!library.some(x => x.name === e.name && (x.text || '') === (e.text || ''))) library.push(e);
+  saveLib();
+  for (const c of p.chars || []) { const mine = store.chars[c.id]; if (!mine || (mine.changedAt || 0) < (c.changedAt || 0)) { normalize(c); store.chars[c.id] = c; } }
+  const keep = { panel: SETTINGS.panel, panelW: SETTINGS.panelW, panelH: SETTINGS.panelH, view: SETTINGS.view, gmPlays: SETTINGS.gmPlays };
+  Object.assign(SETTINGS, p.settings || {}, keep); SETTINGS.gmBackupLoaded = p.at; saveSettings();
+  save(); closeModal(); render(); try { publishInit(); syncMonTokens(); syncCondLabels(); } catch (e) { }
+  toast('Backup loaded.');
+}
+// a GM on a device with nothing for this room
+function gmLooksNew() {
+  if (!IN_OBR || !OBRX.ready || OBRX.me.role !== 'GM' || SETTINGS.gmBackupLoaded || (SETTINGS.bkDismiss || {})[bkRoom()]) return false;
+  const e = (readJSON(ENCKEY) || {})[bkRoom()], c = (readJSON(CAMPKEY) || {})[bkRoom()];
+  const empty = !e || (e.list ? Object.values(e.list).every(x => !(x.mons || []).length) : !(e.mons || []).length);
+  return empty && !(c && (c.notes || []).length) && !bestiary.length;
+}
+function bkBannerHtml() {
+  if (gmLooksNew()) return `<div class="banner"><span style="flex:1;min-width:200px">New device? Load your Grimsheet backup from your Owlbear library to bring back your encounters, notes and monsters.</span><button class="btn small primary" data-act="gmload">Load backup</button><button class="btn small ghost" data-act="bkdismiss">Not now</button></div>`;
+  if (IN_OBR && OBRX.ready && OBRX.me.role !== 'GM' && !hasRealChars() && ui.pcbList && ui.pcbList.length) return `<div class="banner"><span style="flex:1;min-width:200px">Your GM's Grimsheet has a backup of ${ui.pcbList.length === 1 ? '<b>' + esc(ui.pcbList[0].name) + '</b>' : ui.pcbList.length + ' of your characters'}.</span><button class="btn small primary" data-act="modal" data-v="pcbrestore">Restore</button></div>`;
+  return '';
+}
+function bkSettingsHtml() {
+  if (!IN_OBR || !OBRX.ready) return '';
+  if (OBRX.me.role === 'GM') {
+    const n = Object.values(pcbAll()[bkRoom()] || {}).reduce((k, x) => k + Object.keys(x.chars || {}).length, 0);
+    return `<div class="setrow" style="flex-wrap:wrap"><div class="grow" style="min-width:220px"><b>Backups</b><div class="muted">Your Grimsheet keeps a copy of your players' characters for this room (${n} now), so they can restore them on a new device. To move to another device yourself, save a backup to your Owlbear library (it appears under Props as “Grimsheet backup · …”) and load it there.${SETTINGS.gmBackupAt ? ' Last saved ' + esc(ago(SETTINGS.gmBackupAt)) + '.' : ''}</div></div>
+      <div class="inline"><button class="btn small primary" data-act="gmsave">Save to Owlbear</button><button class="btn small" data-act="gmload">Load from Owlbear</button></div></div>`;
+  }
+  const s = readJSON(PCBSENT) || {}, c = C(), x = s[c.id];
+  return `<div class="setrow"><div class="grow"><b>Backups</b><div class="muted">Your characters are copied to the GM's Grimsheet a minute after each change, while you're both in the room.${x && x.acked ? ' ' + esc(c.name) + ' last backed up ' + esc(ago(x.at)) + '.' : ''} On a new device, restore them from there.</div></div>
+    <button class="btn small" data-act="modal" data-v="pcbrestore">Restore from GM</button></div>`;
+}
+function pcbRestoreHtml() {
+  if (!ui.modal.asked) { ui.modal.asked = true; setTimeout(pcbAsk, 0); }
+  return dlgHead('Restore from the GM') + `<div class="dlg-b" style="gap:8px">${pcbListHtml()}<div class="muted" style="font-size:.85rem">Restoring adds the character to this device (or replaces an older copy here) and opens it.</div></div>
+    <div class="dlg-f"><button class="btn" data-act="pcbrefresh">Ask again</button><button class="btn primary" data-act="close">Done</button></div>`;
+}
+function bkAct(act, el, v) {
+  switch (act) {
+    case 'gmsave': gmSaveToOwlbear(); return true;
+    case 'gmload': gmLoadFromOwlbear(); return true;
+    case 'gmloadgo': if (ui.modal && ui.modal.p) gmApplyBackup(ui.modal.p); return true;
+    case 'bkdismiss': SETTINGS.bkDismiss = Object.assign({}, SETTINGS.bkDismiss, { [bkRoom()]: Date.now() }); saveSettings(); renderBanner(); return true;
+    case 'pcbrestore': pcbRestore(v); return true;
+    case 'pcbrefresh': pcbAsk(); renderModal(); return true;
+  }
+  return false;
+}
+
 /* ---------- GM MODE: a GM who isn't playing a character ---------- */
 // In Owlbear, a GM without a character of their own gets GM tools instead of a sheet: Encounter, Party
 // and Notes, no example character, and nothing published to the party. "I'm also playing a character"
@@ -6176,7 +6376,7 @@ function renderTop() {
 }
 
 function renderBanner() {
-  if (gmMode()) { $('#banner').innerHTML = storageOK ? '' : '<div class="banner warn">This browser view isn\'t saving changes.</div>'; return; }
+  if (gmMode()) { $('#banner').innerHTML = (storageOK ? '' : '<div class="banner warn">This browser view isn\'t saving changes.</div>') + bkBannerHtml(); return; }
   const c = C(); let h = '';
   if (IN_OBR && OBRX.ready && OBRX.me.role !== 'GM' && OBRX.init && OBRX.init.active && !ui.viewing) h += `<div class="banner" style="background:var(--accent-soft)"><span style="flex:1">⚔ ${initStrip()}</span>${endTurnBtn()}</div>`;
   if (ui.viewing) {
@@ -6184,10 +6384,11 @@ function renderBanner() {
     $('#banner').innerHTML = `<div class="banner" style="background:var(--accent-soft)"><span style="flex:1;min-width:200px">Viewing <b>${esc(ui.viewing.owner)}'s ${esc(c.name)}</b>, read-only, as of ${hhmm}. Rolls here stay on your screen.</span><button class="btn small" data-act="viewrefresh">Refresh</button><button class="btn small primary" data-act="viewend">Back to my sheet</button></div><button class="viewx" data-act="viewend" title="Close ${esc(c.name)} and go back" aria-label="Close this sheet">✕</button>`;
     return;
   }
+  h += bkBannerHtml();
   h += levelUndoBanner(c);
   if (!storageOK) h += `<div class="banner warn">This browser view isn't saving changes. Use <b>Characters → Export</b> to keep a copy of your character.</div>`;
   const DAY = 864e5;
-  if (!c.example && !ui.backupLater && c.changedAt && (c.lastBackup ? c.changedAt > c.lastBackup && Date.now() - c.lastBackup > 3 * DAY : Date.now() - (c.createdAt || Date.now()) > DAY)) {
+  if (!c.example && !ui.backupLater && !gmHasCopy(c) && c.changedAt && (c.lastBackup ? c.changedAt > c.lastBackup && Date.now() - c.lastBackup > 3 * DAY : Date.now() - (c.createdAt || Date.now()) > DAY)) {
     h += `<div class="banner"><span style="flex:1;min-width:200px">${esc(c.name)} ${c.lastBackup ? 'was last backed up ' + Math.floor((Date.now() - c.lastBackup) / DAY) + ' days ago' : 'has never been backed up'}. Characters live in this browser only, so keep a copy in case it gets cleared.</span><button class="btn small" data-act="backupnow">Back up now</button><button class="btn small ghost" data-act="backuplater">Later</button></div>`;
   }
   if (c.example) h += `<div class="banner"><span style="flex:1;min-width:200px">This is an example character so you can try things out. Tap any number to roll, switch to <b>Edit</b> to change the sheet.</span><button class="btn small" data-act="newchar">Start a blank character</button><button class="btn small ghost" data-act="dismiss-ex">Keep this one</button></div>`;
@@ -6532,6 +6733,8 @@ function renderModal() {
   else if (m.type === 'roomhb') h = roomHbHtml(m);
   else if (m.type === 'toklink') h = tokLinkHtml(m);
   else if (m.type === 'monstat') h = monStatHtml(m);
+  else if (m.type === 'gmload') h = gmLoadHtml(m);
+  else if (m.type === 'pcbrestore') h = pcbRestoreHtml(m);
   else if (m.type === 'viewwait') h = dlgHead('Opening ' + (m.name || 'sheet')) + `<div class="dlg-b">${m.failed ? `<div class="banner warn" style="margin:0">${esc(m.owner || 'The player')}'s Grimsheet didn't answer. They need to be in the room with Grimsheet 1.3 or newer installed.</div>` : `<div class="sugg"><h3>Asking ${esc(m.owner || 'the player')}'s Grimsheet…</h3><span>The sheet opens read-only in a moment.</span></div>`}</div><div class="dlg-f"><button class="btn" data-act="close">${m.failed ? 'Close' : 'Cancel'}</button></div>`;
   $('#ovl').innerHTML = `<div class="ovl" data-act="ovlbg"><div class="dlg" role="dialog" aria-modal="true">${h}</div></div>`;
   $('#ovl .ovl').scrollTop = keepScroll;
@@ -6545,7 +6748,7 @@ function charsHtml() {
     <button class="btn small" data-act="dupchar" data-id="${c.id}">Duplicate</button>
     <button class="btn small" data-act="modal" data-v="export" data-id="${c.id}">Export</button>
     ${list.length > 1 ? `<button class="btn small ${ui.confirm === 'del-' + c.id ? 'danger' : ''}" data-act="delchar" data-id="${c.id}">${ui.confirm === 'del-' + c.id ? 'Confirm delete' : 'Delete'}</button>` : ''}</div>`).join('')}</div>
-    <div class="addrow"><button class="btn primary" data-act="newchar">New blank character</button><button class="btn" data-act="sample">Add example character</button><button class="btn" data-act="modal" data-v="import">Import</button><button class="btn" data-act="pdfopen">Import from PDF</button></div>
+    <div class="addrow"><button class="btn primary" data-act="newchar">New blank character</button><button class="btn" data-act="sample">Add example character</button><button class="btn" data-act="modal" data-v="import">Import</button><button class="btn" data-act="pdfopen">Import from PDF</button>${IN_OBR && OBRX.ready && OBRX.me.role !== 'GM' ? '<button class="btn" data-act="modal" data-v="pcbrestore">Restore from GM</button>' : ''}</div>
     <div class="muted" style="font-size:.85rem">Characters are saved in this browser automatically. Export a character to back it up or move it to another device.</div></div>`;
 }
 function addModuleHtml() {
@@ -6717,6 +6920,7 @@ function settingsHtml() {
       <button class="switch ${SETTINGS.nameText !== false ? 'on' : ''}" data-act="setnametext" aria-pressed="${SETTINGS.nameText !== false}"><i></i>${SETTINGS.nameText !== false ? 'On' : 'Off'}</button></div>
     <div class="setrow"><div class="grow"><b>Also update Owlbear's initiative tracker</b><div class="muted">Writes initiative and the current turn onto tokens, for tables that use that tracker.</div></div>
       <button class="switch ${SETTINGS.obrTracker !== false ? 'on' : ''}" data-act="setobrtracker" aria-pressed="${SETTINGS.obrTracker !== false}"><i></i>${SETTINGS.obrTracker !== false ? 'On' : 'Off'}</button></div>` : ''}
+    ${bkSettingsHtml()}
     <div class="setrow"><div class="grow"><b>Try it</b><div class="muted">Settings are saved in this browser. Grimsheet ${APP_VERSION}${IN_OBR ? (bgAlive() ? ' · background page running' + ((readJSON(BGKEY) || {}).v ? ' (' + readJSON(BGKEY).v + ')' : '') : ' · background page not running: re-add the extension in Owlbear') : ''}.</div></div><button class="btn" data-act="settest">Roll 1d20 + 2d6</button></div>
   </div><div class="dlg-f"><button class="btn primary" data-act="close">Done</button></div>`;
 }
@@ -6860,6 +7064,7 @@ document.addEventListener('click', ev => {
   const f = id ? findEntry(id) : null;
   if (!['edel', 'delchar', 'mdel', 'luundo', 'encclear', 'mondel', 'notedel', 'encdel', 'hbdel'].includes(act)) ui.confirm = null;
   if (act.startsWith('hb') && hbAct(act, el, v, c, id)) return;
+  if ((act.startsWith('gm') || act.startsWith('pcb') || act === 'bkdismiss') && bkAct(act, el, v)) return;
   switch (act) {
     case 'mode': ui.mode = v; render(); break;
     case 'viewend': ui.viewing = null; ui.open.clear(); render(); if (IN_OBR) refreshLinks(); break;

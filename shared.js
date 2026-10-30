@@ -1,7 +1,7 @@
 /* Grimsheet helpers shared by background.html and gm.html (the panel keeps its own copy). */
 window.GS = (function () {
   const GS = {
-    VERSION: '1.26.0',
+    VERSION: '1.27.0',
     CH_ROLL: 'com.grimsheet/roll',
     CH_GM: 'com.grimsheet/gm',        // GM ↔ player: hp changes, sheet requests and replies
     CH_LOCAL: 'com.grimsheet/local',  // same browser: GM menu → GM panel
@@ -117,6 +117,15 @@ window.GS = (function () {
   GS.hbMerge = (h, it) => { if (!it || !it.id) return false; const i = h.items.findIndex(x => x.id === it.id); if (i >= 0 && h.items[i].updated >= it.updated) return false; if (i >= 0) h.items[i] = it; else h.items.push(it); return true; };
   // the GM's list of what players may see: drop the rest; true when something is missing or newer
   GS.hbList = (h, list) => { const m = new Map(list || []); h.items = h.items.filter(x => m.has(x.id)); return [...m].some(([id, at]) => { const x = h.items.find(y => y.id === id); return !x || x.updated < at; }); };
+  // players' characters kept by the GM (same as the panel's mergePcb): newest copy per player and character
+  GS.PCB = 'grimsheet.pcbackup.v1'; GS.CH_BK = 'com.grimsheet/backup';
+  GS.mergePcb = (all, room, d) => {
+    const r = all[room] = all[room] || {}, p = r[d.from] = r[d.from] || { owner: d.owner || '', chars: {} };
+    p.owner = d.owner || p.owner; const old = p.chars[d.charId];
+    if (old && old.changedAt >= d.changedAt) return false;
+    p.chars[d.charId] = { name: d.name, cls: d.cls || '', level: d.level || '', changedAt: d.changedAt, data: d.data, at: Date.now() };
+    return true;
+  };
   GS.chunks = (s, n = 12000) => { const out = []; for (let i = 0; i < s.length; i += n) out.push(s.slice(i, i + n)); return out.length ? out : ['']; };
   GS.load = src => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
   GS.sdk = async () => { if (window.GrimsheetOBR) return window.GrimsheetOBR; await GS.load('vendor/owlbear-sdk-3.1.0.js'); return window.OwlbearSDK; };

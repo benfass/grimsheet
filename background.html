@@ -124,6 +124,29 @@
     });
     if (me.role !== 'GM') setTimeout(hbHello, 2000);
 
+    /* ---- backups: the GM keeps players' characters and hands them back on request ---- */
+    const bkSend = x => OBR.broadcast.sendMessage(S.CH_BK, x, { destination: 'REMOTE' }).catch(() => { });
+    const bkParts = {};
+    OBR.broadcast.onMessage(S.CH_BK, async ev => {
+      const d = ev.data; if (!d || me.role !== 'GM') return;
+      if (d.type === 'pcb') {
+        const b = bkParts[d.id] = bkParts[d.id] || { parts: [], n: d.parts, t: Date.now() }; b.parts[d.part] = d.data;
+        for (const [k, v] of Object.entries(bkParts)) if (Date.now() - v.t > 120e3) delete bkParts[k];
+        if (b.parts.filter(x => x != null).length < b.n) return;
+        delete bkParts[d.id];
+        const all = S.read(S.PCB) || {}; if (S.mergePcb(all, room, Object.assign({}, d, { data: b.parts.join('') }))) S.write(S.PCB, all);
+        bkSend({ type: 'pcbAck', to: d.from, charId: d.charId, changedAt: d.changedAt });
+        return;
+      }
+      const mine = ((S.read(S.PCB) || {})[room] || {})[d.from] || { chars: {} };
+      if (d.type === 'pcbList') { bkSend({ type: 'pcbIndex', to: d.from, re: d.id, list: Object.entries(mine.chars).map(([charId, x]) => ({ charId, name: x.name, cls: x.cls, level: x.level, changedAt: x.changedAt })) }); return; }
+      if (d.type === 'pcbGet') {
+        const x = mine.chars[d.charId]; if (!x) return;
+        const parts = S.chunks(x.data);
+        for (let i = 0; i < parts.length; i++) await bkSend({ type: 'pcbData', id: d.id, to: d.from, charId: d.charId, part: i, parts: parts.length, data: parts[i] });
+      }
+    });
+
     /* ---- campaign notes: keep the party journal up to date and answer newcomers ---- */
     const campGet = () => { const a = S.read(S.CAMP) || {}, c = a[room] || { name: '', notes: [], gone: {} }; c.notes = c.notes || []; c.gone = c.gone || {}; return c; };
     const campPut = c => { const a = S.read(S.CAMP) || {}; a[room] = c; S.write(S.CAMP, a); };
