@@ -2639,7 +2639,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.27.0';
+const APP_VERSION = '1.27.1';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -5369,11 +5369,22 @@ async function gmSaveToOwlbear() {
   const e = p.enc && p.enc.list ? Object.values(p.enc.list) : [], nPc = Object.values(p.pcb || {}).reduce((n, x) => n + Object.keys(x.chars || {}).length, 0);
   const name = 'Grimsheet backup · ' + (p.roomName || 'room') + ' · ' + when;
   const blob = await cardPng(p.roomName || 'GM backup', [when, e.length + ' encounter' + (e.length === 1 ? '' : 's'), ((p.camp && p.camp.notes) || []).length + ' notes', nPc + ' player character' + (nPc === 1 ? '' : 's')]);
-  const B = window.OwlbearBuild;
-  let up;
-  if (B && B.buildImageUpload) up = B.buildImageUpload(blob).name(name).description(data).plainText('').dpi(256).build();
-  else up = { file: blob, name, description: data, text: { type: 'PLAIN', plainText: '', richText: [], style: { fillColor: '#ffffff', fillOpacity: 1, strokeColor: '#222222', strokeOpacity: 1, strokeWidth: 0, textAlign: 'CENTER', textAlignVertical: 'BOTTOM', fontFamily: 'Roboto', fontSize: 24, fontWeight: 400, lineHeight: 1.5, padding: 8 }, width: 'AUTO', height: 'AUTO' }, textItemType: 'LABEL', grid: { dpi: 256, offset: { x: 128, y: 128 } }, visible: true, locked: false, rotation: 0, scale: { x: 1, y: 1 } };
-  try { await OBRX.api.assets.uploadImages([up], 'PROP'); } catch (err) { toast('Owlbear didn\'t take the backup: ' + (err && err.message || err)); return; }
+  const file = new File([blob], 'grimsheet-backup.png', { type: 'image/png' });
+  // the data goes in the picture's description; if Owlbear refuses that, try its text instead
+  const mk = where => {
+    const B = window.OwlbearBuild, desc = where === 'desc' ? data : 'Grimsheet backup', text = where === 'text' ? data : '';
+    if (B && B.buildImageUpload) return B.buildImageUpload(file).name(name).description(desc).plainText(text).dpi(256).build();
+    return { file, name, description: desc, text: { type: 'PLAIN', plainText: text, richText: [{ type: 'paragraph', children: [{ text }] }], style: { fillColor: 'white', fillOpacity: 1, strokeColor: 'white', strokeOpacity: 1, strokeWidth: 0, textAlign: 'CENTER', textAlignVertical: 'BOTTOM', fontFamily: 'Roboto', fontSize: 24, fontWeight: 400, lineHeight: 1.5, padding: 8 }, width: 'AUTO', height: 'AUTO' }, textItemType: 'LABEL', grid: { dpi: 256, offset: { x: 0, y: 0 } }, visible: true, locked: false, rotation: 0, scale: { x: 1, y: 1 } };
+  };
+  const why = err => { if (!err) return 'unknown error'; if (typeof err === 'string') return err; if (err.message) return err.message; if (err.error) return why(err.error); try { return JSON.stringify(err).slice(0, 300); } catch (e) { return String(err); } };
+  let firstErr = null;
+  try { await OBRX.api.assets.uploadImages([mk('desc')], 'PROP'); }
+  catch (err) {
+    firstErr = why(err);
+    try { await OBRX.api.assets.uploadImages([mk('text')], 'PROP'); }
+    catch (err2) { toast(`Owlbear didn't take the backup (${data.length.toLocaleString()} characters). Description: ${firstErr}. Text: ${why(err2)}`); console.warn('Grimsheet backup upload failed', err, err2); SETTINGS.gmBackupErr = 'failed. Description: ' + firstErr + ' · Text: ' + why(err2) + ' (' + data.length + ' characters)'; saveSettings(); if (ui.modal && ui.modal.type === 'settings') renderModal(); return; }
+  }
+  SETTINGS.gmBackupErr = firstErr ? 'Saved in the text instead of the description (' + firstErr + ')' : '';
   SETTINGS.gmBackupAt = p.at; SETTINGS.gmBackupSize = data.length; saveSettings(); if (ui.modal && ui.modal.type === 'settings') renderModal();
   toast(`Saved “${name}” to your Owlbear library (props).`);
 }
@@ -5381,7 +5392,7 @@ async function gmLoadFromOwlbear() {
   if (!IN_OBR || !OBRX.ready) return;
   let picked; try { picked = await OBRX.api.assets.downloadImages(false, 'Grimsheet backup', 'PROP'); } catch (e) { return; }
   const it = picked && picked[0]; if (!it) return;
-  const desc = it.description || '';
+  const desc = (it.description || '').startsWith(GSB) ? it.description : ((it.text && it.text.plainText) || it.description || '');
   if (!desc.startsWith(GSB)) { toast('That picture isn\'t a Grimsheet backup. Pick one named “Grimsheet backup · …”.'); return; }
   let p; try { p = await unpackJSON(desc.slice(GSB.length)); } catch (e) { toast('That backup is incomplete (' + desc.length.toLocaleString() + ' characters came back). Owlbear may have shortened it.'); return; }
   openModal('gmload', { p, name: it.name });
@@ -5427,7 +5438,7 @@ function bkSettingsHtml() {
   if (!IN_OBR || !OBRX.ready) return '';
   if (OBRX.me.role === 'GM') {
     const n = Object.values(pcbAll()[bkRoom()] || {}).reduce((k, x) => k + Object.keys(x.chars || {}).length, 0);
-    return `<div class="setrow" style="flex-wrap:wrap"><div class="grow" style="min-width:220px"><b>Backups</b><div class="muted">Your Grimsheet keeps a copy of your players' characters for this room (${n} now), so they can restore them on a new device. To move to another device yourself, save a backup to your Owlbear library (it appears under Props as “Grimsheet backup · …”) and load it there.${SETTINGS.gmBackupAt ? ' Last saved ' + esc(ago(SETTINGS.gmBackupAt)) + '.' : ''}</div></div>
+    return `<div class="setrow" style="flex-wrap:wrap"><div class="grow" style="min-width:220px"><b>Backups</b><div class="muted">Your Grimsheet keeps a copy of your players' characters for this room (${n} now), so they can restore them on a new device. To move to another device yourself, save a backup to your Owlbear library (it appears under Props as “Grimsheet backup · …”) and load it there.${SETTINGS.gmBackupAt ? ' Last saved ' + esc(ago(SETTINGS.gmBackupAt)) + '.' : ''}</div>${SETTINGS.gmBackupErr ? `<div class="muted" style="font-size:.82rem;color:var(--danger);user-select:text">Last save: ${esc(SETTINGS.gmBackupErr)}</div>` : ''}</div>
       <div class="inline"><button class="btn small primary" data-act="gmsave">Save to Owlbear</button><button class="btn small" data-act="gmload">Load from Owlbear</button></div></div>`;
   }
   const s = readJSON(PCBSENT) || {}, c = C(), x = s[c.id];
