@@ -394,6 +394,8 @@ select.ed-inline{width:auto}
 .insp.react{margin-right:6px}.insp.react.used,.chip.react.used{color:var(--danger);border-color:var(--danger)}
 .chip.react{cursor:pointer;background:none;font-size:.75rem}
 .ico.plus1{font-size:.78rem;font-weight:700;width:auto;padding:0 6px}
+.sb-warn{color:var(--gold);font-size:.84rem;line-height:1.45}
+.roll.alt small{font-size:.7em;opacity:.8;margin-left:2px}
 .chip.hbup{color:var(--accent);border-color:var(--accent);cursor:pointer;background:transparent;white-space:nowrap}
 .hb-hidden b{opacity:.7}
 .hb-i .e-name{background:none;border:0;text-align:left;cursor:pointer;color:inherit;font:inherit}
@@ -1611,7 +1613,12 @@ const MONSTERS = (() => {
       const between = prevEnd >= 0 ? low.slice(prevEnd, m.index) : '';
       const after = low.slice(m.index + m[0].length).split(/[.,;]/)[0];
       prevEnd = m.index + m[0].length;
-      if (prevEnd && /\bor\b/.test(between) || /\bif\b/.test(after)) continue;
+      if (prevEnd && /\bor\b/.test(between)) {
+        // "… or 9 (1d10 + 4) slashing damage if used with two hands": an alternative, kept as its own button
+        if (a.damage.length && !a.alt) { const w = (after.match(/\bif\b\s+(.*)/) || [])[1] || ''; a.alt = { label: /two hands/.test(w) ? 'two-handed' : w.replace(/^(it is |used |the |used with )/, '').slice(0, 30) || 'alternative', damage: [{ dice: m[1], mod: m[3] ? (m[2] === '-' ? '-' : '') + m[3] : '', type: m[4] }] }; }
+        continue;
+      }
+      if (/\bif\b/.test(after)) continue;
       a.damage.push({ dice: m[1], mod: m[3] ? (m[2] === '-' ? '-' : '') + m[3] : '', type: m[4] });
     }
     if (!a.damage.length && (m = low.match(/(?:hit|taking)[^.]*?\b(\d+)\s+([a-z]+)\s+damage/))) a.damage.push({ dice: '', mod: m[1], type: m[2] });
@@ -1635,12 +1642,31 @@ const MONSTERS = (() => {
     return out;
   }
 
+  // small words stay lower case in names ("Cone of Cold"); ALL-CAPS names from PDFs become title case
+  const SMALL = new Set(['a', 'an', 'and', 'as', 'at', 'by', 'for', 'from', 'in', 'into', 'of', 'on', 'or', 'the', 'to', 'with']);
+  function titleCase(s) { return s.toLowerCase().replace(/[a-z][a-z']*/g, (w, i) => i > 0 && SMALL.has(w) ? w : w[0].toUpperCase() + w.slice(1)); }
+  const isCaps = s => /[A-Z]{2}/.test(s) && s === s.toUpperCase();
+  // text copied from Homebrewery, GM Binder, Markdown, web pages or PDFs: drop the formatting, keep the words
+  function clean(text) {
+    let s = String(text || '').replace(/\r/g, '').replace(/\u00a0/g, ' ').replace(/\u00ad/g, '').replace(/[\u2018\u2019]/g, "'").replace(/[\u201c\u201d]/g, '"')
+      .replace(/\ufb01/g, 'fi').replace(/\ufb02/g, 'fl').replace(/<br\s*\/?>/gi, '\n').replace(/<\/?[a-z][^>]*>/gi, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&');
+    return s.split('\n').map(l => {
+      l = l.replace(/^\s*(>\s*)+/, '').trim();
+      if (/^(\{\{|\}\}|\\(column|page|pagebreak)|:+$)/i.test(l)) return '';
+      if (/^[-_*=~\s]{3,}$/.test(l)) return '';
+      if (/^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?$/.test(l)) return '';
+      l = l.replace(/^[-*•·]\s+/, '').replace(/^#{1,6}\s*/, '');
+      l = l.replace(/::/g, ' ').replace(/\|/g, ' ').replace(/\*+/g, '').replace(/(^|[\s(])_+(?=\S)|(?<=\S)_+(?=[\s.,:;)]|$)/g, '$1');
+      return l.replace(/\s+/g, ' ').trim();
+    }).join('\n');
+  }
   const SECTIONS = ['traits', 'actions', 'bonus actions', 'reactions', 'legendary actions', 'mythic actions', 'lair actions'];
   function parse(text) {
-    const src = String(text || '').replace(/\r/g, '').replace(/[ \t]+/g, ' ').replace(/[−–]/g, '-');
+    const src = clean(text).replace(/[ \t]+/g, ' ').replace(/[−–]/g, '-');
     const lines = src.split('\n').map(s => s.trim()).filter(Boolean);
     if (!lines.length) return null;
-    const t = { name: lines[0].replace(/\s+/g, ' '), meta: '', ac: 10, acNote: '', hp: 1, hpDice: '', speed: '30 ft.', abilities: { STR: 10, DEX: 10, CON: 10, INT: 10, WIS: 10, CHA: 10 }, saves: {}, init: null, cr: '', xp: 0, pb: 2, details: [], traits: [], actions: [], bonus: [], reactions: [], legendary: [], legendaryCount: 0 };
+    const nm0 = lines[0].replace(/\s+/g, ' ');
+    const t = { name: isCaps(nm0) ? titleCase(nm0) : nm0, meta: '', ac: 10, acNote: '', hp: 1, hpDice: '', speed: '30 ft.', abilities: { STR: 10, DEX: 10, CON: 10, INT: 10, WIS: 10, CHA: 10 }, saves: {}, init: null, cr: '', xp: 0, pb: 2, details: [], traits: [], actions: [], bonus: [], reactions: [], legendary: [], legendaryCount: 0 };
     if (lines[1] && /^(tiny|small|medium|large|huge|gargantuan)\b/i.test(lines[1])) t.meta = lines[1];
     const all = lines.join('\n');
     let m;
@@ -1712,7 +1738,7 @@ const MONSTERS = (() => {
       return Object.assign(g, { spells: body.split(/,\s*(?![^()]*\))/).map(x => x.trim()).filter(Boolean) });
     });
     const srdSpell = nm => (typeof SRD !== 'undefined' && SRD.items || []).find(x => x.kind === 'spell' && x.name.toLowerCase() === nm.toLowerCase());
-    const cap = s => s.replace(/\b([a-z])/g, (m, c) => c.toUpperCase());
+    const cap = s => titleCase(s);
     for (const g of groups) for (const raw of g.spells) {
       const note = (raw.match(/\(([^)]*)\)/) || [])[1] || '', nm = raw.replace(/\([^)]*\)/g, '').replace(/[*†]/g, '').trim();
       if (!nm || nm.length > 40) continue;
@@ -2309,7 +2335,36 @@ Poison Breath (Recharge 5-6). The dragon exhales poisonous gas in a 30-foot cone
     if (!cache) cache = BLOCKS.map(b => { const t = parse(b); t.id = 'srd:' + t.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'); t.srd = true; t.source = b; return t; });
     return cache;
   }
-  return { parse, srd, avgDice, mod, spells: readSpellcasting };
+  // several stat blocks pasted together: each starts at the name line just before its "Armor Class"/"AC" line
+  // (or before the size-and-type line above it)
+  function splitBlocks(text) {
+    const lines = clean(text).split('\n'), starts = [];
+    lines.forEach((l, i) => {
+      if (!/^(armor class|ac)\s+\d+/i.test(l)) return;
+      let j = i - 1; while (j >= 0 && !lines[j].trim()) j--;
+      if (j >= 0 && /^(tiny|small|medium|large|huge|gargantuan)\b/i.test(lines[j])) { j--; while (j >= 0 && !lines[j].trim()) j--; }
+      if (j >= 0 && (!starts.length || j > starts[starts.length - 1])) starts.push(j);
+    });
+    if (starts.length < 2) return [text];
+    return starts.map((st, k) => lines.slice(st, k + 1 < starts.length ? starts[k + 1] : lines.length).join('\n'));
+  }
+  // what looks wrong after reading, so it can be fixed before saving
+  function warnings(t, text) {
+    const w = [];
+    if (!t) return ['No stat block found.'];
+    if (t.hp <= 1) w.push('Hit points not found (look for a "Hit Points 52 (7d8 + 21)" or "HP 52" line).');
+    if (!/(armor class|\bac)\s+\d+/i.test(clean(text || t.source || '')) && t.ac === 10) w.push('Armor Class not found; it is set to 10.');
+    if (Object.values(t.abilities).every(v => v === 10)) w.push('Ability scores not found; they are all 10.');
+    if (!t.actions.length) w.push('No actions found. Put them under a line that says "Actions".');
+    for (const a of [].concat(t.traits, t.actions, t.bonus, t.reactions, t.legendary)) {
+      const lo = (a.text || '').toLowerCase();
+      if (/to hit|(attack roll|weapon attack|spell attack)\s*:/.test(lo) && a.attack == null) w.push(a.name + ': the attack bonus wasn\'t found.');
+      if (/\bhit:/.test(lo) && !a.damage.length && !a.save) w.push(a.name + ': "Hit:" but no damage was found.');
+      if (/saving throw/.test(lo) && /\bdc\b/.test(lo) && !a.save) w.push(a.name + ': a saving throw is mentioned but its DC and ability weren\'t read.');
+    }
+    return w;
+  }
+  return { parse, srd, avgDice, mod, spells: readSpellcasting, clean, splitBlocks, warnings, titleCase };
 })();
 if (typeof module !== 'undefined') module.exports = MONSTERS;
 </script>
@@ -2639,7 +2694,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.27.2';
+const APP_VERSION = '1.28.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -3639,11 +3694,12 @@ function monAttack(m, ref) {
     after: en => { if ((en.crit || en.critClose) && a.damage.length) en.fu = [{ label: 'Crit damage', act: 'mondmg', id: m.id + '|' + ref, crit: 1 }, ...en.fu]; },
   });
 }
-function monDamage(m, ref, crit) {
-  const a = actOf(m, ref); if (!a) return;
+function monDamage(m, ref, crit, alt) {
+  const a0 = actOf(m, ref); if (!a0) return;
+  const a = alt && a0.alt ? Object.assign({}, a0, { damage: a0.alt.damage, name: a0.name + ' (' + a0.alt.label + ')' }) : a0;
   const comps = []; a.damage.forEach(d => { if (d.dice) comps.push({ f: d.dice, suffix: d.type }); if (d.mod) comps.push({ f: d.mod, src: d.dice ? '' : d.type }); });
   const key = 'm:' + m.id + '|' + ref, T = targetFor(monTokenIds(m), 'dmg', key, a.attack == null && !a.save);
-  if (T) Object.assign(T, { part: 'dmg', key, attacker: m.name, mon: m.id, what: a.name, save: a.save && a.attack == null ? { dc: a.save.dc, ability: a.save.ability } : null });
+  if (T) Object.assign(T, { part: 'dmg', key, attacker: m.name, mon: m.id, what: a0.name, save: a.save && a.attack == null ? { dc: a.save.dc, ability: a.save.ability } : null });
   roll(m.name + ' · ' + a.name + ' damage' + (crit ? ' (crit)' : ''), comps, { crit, kind: 'dmg', minZero: true, noShare: !SETTINGS.monShare, target: T, mon: m.id, note: [...new Set(a.damage.map(d => d.type))].join(', ') });
 }
 function monCheck(m, ab, save) {
@@ -3685,6 +3741,7 @@ function monActRow(m, list, a, i) {
       const btns = [];
       if (a.attack != null) btns.push(`<button class="roll hit" data-act="monatk" data-id="${m.id}" data-v="${ref}">${signed(a.attack)}</button>`);
       if (a.damage.length) btns.push(`<button class="roll dmg" data-act="mondmg" data-id="${m.id}|${ref}">${esc(a.damage.map(d => (d.dice || '') + (d.mod ? (d.dice ? (+d.mod < 0 ? ' − ' + Math.abs(+d.mod) : ' + ' + d.mod) : d.mod) : '')).join(' + '))}</button>`);
+      if (a.alt) btns.push(`<button class="roll dmg alt" data-act="mondmg" data-id="${m.id}|${ref}" data-alt="1" title="${esc(a.alt.label)} damage">${esc(a.alt.damage.map(d => (d.dice || '') + (d.mod ? (d.dice ? (+d.mod < 0 ? ' − ' + Math.abs(+d.mod) : ' + ' + d.mod) : d.mod) : '')).join(' + '))} <small>${esc(a.alt.label === 'two-handed' ? '2H' : a.alt.label)}</small></button>`);
       if (a.save) btns.push(`<span class="chip dc">DC ${a.save.dc} ${a.save.ability}</span>`);
       const ar = IN_OBR && E.areaOf(a.text); if (ar) btns.push(`<button class="btn small areab" data-act="monarea" data-id="${m.id}" data-v="${ref}" title="Place it on the map from ${esc(m.name)}'s token, toward the target">${ICON.area} ${areaLabel(ar)}</button>`);
       if (a.recharge) btns.push(`<button class="chip ${ready ? 'tag-action' : ''}" data-act="monrech" data-id="${m.id}" data-v="${ref}" title="Tap to mark used or ready">${ready ? 'Ready' : 'Recharging'} · ${a.recharge}–6</button>`);
@@ -3829,7 +3886,10 @@ function msPreview(text) {
   const L = (l, xs) => xs.length ? `<div><b>${l}:</b> ${xs.map(esc).join(', ')}</div>` : '';
   return `<div class="muted" style="font-size:.78rem;text-transform:uppercase;letter-spacing:.05em">Grimsheet reads</div><div><b>${esc(p.name)}</b> · AC ${p.ac} · HP ${p.hp}${p.cr ? ' · CR ' + esc(p.cr) : ''}</div>`
     + L('Traits', p.traits.map(a => a.name)) + L('Actions', p.actions.map(a => a.name + (a.attack != null ? ' ' + signed(a.attack) : ''))) + L('Bonus actions', p.bonus.map(a => a.name)) + L('Reactions', p.reactions.map(a => a.name)) + L('Legendary', p.legendary.map(a => a.name))
-    + p.details.filter(d => /resist|immun|vulner/i.test(d.k)).map(d => `<div><b>${esc(d.k)}:</b> ${esc(d.v)}</div>`).join('');
+    + p.details.filter(d => /resist|immun|vulner/i.test(d.k)).map(d => `<div><b>${esc(d.k)}:</b> ${esc(d.v)}</div>`).join('')
+    + (MONSTERS.spells && (() => { try { MONSTERS.spells(p); } catch (e) { } return (p.spellActs || []).length ? `<div><b>Spells:</b> ${p.spellActs.map(a => esc(a.name)).join(', ')}</div>` : ''; })() || '')
+    + [].concat(p.actions, p.bonus).filter(a => a.alt).map(a => `<div><b>${esc(a.name)}:</b> also ${esc(a.alt.label)} damage</div>`).join('')
+    + (() => { const w = MONSTERS.warnings(p, text); return w.length ? `<div class="sb-warn">${w.map(x => '⚠ ' + esc(x)).join('<br>')}</div>` : '<div class="ok" style="font-size:.82rem">✓ Nothing looks missing.</div>'; })();
 }
 // put a new line where the parser expects it
 function msInsert(text, kind, name, desc) {
@@ -3901,12 +3961,21 @@ async function linkMade(made, ids) {
   try { await OBRX.api.scene.items.updateItems(Object.keys(pairs), ds => { for (const d of ds) { const m = pairs[d.id]; d.metadata[MONLINK] = { room: roomKey(), inst: m.id, name: m.name }; d.metadata[BUBBLES] = Object.assign({}, d.metadata[BUBBLES] || {}, { health: m.hp, 'max health': m.max, 'temporary health': 0, 'armor class': m.ac, hide }); d.name = m.name; } }); } catch (e) { toast('Couldn\'t link the tokens.'); return; }
   refreshLinks();
 }
+function amPreview(text) {
+  const n = MONSTERS.splitBlocks(text).length;
+  return n > 1 ? `<div><b>${n} stat blocks</b> found. Read them to check each one and add them together.</div>` : msPreview(text);
+}
 function addMonHtml(md) {
   const tab = md.tab || 'list';
   const head = dlgHead('Add monsters') + `<div class="dlg-b" style="gap:10px"><div class="tabs" style="margin:0"><button class="${tab === 'list' ? 'on' : ''}" data-act="amtab" data-v="list">Bestiary</button><button class="${tab === 'paste' ? 'on' : ''}" data-act="amtab" data-v="paste">Paste a stat block</button></div>`;
   if (tab === 'paste') {
     const p = md.parsed;
-    return head + `${md.linkTo && md.linkTo.length ? `<div class="sugg" style="margin:0"><span>The new monster${md.linkTo.length > 1 ? 's' : ''} will take the token${md.linkTo.length > 1 ? 's' : ''} you right-clicked.</span></div>` : ''}<label class="fld"><span>Stat block</span><textarea id="am-text" placeholder="Paste a whole stat block: name, Armor Class, Hit Points, ability scores, traits, Actions…" style="min-height:180px">${esc(md.text || '')}</textarea></label>
+    if (md.many) return head + `<div class="sugg" style="margin:0"><h3>${md.many.length} stat blocks found</h3><span>Check each one; open it to fix anything before adding.</span></div>
+      <div>${md.many.map((x, k) => { const w = MONSTERS.warnings(x.p, x.text); return `<div class="list-i"><div class="grow"><b>${esc(x.p.name)}</b> <span class="muted" style="font-size:.85rem">AC ${x.p.ac} · HP ${x.p.hp} · CR ${esc(x.p.cr || '?')} · ${x.p.actions.length} action${x.p.actions.length === 1 ? '' : 's'}</span>${w.length ? `<div class="sb-warn" style="font-size:.8rem">⚠ ${esc(w[0])}${w.length > 1 ? ' (+' + (w.length - 1) + ' more)' : ''}</div>` : ''}</div>
+        <label class="muted">Add <input class="ed-inline" id="amm-${k}" value="${md.linkTo && md.linkTo.length ? 0 : 1}" style="width:40px" inputmode="numeric"></label><button class="btn small" data-act="amone" data-i="${k}" title="Open it on its own to check or fix it">Check</button></div>`; }).join('')}</div>
+      <div class="addrow" style="margin:0"><button class="btn small" data-act="amallsave">Save all to my monsters</button><button class="btn small primary" data-act="amalladd">Save all and add</button><button class="btn small ghost" data-act="amback">Back to the text</button></div></div><div class="dlg-f"><button class="btn" data-act="close">Done</button></div>`;
+    return head + `${md.linkTo && md.linkTo.length ? `<div class="sugg" style="margin:0"><span>The new monster${md.linkTo.length > 1 ? 's' : ''} will take the token${md.linkTo.length > 1 ? 's' : ''} you right-clicked.</span></div>` : ''}<label class="fld"><span>Stat block</span><textarea id="am-text" placeholder="Paste a whole stat block: name, Armor Class, Hit Points, ability scores, traits, Actions… From a book, a PDF, D&D Beyond, Homebrewery or GM Binder. Several at once is fine." style="min-height:180px">${esc(md.text || '')}</textarea></label>
+      <div id="am-prev" class="ms-prev" ${md.text && md.text.trim() ? '' : 'hidden'}>${md.text && md.text.trim() ? amPreview(md.text) : ''}</div>
       <div class="addrow" style="margin:0"><button class="btn small primary" data-act="amparse">Read stat block</button></div>
       ${p ? `<div class="sugg"><h3>${esc(p.name)} <span class="muted" style="font-weight:400">${esc(p.meta)}</span></h3>
         <div class="frow"><label class="fld"><span>Name</span><input id="am-name" data-amf="name" value="${esc(p.name)}"></label><label class="fld"><span>AC</span><input id="am-ac" data-amf="ac" value="${p.ac}" inputmode="numeric"></label><label class="fld"><span>Average HP</span><input id="am-hp" data-amf="hp" value="${p.hp}" inputmode="numeric"></label><label class="fld"><span>HP dice</span><input id="am-hd" data-amf="hpDice" value="${esc(p.hpDice)}"></label><label class="fld"><span>Initiative bonus</span><input id="am-in" data-amf="init" value="${p.init}" inputmode="numeric"></label></div>
@@ -7283,7 +7352,21 @@ document.addEventListener('click', ev => {
     case 'setobrtracker': SETTINGS.obrTracker = SETTINGS.obrTracker === false; saveSettings(); publishInit(); renderModal(); break;
     case 'addmon': openModal('addmon', { tab: 'list', q: '' }); break;
     case 'amtab': ui.modal.tab = v; renderModal(); break;
-    case 'amparse': { const tx = ($('#am-text') || {}).value || ''; ui.modal.text = tx; const pp = MONSTERS.parse(tx); if (!pp || !pp.name || (!pp.actions.length && !pp.traits.length && pp.hp <= 1)) { ui.modal.parsed = null; ui.modal.err = 'Couldn\'t find a stat block in that text. Paste the whole block, starting with the monster\'s name.'; } else { ui.modal.parsed = pp; ui.modal.err = ''; } renderModal(); break; }
+    case 'amback': ui.modal.many = null; renderModal(); break;
+    case 'amone': { const x = ui.modal.many && ui.modal.many[i]; if (!x) break; ui.modal.many = null; ui.modal.text = x.text; ui.modal.parsed = x.p; ui.modal.err = ''; renderModal(); break; }
+    case 'amallsave': case 'amalladd': {
+      const many = ui.modal.many || [], link = (ui.modal.linkTo || []).slice(); let added = 0;
+      many.forEach((x, k) => {
+        const pp = x.p; pp.id = 'my:' + uid(); pp.source = x.text; bestiary.push(pp);
+        if (act === 'amalladd') { const n = Math.max(0, Math.min(30, parseInt(($('#amm-' + k) || {}).value, 10) || 0)); if (n) { const made = addMonsters(pp, n, { group: SETTINGS.groupInit !== false }); added += n; if (link.length) linkMade(made, link.splice(0, made.length)); } }
+      });
+      saveBestiary(); if (act === 'amalladd') { SETTINGS.view = 'encounter'; saveSettings(); }
+      toast(`Saved ${many.length} monsters to your monsters${added ? ', added ' + added + ' to the encounter' : ''}.`); closeModal(); render(); break;
+    }
+    case 'amparse': { const tx = ($('#am-text') || {}).value || ''; ui.modal.text = tx;
+      const blocks = MONSTERS.splitBlocks(tx);
+      if (blocks.length > 1) { ui.modal.many = blocks.map(b => ({ text: b, p: MONSTERS.parse(b) })).filter(x => x.p && x.p.name); ui.modal.err = ''; renderModal(); break; }
+      const pp = MONSTERS.parse(tx); if (!pp || !pp.name || (!pp.actions.length && !pp.traits.length && pp.hp <= 1)) { ui.modal.parsed = null; ui.modal.err = 'Couldn\'t find a stat block in that text. Paste the whole block, starting with the monster\'s name.'; } else { ui.modal.parsed = pp; ui.modal.err = ''; } renderModal(); break; }
     case 'amsave': case 'amsaveadd': {
       const pp = ui.modal.parsed; if (!pp) break;
       pp.id = 'my:' + uid(); pp.source = ui.modal.text;
@@ -7307,7 +7390,7 @@ document.addEventListener('click', ev => {
     case 'turnto': { const e = enc(); if (!e.combat.active) break; e.combat.turn = v; saveEnc(); onTurnStart(initRows().find(r => r.k === v)); renderGrid(); break; }
     case 'pcdel': { const e = enc(); e.pcs = e.pcs.filter(x => x.key !== v); saveEnc(); renderGrid(); break; }
     case 'monatk': { const m = enc().mons.find(x => x.id === id); if (m) monAttack(m, v); break; }
-    case 'mondmg': { const [mid, ref] = String(id).split('|'); const m = enc().mons.find(x => x.id === mid); if (m) monDamage(m, ref, !!el.dataset.crit); break; }
+    case 'mondmg': { const [mid, ref] = String(id).split('|'); const m = enc().mons.find(x => x.id === mid); if (m) monDamage(m, ref, !!el.dataset.crit, !!el.dataset.alt); break; }
     case 'monrech': { const m = enc().mons.find(x => x.id === id); if (!m) break; m.rech[v] = m.rech[v] === false; saveEnc({ quiet: true }); renderGrid(); break; }
     case 'monuse': { const m = enc().mons.find(x => x.id === id); if (!m) break; const u = m.uses[v] || 0; m.uses[v] = i < u ? i : i + 1; saveEnc({ quiet: true }); renderGrid(); break; }
     case 'monmore': { const f = findMon(id); if (!f) break; const t = f.e.tpls[f.m.tpl] || tplById(f.m.tpl); if (!t) break; const sel = ui.encSel; ui.encSel = Object.keys(encs().list).find(k => encs().list[k] === f.e); const made = addMonsters(t, 1, { group: !f.m.solo }); ui.encSel = sel; renderGrid(); toast('Added ' + made[0].name + (SETTINGS.rollHp && t.hpDice ? ' (' + made[0].max + ' HP)' : '') + '.'); break; }
@@ -7503,6 +7586,7 @@ document.addEventListener('change', ev => {
 });
 document.addEventListener('input', ev => {
   const t = ev.target;
+  if (t.id === 'am-text') { clearTimeout(ui.amT); ui.amT = setTimeout(() => { const n = $('#am-prev'); if (n) { n.hidden = !t.value.trim(); n.innerHTML = t.value.trim() ? amPreview(t.value) : ''; } }, 300); return; }
   if (t.id === 'ms-text') { clearTimeout(ui.msT); ui.msT = setTimeout(() => { const n = $('#ms-prev'); if (n) n.innerHTML = msPreview(t.value); }, 250); return; }
   if (t.dataset.gsearch && ui.modal && ui.modal.type === 'search') { ui.modal.q = t.value; ui.modal.hits = searchRun(t.value); ui.modal.sel = 0; searchPaint(); return; }
   if (t.dataset.noteq) { ui.noteQ = t.value; const pos = t.selectionStart; renderGrid(); const n = $('#note-q'); if (n) { n.focus(); n.setSelectionRange(pos, pos); } return; }
