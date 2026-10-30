@@ -253,7 +253,7 @@
       id: 'com.grimsheet/menu-unlink',
       icons: [{ icon: ICON, label: 'Unlink from Grimsheet', filter: { min: 1, max: 1, roles: ['PLAYER'], every: [{ key: ['metadata', S.LINK, 'player'], value: me.id }] } }],
       onClick: async ctx => {
-        await OBR.scene.items.updateItems(ctx.items.map(i => i.id), drafts => { for (const it of drafts) delete it.metadata[S.LINK]; });
+        await OBR.scene.items.updateItems(ctx.items.map(i => i.id), drafts => { for (const it of drafts) { delete it.metadata[S.LINK]; delete it.metadata[S.BUBBLES]; } });
         OBR.notification.show('Token unlinked from Grimsheet.');
       },
     });

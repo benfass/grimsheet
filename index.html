@@ -391,6 +391,9 @@ select.ed-inline{width:auto}
 .viewx:hover{border-color:var(--accent);color:var(--accent)}
 .atk-src{font-weight:600;color:var(--accent)}
 .ms-prev{border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:.86rem;display:grid;gap:2px;background:var(--sunk)}
+.insp.react{margin-right:6px}.insp.react.used,.chip.react.used{color:var(--danger);border-color:var(--danger)}
+.chip.react{cursor:pointer;background:none;font-size:.75rem}
+.ico.plus1{font-size:.78rem;font-weight:700;width:auto;padding:0 6px}
 .chip.hbup{color:var(--accent);border-color:var(--accent);cursor:pointer;background:transparent;white-space:nowrap}
 .hb-hidden b{opacity:.7}
 .hb-i .e-name{background:none;border:0;text-align:left;cursor:pointer;color:inherit;font:inherit}
@@ -2636,7 +2639,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.23.0';
+const APP_VERSION = '1.24.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -2853,7 +2856,7 @@ function load() {
   const c = sampleChar(); return { chars: { [c.id]: c }, active: c.id };
 }
 let saveT = null;
-function save() { if (ui.viewing) return; const ch = store.chars[store.active]; if (ch) ch.changedAt = Date.now(); try { histRecord(); } catch (e) { } clearTimeout(saveT); saveT = setTimeout(() => { if (IN_OBR) publishStatus(); try { localStorage.setItem(KEY, JSON.stringify(store)); storageOK = true; } catch (e) { if (storageOK) { storageOK = false; renderBanner(); } } }, 250); }
+function save() { if (ui.viewing) return; const ch = store.chars[store.active]; if (ch) { ch.changedAt = Date.now(); if (downSync(ch)) setTimeout(() => { if (!ui.modal || ui.modal.type !== 'editor') render(); }, 0); } try { histRecord(); } catch (e) { } clearTimeout(saveT); saveT = setTimeout(() => { if (IN_OBR) publishStatus(); try { localStorage.setItem(KEY, JSON.stringify(store)); storageOK = true; } catch (e) { if (storageOK) { storageOK = false; renderBanner(); } } }, 250); }
 function loadLib() { try { return JSON.parse(localStorage.getItem(LIBKEY) || '[]'); } catch (e) { return []; } }
 function saveLib() { try { localStorage.setItem(LIBKEY, JSON.stringify(library)); } catch (e) { } }
 
@@ -2962,6 +2965,7 @@ window.addEventListener('storage', ev => {
   try {
     const s = JSON.parse(ev.newValue); if (!s || !s.chars) return;
     Object.values(s.chars).forEach(normalize); clearTimeout(saveT); store = s;
+    if (store.chars[store.active] && downSync(store.chars[store.active])) setTimeout(save, 0);
     if (!store.chars[store.active]) store.active = Object.keys(store.chars)[0];
     if (ui.modal && ui.modal.type === 'editor') { renderTop(); renderGrid(); } else render();
     if (IN_OBR) publishStatus();
@@ -3331,7 +3335,8 @@ function addMonsters(t, n, opts = {}) {
   const numbered = same.length + n > 1;
   for (let i = 0; i < n; i++) {
     e.seq[t.id] = Math.max(e.seq[t.id] || 0, same.length) + 1;
-    const m = { id: uid(), tpl: t.id, name: numbered ? t.name + ' ' + e.seq[t.id] : t.name, hp: t.hp, max: t.hp, temp: 0, ac: t.ac, cond: [], rech: {}, uses: {}, leg: 0, init: null, solo: opts.group === false };
+    let hp = t.hp; if (SETTINGS.rollHp && t.hpDice) { try { hp = Math.max(1, E.rollComps([{ f: t.hpDice }], CTX, {}).total); } catch (x) { } }
+    const m = { id: uid(), tpl: t.id, name: numbered ? t.name + ' ' + e.seq[t.id] : t.name, hp, max: hp, temp: 0, ac: t.ac, cond: [], rech: {}, uses: {}, leg: 0, init: null, solo: opts.group === false };
     e.mons.push(m); made.push(m);
   }
   saveEnc(); return made;
@@ -3464,7 +3469,7 @@ function onTurnStart(row) {
   if (!row || row.kind !== 'mon') { selectRowTokens(row); return; }
   const msgs = [];
   for (const m of row.members) {
-    const t = tplOf(m); m.leg = 0;
+    const t = tplOf(m); m.leg = 0; m.react = false;
     for (const [list, acts] of [['actions', t.actions], ['bonus', t.bonus], ['reactions', t.reactions]]) (acts || []).forEach((a, i) => {
       const key = list + ':' + i;
       if (a.recharge && m.rech[key] === false) { const r = 1 + Math.floor(Math.random() * 6); if (r >= a.recharge) { m.rech[key] = true; msgs.push(`${m.name}: ${a.name} recharged (rolled ${r})`); } else msgs.push(`${m.name}: ${a.name} not recharged (rolled ${r})`); }
@@ -3657,7 +3662,7 @@ async function pickLinkFromMap(id) {
 }
 async function unlinkMon(inst) {
   const ids = (OBRX.monTokens[inst] || []).map(i => i.id); if (!ids.length) return;
-  try { await OBRX.api.scene.items.updateItems(ids, drafts => { for (const d of drafts) delete d.metadata[MONLINK]; }); } catch (e) { return; }
+  try { await OBRX.api.scene.items.updateItems(ids, drafts => { for (const d of drafts) { delete d.metadata[MONLINK]; delete d.metadata[BUBBLES]; } }); } catch (e) { return; }
   await refreshLinks(); renderGrid(); toast('Token unlinked.');
 }
 function monCard(m, cur) {
@@ -3676,6 +3681,7 @@ function monCard(m, cur) {
     const used = m.uses['slot:' + g.level] || 0;
     return `<div class="mspell-g">${esc(g.label)}${g.slots ? ` <span class="boxes">${Array.from({ length: g.slots }, (_, k) => `<button class="box ${k < used ? 'used' : ''}" data-act="monuse" data-id="${m.id}" data-v="slot:${g.level}" data-i="${k}" aria-label="Slot ${k + 1}"></button>`).join('')}</span>` : ''}</div>` + rows.map(([a, i]) => monActRow(m, 'spellActs', a, i)).join('');
   }).join('') : '';
+  const lrN = lrMax(t), lr = lrN ? `<div class="mact-h">Legendary resistance</div><div class="mact"><span class="boxes">${Array.from({ length: lrN }, (_, k) => `<button class="box ${k < ((m.uses || {}).lr || 0) ? 'used' : ''}" data-act="monlr" data-id="${m.id}" data-i="${k}" aria-label="Legendary resistance ${k + 1}"></button>`).join('')}</span><span class="muted" style="font-size:.8rem">per day; a failed save can become a success</span></div>` : '';
   const leg = t.legendaryCount ? `<div class="mact-h">Legendary actions</div><div class="mact"><span class="boxes">${Array.from({ length: t.legendaryCount }, (_, k) => `<button class="box ${k < m.leg ? 'used' : ''}" data-act="monleg" data-id="${m.id}" data-i="${k}" aria-label="Legendary action ${k + 1}"></button>`).join('')}</span><span class="muted" style="font-size:.8rem">${esc(t.legendary.map(a => a.name + (a.cost > 1 ? ' (' + a.cost + ')' : '')).join(', '))}</span></div>` : '';
   const ab = `<div class="mab">${['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA'].map(k => `<div><span class="k">${k}</span><button class="md" data-act="moncheck" data-id="${m.id}" data-v="${k}" title="${k} check">${signed(MONSTERS.mod(t.abilities[k] || 10))}</button><button class="sv" data-act="monsave" data-id="${m.id}" data-v="${k}" title="${k} save">${t.saves[k] != null ? 'save ' + signed(t.saves[k]) : 'save'}</button></div>`).join('')}</div>`;
   const details = open ? `<div class="mdet">${t.meta ? `<div class="muted" style="font-style:italic">${esc(t.meta)}</div>` : ''}<div class="muted">Speed ${esc(t.speed || '')}${t.cr ? ' · CR ' + esc(t.cr) + (t.xp ? ' (' + t.xp + ' XP)' : '') : ''}${t.hpDice ? ' · HP dice ' + esc(t.hpDice) : ''}</div>
@@ -3693,18 +3699,20 @@ function monCard(m, cur) {
   return `<section class="mcard ${isCur ? 'cur' : ''} ${m.hp <= 0 ? 'down' : ''} ${ui.monFocus === m.id ? 'focus' : ''}" data-inst="${m.id}">
     <div class="mhead">${tokImg((OBRX.monTokens[m.id] || [])[0]) ? `<img class="tokimg sm" src="${esc(tokImg(OBRX.monTokens[m.id][0]))}" alt="" data-dblfocus="mon|${m.id}" title="Double-click to find its token">` : ''}<b class="mtitle" data-dblfocus="mon|${m.id}" title="${tok ? 'Double-click to find its token' : ''}">${esc(m.name)}</b><span class="chip">AC ${m.ac}</span>${tok ? `<span class="chip tag-action" title="Linked to ${tok} token${tok > 1 ? 's' : ''}">Token</span>${locateBtn('focus', `data-v="mon|${m.id}"`, 'Find its token on the map')}` : IN_OBR && OBRX.ready ? `<button class="btn small tlink ${ui.linkPick === m.id ? 'on' : ''}" data-act="monlinkpick" data-id="${m.id}" title="Pick its token from a list, or select it on the map">${ICON.target} Link token</button>` : ''}${IN_OBR ? tgtMini() : ''}
       <span style="flex:1"></span>
+      <button class="ico plus1" data-act="monmore" data-id="${m.id}" title="Add another ${esc(t.name)}">+1</button>
       <button class="ico" data-act="monedit" data-id="${m.id}" title="Edit name, HP, AC">${ICON.edit}</button>
       <button class="ico" data-act="monopen" data-id="${m.id}" title="${open ? 'Hide' : 'Show'} stat block">${open ? ICON.chev : ICON.chevR}</button>
       <button class="ico ${ui.confirm === 'mondel-' + m.id ? 'on' : ''}" data-act="mondel" data-id="${m.id}" title="${ui.confirm === 'mondel-' + m.id ? 'Tap again to remove' : 'Remove'}">${ICON.trash}</button></div>
     <div class="inq" data-inq="mon:${m.id}" hidden></div>
     ${editRow}
     <div class="mhp"><span class="pool">${m.hp}<small>/${m.max}</small></span>${m.temp ? `<span class="temp">+${m.temp}</span>` : ''}${m.hp <= 0 ? '<span class="chip" style="color:var(--danger);border-color:var(--danger)">Down</span>' : m.hp <= m.max / 2 ? '<span class="chip" style="color:var(--gold);border-color:var(--gold)">Bloodied</span>' : ''}
+      <button class="chip react ${m.react ? 'used' : ''}" data-act="monreact" data-id="${m.id}" title="${m.react ? 'Reaction used; back at the start of its turn' : 'Reaction available; tap when it uses it'}">⟲ ${m.react ? 'used' : 'reaction'}</button>
       <span style="flex:1"></span><input class="qm" id="mq-${m.id}" data-qm="monhp" data-id="${m.id}" placeholder="−7 or +5" style="width:84px" aria-label="Damage or heal ${esc(m.name)}"></div>
     <div class="hpbar"><i class="${pct < 25 ? 'low' : pct < 55 ? 'mid' : ''}" style="width:${pct}%"></i></div>
     <div class="cond" style="margin-top:6px">${m.cond.map(k => `<button class="on" data-act="moncond" data-id="${m.id}" data-v="${esc(k)}" title="Remove">${esc(k)}${durTag((m.condDur || {})[k])} ✕</button>`).join('')}
       ${m.concNote && m.cond.includes('Concentrating') ? `<span class="muted" style="font-size:.78rem">${esc(m.concNote)}</span>` : ''}
       <select class="ed-inline" id="mc-${m.id}" data-moncond="${m.id}" aria-label="Add a condition" style="width:auto;font-size:.78rem"><option value="">+ condition</option>${CONDITIONS.concat(['Concentrating']).filter(k => !m.cond.includes(k)).map(k => `<option>${k}</option>`).join('')}</select></div>
-    ${ab}${acts}${spells}${leg}${details}
+    ${ab}${acts}${spells}${lr}${leg}${details}
   </section>`;
 }
 
@@ -3819,6 +3827,7 @@ function addMonHtml(md) {
   const list = catalog().filter(t => !q || (t.name + ' ' + t.meta + ' cr ' + t.cr).toLowerCase().includes(q)).sort((a, b) => a.name.localeCompare(b.name));
   return head + `<input id="am-q" class="srd-q" data-amq="1" value="${esc(md.q || '')}" placeholder="Search monsters: name, type, CR…" aria-label="Search monsters">
     <label class="muted" style="font-size:.88rem;display:flex;gap:6px;align-items:center"><input type="checkbox" id="am-group" data-amgroup="1" ${SETTINGS.groupInit !== false ? 'checked' : ''}> Monsters of the same kind share one initiative roll</label>
+    <label class="muted" style="font-size:.88rem;display:flex;gap:6px;align-items:center"><input type="checkbox" id="am-rollhp" data-amrollhp="1" ${SETTINGS.rollHp ? 'checked' : ''}> Roll each monster's hit points (instead of the average)</label>
     <div id="am-list">${list.length ? list.map(t => `<div class="list-i"><div class="grow"><b>${esc(t.name)}</b>${t.srd ? '' : ' <span class="chip">Mine</span>'}<div class="muted" style="font-size:.82rem">CR ${esc(t.cr || '?')} · AC ${t.ac} · HP ${t.hp}${t.hpDice ? ' (' + esc(t.hpDice) + ')' : ''} · ${esc(t.meta || '')}</div></div>
       <input class="ed-inline" id="amn-${esc(t.id)}" data-amn="${esc(t.id)}" value="1" style="width:44px" inputmode="numeric" aria-label="How many">
       <button class="btn small primary" data-act="amadd" data-id="${esc(t.id)}">Add</button>${t.srd ? '' : `<button class="ico" data-act="amdel" data-id="${esc(t.id)}" title="Delete from my monsters">${ICON.trash}</button>`}</div>`).join('') : '<div class="empty">No monsters match. Paste a stat block to add your own.</div>'}</div>
@@ -3849,10 +3858,25 @@ function tickConditions(conds, dur) {
 function tickMyTurn() {
   const c = C(), ended = tickConditions(c.conditions, c.condDur || (c.condDur = {}));
   const msgs = ended.map(k => k + ' ended');
+  if (c.reactUsed) { c.reactUsed = false; msgs.push('reaction back'); save(); render(); }
   if (c.conc && c.conc.rounds) { c.conc.rounds--; if (c.conc.rounds <= 0) { const n = c.conc.name; save(); endConc(n + ' ends: its duration is up.'); } }
   if (ended.length || (c.conc && c.conc.rounds)) { save(); render(); }
   if (msgs.length) toast(msgs.join(', ') + '.');
 }
+// conditions that make a creature Incapacitated, which ends concentration
+const INCAP = ['Incapacitated', 'Stunned', 'Paralyzed', 'Petrified', 'Unconscious'];
+// at 0 HP a character is Unconscious until healed (Grimsheet adds and removes it; tapping it off sticks until healed)
+function downSync(c) {
+  if (!c || !c.hp) return false;
+  if (c.hp.cur <= 0 && c.autoUncon !== 'off' && !c.conditions.includes('Unconscious')) { c.conditions.push('Unconscious'); c.autoUncon = true; return true; }
+  if (c.hp.cur > 0 && c.autoUncon) { const had = c.autoUncon === true; delete c.autoUncon; if (had) { c.conditions = c.conditions.filter(k => k !== 'Unconscious'); if (c.condDur) delete c.condDur.Unconscious; } return had; }
+  return false;
+}
+// "Legendary Resistance (3/Day)": how many a monster has
+function lrMax(t) { for (const a of (t.traits || [])) { if (/legendary resistance/i.test(a.name) && +a.uses) return +a.uses; const m = (a.name + ' ' + (a.text || '')).match(/legendary resistance\s*\((\d+)\s*\/\s*day/i); if (m) return +m[1]; } return 0; }
+function lrLeft(m) { const n = lrMax(tplOf(m)); return Math.max(0, n - ((m.uses || {}).lr || 0)); }
+function lrBtn(m, act, id, v) { const n = lrLeft(m); return n ? `<button class="btn small" data-act="${act}" data-id="${esc(id)}" ${v ? `data-v="${esc(v)}"` : ''} title="${esc(m.name)} chooses to succeed instead (${n} left today)">Legendary Resistance (${n})</button>` : ''; }
+function useLR(m) { m.uses = m.uses || {}; m.uses.lr = (m.uses.lr || 0) + 1; saveEnc({ quiet: true }); }
 function tickMonsters(row) {
   const out = [];
   for (const m of row.members || []) { const ended = tickConditions(m.cond, m.condDur || (m.condDur = {})); if (ended.length) out.push(m.name + ': ' + ended.join(', ') + ' ended'); }
@@ -4213,12 +4237,13 @@ function atkCard(c) {
   if (c.dmg) {
     if (heal) btns.push(`<button class="btn small primary" data-act="atkapply" data-id="${esc(c.id)}" data-v="1">Heal ${c.dmg.total}</button>`);
     else {
-      const full = withDefenses(c.dmg.byType, c.dmg.total, R.def, 1), half = withDefenses(c.dmg.byType, c.dmg.total, R.def, 0.5).amt, preferHalf = c.saveRoll && c.saveRoll.ok && !(c.save && R.kind === 'mon' && condRules({ kind: 'save', ab: c.save.ability, self: R.m.cond }).autoFail);
+      const full = withDefenses(c.dmg.byType, c.dmg.total, R.def, 1), half = withDefenses(c.dmg.byType, c.dmg.total, R.def, 0.5).amt, preferHalf = c.saveRoll && c.saveRoll.ok && (c.saveRoll.note === 'Legendary Resistance' || !(c.save && R.kind === 'mon' && condRules({ kind: 'save', ab: c.save.ability, self: R.m.cond }).autoFail));
       if (full.notes.length) lines.push(`<div class="defn">⛨ ${esc(c.target.name)} ${esc([...new Set(full.notes)].join(', '))}: <b>${full.amt}</b> instead of ${c.dmg.total}</div>`);
       btns.push(`<button class="btn small ${preferHalf ? '' : 'primary'}" data-act="atkapply" data-id="${esc(c.id)}" data-v="1">Apply ${full.amt}</button>`);
       btns.push(`<button class="btn small ${preferHalf ? 'primary' : ''}" data-act="atkapply" data-id="${esc(c.id)}" data-v="0.5">Half ${half}</button>`);
       if (c.atk) btns.push(`<button class="btn small" data-act="atkmiss" data-id="${esc(c.id)}">Miss</button>`);
     }
+    if (c.save && R.kind === 'mon' && !heal && !(c.saveRoll && c.saveRoll.ok) && (c.saveRoll || condRules({ kind: 'save', ab: c.save.ability, self: R.m.cond }).autoFail)) btns.push(lrBtn(R.m, 'atklr', c.id));
   } else if (c.atk && !c.verdict) {
     btns.push(`<button class="btn small ${verdict !== 'miss' ? 'primary' : ''}" data-act="atkhit" data-id="${esc(c.id)}">Hit</button>`);
     btns.push(`<button class="btn small ${verdict === 'miss' ? 'primary' : ''}" data-act="atkmiss" data-id="${esc(c.id)}">Miss</button>`);
@@ -4627,6 +4652,7 @@ function areaCard(c, only) {
       if (r) save = `<span class="mono" ${r.note ? `title="${esc(r.note)}"` : ''}>${r.total}</span> ${r.ok == null ? '' : r.ok ? `<b class="ok">${c.check ? 'passed' : 'saved'}</b>` : '<b class="bad">failed</b>'}${r.by === 'player' ? ' <span class="muted">(player)</span>' : ''}${r.note ? ` <span class="muted" style="font-size:.75rem">${esc(r.note)}</span>` : ''}`;
       else if (R.kind === 'mon') save = `<button class="btn small" data-act="arearoll1" data-id="${esc(c.id)}" data-v="${esc(t.id)}">Roll save</button>`;
       else if (R.kind === 'pc') save = c.asked && c.asked[t.id] ? '<span class="muted">asked…</span>' : `<button class="btn small" data-act="areaask1" data-id="${esc(c.id)}" data-v="${esc(t.id)}">Ask</button>`;
+      if (r && r.ok === false && R.kind === 'mon') save += ' ' + lrBtn(R.m, 'arealr', c.id, t.id);
       save += ` <button class="chip ${r && !r.ok ? 'on-bad' : ''}" data-act="areaset" data-id="${esc(c.id)}" data-v="${esc(t.id)}|0" title="Mark as failed">✗</button><button class="chip ${r && r.ok ? 'on-ok' : ''}" data-act="areaset" data-id="${esc(c.id)}" data-v="${esc(t.id)}|1" title="Mark as saved">✓</button>`;
     }
     const amt = c.dmg ? `<b class="mono ${heal ? 'ok' : ''}" ${o.notes.length ? `title="${esc([...new Set(o.notes)].join(', '))}"` : ''}>${o.amt}</b>${o.notes.length ? '<span class="defm" title="' + esc([...new Set(o.notes)].join(', ')) + '">⛨</span>' : ''}${!heal && c.save && o.ok == null ? '<span class="muted">?</span>' : ''}` : '';
@@ -6164,6 +6190,7 @@ function renderCombat() {
       <div class="vt"><span class="k">SPEED</span>${ed ? `<input id="f-speed" data-bind="speed" value="${esc(c.speed)}" aria-label="Speed">` : `<span class="v" style="font-size:1.05rem;padding-top:3px">${esc(c.speed)}</span>`}</div>
       <div class="vt"><span class="k">PROF</span><span class="v">${signed(profBonus(c))}</span></div>
     </div>
+    <button class="insp react ${c.reactUsed ? 'used' : ''}" data-act="react" aria-pressed="${!!c.reactUsed}" title="${c.reactUsed ? 'Reaction used this round. It comes back at the start of your turn.' : 'Reaction available. Tap when you use it.'}">${c.reactUsed ? '⟲ Reaction used' : '⟲ Reaction ready'}</button>
     <button class="insp ${c.inspiration ? 'on' : ''}" data-act="insp" aria-pressed="${!!c.inspiration}" title="${c.inspiration ? 'You have Heroic Inspiration: spend it to reroll any die (the button appears after a roll). Tap to clear.' : 'No Heroic Inspiration. Tap if your GM gives you one.'}">${c.inspiration ? '★' : '☆'} Heroic Inspiration</button>
     <div class="hp">
       <div class="cur mono">${c.hp.cur}<small> / ${ed ? `<input id="f-hpmax" class="ed-inline" data-bind="hp.max" data-num value="${esc(c.hp.max)}" aria-label="Max HP">` : c.hp.max}</small></div>
@@ -6354,7 +6381,7 @@ function restCounter(ct, type) {
   ct.used -= n; return n > 0;
 }
 function doRest(type) {
-  const c = C(); const names = [];
+  const c = C(); const names = []; c.reactUsed = false;
   allEntries().forEach(({ e }) => { if (e.counter && restCounter(e.counter, type)) names.push(e.name); });
   if (type === 'long') {
     let slots = false; for (let l = 1; l <= 9; l++) if (c.slots[l].used) { c.slots[l].used = 0; slots = true; }
@@ -6770,7 +6797,8 @@ document.addEventListener('click', ev => {
       c.hdUsed++; const before = c.hp.cur; c.hp.cur = Math.min(c.hp.max, c.hp.cur + Math.max(0, en.total)); en.note = 'Healed ' + (c.hp.cur - before) + ' HP';
       rerender(); break;
     }
-    case 'cond': { const k = c.conditions.indexOf(v); if (k >= 0) { c.conditions.splice(k, 1); if (c.condDur) delete c.condDur[v]; } else c.conditions.push(v); rerender(); if (k < 0 && (inCombatPlayer() || IN_OBR)) { const b = document.querySelector(`[data-act=cond][data-v="${v}"]`); if (b) setTimeout(() => durPop(b.isConnected ? b : document.querySelector(`[data-act=cond][data-v="${v}"]`) || b, 'me', v), 0); } break; }
+    case 'cond': { const k = c.conditions.indexOf(v); if (k >= 0) { c.conditions.splice(k, 1); if (c.condDur) delete c.condDur[v]; if (v === 'Unconscious' && c.autoUncon) c.autoUncon = 'off'; } else c.conditions.push(v); rerender();
+      if (k < 0 && INCAP.includes(v) && concOf()) endConc(`${concOf().name} ends: you are ${v.toLowerCase()}.`); if (k < 0 && (inCombatPlayer() || IN_OBR)) { const b = document.querySelector(`[data-act=cond][data-v="${v}"]`); if (b) setTimeout(() => durPop(b.isConnected ? b : document.querySelector(`[data-act=cond][data-v="${v}"]`) || b, 'me', v), 0); } break; }
     case 'cdur': { const [who, cond, n] = String(v).split('|'); const rounds = n === 'custom' ? Math.max(1, Math.min(100, parseInt(($('#cdur-n') || {}).value, 10) || 1)) : +n; hidePop(); setDuration(who, cond, rounds); if (rounds) toast(cond + ' for ' + rounds + ' round' + (rounds > 1 ? 's' : '') + '.'); break; }
     case 'exh': c.exhaustion = ((c.exhaustion || 0) + 1) % 7; rerender(); break;
     case 'acttab': ui.actTab[id] = v; renderGrid(); break;
@@ -6875,6 +6903,8 @@ document.addEventListener('click', ev => {
     case 'savedrop': writeSaves(readSaves().filter(x => x.id !== id)); renderAtkQueue(); break;
     case 'levelup': openLevelUp(); break;
     case 'insp': c.inspiration = !c.inspiration; rerender(); publishStatus(); break;
+    case 'react': c.reactUsed = !c.reactUsed; rerender(); break;
+    case 'monreact': { const m = enc().mons.find(x => x.id === id); if (!m) break; m.react = !m.react; saveEnc({ quiet: true }); renderGrid(); break; }
     case 'giveinsp': OBRX.api.broadcast.sendMessage(CH_GM, { type: 'inspire', id: uid(), to: v, char: el.dataset.char, from: OBRX.me.name }, { destination: v === OBRX.me.id ? 'LOCAL' : 'REMOTE' }).catch(() => { }); toast('Heroic Inspiration sent.'); break;
     case 'gsearch': openSearch(); break;
     case 'srchgo': searchGo(i); break;
@@ -6965,6 +6995,10 @@ document.addEventListener('click', ev => {
     case 'mondmg': { const [mid, ref] = String(id).split('|'); const m = enc().mons.find(x => x.id === mid); if (m) monDamage(m, ref, !!el.dataset.crit); break; }
     case 'monrech': { const m = enc().mons.find(x => x.id === id); if (!m) break; m.rech[v] = m.rech[v] === false; saveEnc({ quiet: true }); renderGrid(); break; }
     case 'monuse': { const m = enc().mons.find(x => x.id === id); if (!m) break; const u = m.uses[v] || 0; m.uses[v] = i < u ? i : i + 1; saveEnc({ quiet: true }); renderGrid(); break; }
+    case 'monmore': { const f = findMon(id); if (!f) break; const t = f.e.tpls[f.m.tpl] || tplById(f.m.tpl); if (!t) break; const sel = ui.encSel; ui.encSel = Object.keys(encs().list).find(k => encs().list[k] === f.e); const made = addMonsters(t, 1, { group: !f.m.solo }); ui.encSel = sel; renderGrid(); toast('Added ' + made[0].name + (SETTINGS.rollHp && t.hpDice ? ' (' + made[0].max + ' HP)' : '') + '.'); break; }
+    case 'monlr': { const m = enc().mons.find(x => x.id === id); if (!m) break; m.uses = m.uses || {}; m.uses.lr = i < (m.uses.lr || 0) ? i : i + 1; saveEnc({ quiet: true }); renderGrid(); break; }
+    case 'atklr': { const q = readAtkQ(), cc = q.find(x => x.id === id); if (!cc) break; const R = resolveTarget(cc.target.id); if (R.kind !== 'mon' || !lrLeft(R.m)) break; useLR(R.m); updAtk(id, x => { x.saveRoll = { total: x.saveRoll && x.saveRoll.total !== undefined ? x.saveRoll.total : '—', ok: true, note: 'Legendary Resistance' }; }); renderGrid(); toast(R.m.name + ' uses Legendary Resistance: the save succeeds.'); break; }
+    case 'arealr': { const q = readAtkQ(), cc = q.find(x => x.id === id); if (!cc) break; const R = resolveTarget(v); if (R.kind !== 'mon' || !lrLeft(R.m)) break; useLR(R.m); updAtk(id, x => { x.res = x.res || {}; const r = x.res[v] || { total: '—' }; x.res[v] = Object.assign({}, r, { ok: true, by: 'gm', note: 'Legendary Resistance' }); }); renderGrid(); toast(R.m.name + ' uses Legendary Resistance: the save succeeds.'); break; }
     case 'monleg': { const m = enc().mons.find(x => x.id === id); if (!m) break; m.leg = i < m.leg ? i : i + 1; saveEnc({ quiet: true }); renderGrid(); break; }
     case 'montxt': ui.monTxt = ui.monTxt === id + v ? null : id + v; renderGrid(); break;
     case 'moncheck': case 'monsave': { const m = enc().mons.find(x => x.id === id); if (m) monCheck(m, v, act === 'monsave'); break; }
@@ -7127,8 +7161,9 @@ document.addEventListener('change', ev => {
     else { const n = Math.max(0, Math.round(+t.value || 0)); if (k === 'max') { m.max = Math.max(1, n); m.hp = Math.min(m.hp, m.max); } else m[k] = n; }
     saveEnc(); renderGrid(); return;
   }
-  if (t.dataset.moncond) { const m = enc().mons.find(x => x.id === t.dataset.moncond); if (m && t.value) { const k = t.value; m.cond.push(k); saveEnc(); renderGrid(); if ((inCombatGM() || IN_OBR) && k !== 'Concentrating') { const b = document.querySelector(`[data-inst="${m.id}"] [data-act=moncond][data-v="${k}"]`); if (b) durPop(b, m.id, k); } } return; }
+  if (t.dataset.moncond) { const m = enc().mons.find(x => x.id === t.dataset.moncond); if (m && t.value) { const k = t.value; m.cond.push(k); if (INCAP.includes(k) && m.cond.includes('Concentrating')) { m.cond = m.cond.filter(x => x !== 'Concentrating'); toast(`${m.name} loses concentration (${k.toLowerCase()}).`); } saveEnc(); renderGrid(); if ((inCombatGM() || IN_OBR) && k !== 'Concentrating') { const b = document.querySelector(`[data-inst="${m.id}"] [data-act=moncond][data-v="${k}"]`); if (b) durPop(b, m.id, k); } } return; }
   if (t.dataset.amgroup) { SETTINGS.groupInit = t.checked; saveSettings(); return; }
+  if (t.dataset.amrollhp) { SETTINGS.rollHp = t.checked; saveSettings(); return; }
   if (t.dataset.amf && ui.modal && ui.modal.parsed) { const k = t.dataset.amf; ui.modal.parsed[k] = ['ac', 'hp', 'init'].includes(k) ? Math.round(+t.value || 0) : t.value.trim(); return; }
   if (t.id === 'pdf-file' && t.files && t.files[0]) { readPdf(t.files[0]); return; }
   if (t.id === 'imp-file' && t.files && t.files[0]) { const r = new FileReader(); r.onload = () => { $('#imp-text').value = r.result; }; r.readAsText(t.files[0]); return; }

@@ -45,6 +45,8 @@ input.q { width: 100% }
   const loadEnc = () => { const all = S.read(ENCKEY) || {}, r = S.encRoom(all, room), e = r.list[r.active]; ['tpls', 'mons', 'pcs', 'groupInit', 'seq'].forEach(k => { if (!e[k]) e[k] = S.blankEnc()[k]; }); return { all, r, e }; };
   const saveEnc = all => { S.write(ENCKEY, all); };
   let linkedInsts = new Set();
+  // "2d6 + 3" → a random total (for rolling monster hit points)
+  const rollDice = f => { let tot = 0, ok = false; for (const m of String(f).replace(/\s+/g, '').matchAll(/([+-]?)(\d*)d(\d+)|([+-]?)(\d+)/g)) { if (m[3]) { const n = +(m[2] || 1), sg = m[1] === '-' ? -1 : 1; for (let i = 0; i < n; i++) tot += sg * (1 + Math.floor(Math.random() * +m[3])); ok = true; } else if (m[5]) tot += (m[4] === '-' ? -1 : 1) * +m[5]; } return ok ? Math.max(1, tot) : 0; };
   const bubbles = m => ({ health: m.hp, 'max health': m.max, 'temporary health': m.temp || 0, 'armor class': m.ac, hide: (settings().monHp || 'hidden') !== 'exact' });
 
   function render() {
@@ -151,7 +153,8 @@ input.q { width: 100% }
     const numbered = same.length + free.length > 1; const made = {};
     for (const it of free) {
       e.seq[t.id] = Math.max(e.seq[t.id] || 0, e.mons.filter(x => x.tpl === t.id).length) + 1;
-      const m = { id: S.uid(), tpl: t.id, name: numbered ? t.name + ' ' + e.seq[t.id] : t.name, hp: t.hp, max: t.hp, temp: 0, ac: t.ac, cond: [], rech: {}, uses: {}, leg: 0, init: null, solo };
+      const hp = settings().rollHp && t.hpDice ? rollDice(t.hpDice) || t.hp : t.hp;
+      const m = { id: S.uid(), tpl: t.id, name: numbered ? t.name + ' ' + e.seq[t.id] : t.name, hp, max: hp, temp: 0, ac: t.ac, cond: [], rech: {}, uses: {}, leg: 0, init: null, solo };
       e.mons.push(m); made[it.id] = m;
     }
     saveEnc(all);
@@ -188,7 +191,7 @@ input.q { width: 100% }
       note = `Linked to ${p.s.char}.`; refresh();
     }
     if (t.hasAttribute('data-unlink')) {
-      await OBR.scene.items.updateItems(items.map(i => i.id), drafts => { for (const it of drafts) { delete it.metadata[S.LINK]; delete it.metadata[MONLINK]; } });
+      await OBR.scene.items.updateItems(items.map(i => i.id), drafts => { for (const it of drafts) { delete it.metadata[S.LINK]; delete it.metadata[MONLINK]; delete it.metadata[S.BUBBLES]; } });
       note = 'Unlinked.'; refresh();
     }
     if (t.hasAttribute('data-paste')) {
