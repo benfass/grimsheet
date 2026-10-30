@@ -2639,7 +2639,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.24.0';
+const APP_VERSION = '1.25.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -3007,7 +3007,7 @@ async function startOwlbear() {
         OBR.scene.onReadyChange(() => refreshLinks());
         refreshLinks();
       } catch (e) { }
-      const setParty = players => { OBRX.players = (players || []).map(p => ({ id: p.id, name: p.name, role: p.role })); OBRX.party = (players || []).map(p => ({ id: p.id, name: p.name, role: p.role, s: p.metadata && p.metadata[META] })).filter(p => p.s); refreshParty(); syncPcTokens(); if (gmMode()) { renderTop(); if (gmView() === 'party') renderGrid(); } };
+      const setParty = players => { OBRX.players = (players || []).map(p => ({ id: p.id, name: p.name, role: p.role })); OBRX.party = (players || []).map(p => ({ id: p.id, name: p.name, role: p.role, s: p.metadata && p.metadata[META] })).filter(p => p.s); refreshParty(); syncPcTokens(); syncCondLabels(); if (gmMode()) { renderTop(); if (gmView() === 'party') renderGrid(); } };
       setParty(await OBR.party.getPlayers()); OBR.party.onChange(setParty);
       if (gmMode()) clearMyStatus();
       publishStatus(); renderAtkQueue(); paintTarget(); checkMyTurn(); setTimeout(notesHello, 800); setTimeout(() => { if (bgAlive()) return; if (hbIsGM()) hbSend({ type: 'list', items: hbVisible(hb()).map(x => [x.id, x.updated]) }); else hbHello(); }, 900); render();
@@ -3043,7 +3043,7 @@ async function refreshLinks(items) {
     if (!items) items = (await OBRX.api.scene.isReady()) ? await OBRX.api.scene.items.getItems(it => !!(it.metadata && (it.metadata[LINK] || it.metadata[MONLINK]))) : [];
   } catch (e) { items = []; }
   const hadMon = Object.keys(OBRX.monTokens).length; scanTokens(items);
-  if (OBRX.me.role === 'GM') { syncMonTokens(); syncPcTokens(); if (encView() && Object.keys(OBRX.monTokens).length !== hadMon) renderGrid(); }
+  if (OBRX.me.role === 'GM') { syncMonTokens(); syncPcTokens(); syncCondLabels(); if (encView() && Object.keys(OBRX.monTokens).length !== hadMon) renderGrid(); }
   if (ui.viewing) return;
   const before = OBRX.links.length, cid = C().id;
   OBRX.otherLinks = items.filter(it => it.metadata && it.metadata[LINK] && it.metadata[LINK].player === OBRX.me.id && it.metadata[LINK].char !== cid).map(it => it.metadata[LINK].name || 'another character');
@@ -3079,6 +3079,57 @@ function syncPcTokens() {
   }
   const ids = Object.keys(want); if (!ids.length) return;
   OBRX.api.scene.items.updateItems(ids, drafts => { for (const d of drafts) d.metadata[BUBBLES] = Object.assign({}, d.metadata[BUBBLES] || {}, want[d.id]); }).catch(() => { });
+}
+/* ---- conditions under tokens: a small label attached to each linked token, kept by the GM's panel ---- */
+const CONDLABEL = 'com.grimsheet/condlabel';
+function condText(list, dur) {
+  const xs = (list || []).map(k => k + (dur && dur[k] ? ' (' + dur[k] + ')' : ''));
+  return xs.length > 3 ? xs.slice(0, 3).join(' · ') + ' +' + (xs.length - 3) : xs.join(' · ');
+}
+function wantedCondLabels() {
+  const want = {};
+  for (const m of allMons()) {
+    const t = condText(m.cond || [], m.condDur); if (!t) continue;
+    for (const it of OBRX.monTokens[m.id] || []) want[it.id] = t;
+  }
+  for (const p of OBRX.party || []) {
+    const s = p.s; if (!s) continue;
+    const t = condText((s.cond || []).concat(s.conc && !(s.cond || []).includes('Concentrating') ? ['Concentrating'] : []), null); if (!t) continue;
+    for (const it of OBRX.pcTokens[p.id] || []) { const l = it.metadata[LINK] || {}; if (!l.char || !s.charId || l.char === s.charId) want[it.id] = t; }
+  }
+  return want;
+}
+function mkCondLabel(tokId, text, at, visible) {
+  const B = window.OwlbearBuild, meta = { [CONDLABEL]: { for: tokId } };
+  if (B && B.buildLabel) return B.buildLabel().plainText(text).position(at).attachedTo(tokId).layer('ATTACHMENT').locked(true).disableHit(true).visible(visible !== false)
+    .fontSize(20).fontWeight(600).fillColor('#ffffff').backgroundColor('#7a1f1f').backgroundOpacity(0.85).cornerRadius(8).padding(6).pointerDirection('UP').pointerWidth(10).pointerHeight(6).name('Conditions').metadata(meta).build();
+  return { id: uid() + uid(), type: 'LABEL', name: 'Conditions', layer: 'ATTACHMENT', attachedTo: tokId, position: at, rotation: 0, scale: { x: 1, y: 1 }, visible: visible !== false, locked: true, disableHit: true, zIndex: Date.now(), text: { plainText: text, type: 'PLAIN' }, metadata: meta };
+}
+let condT = null, condBusy = false;
+function syncCondLabels() { clearTimeout(condT); condT = setTimeout(doSyncCondLabels, 400); }
+async function doSyncCondLabels() {
+  if (!IN_OBR || !OBRX.ready || OBRX.me.role !== 'GM' || condBusy) return;
+  condBusy = true;
+  try {
+    const want = SETTINGS.condLabels === false ? {} : wantedCondLabels();
+    const have = await OBRX.api.scene.items.getItems(it => !!(it.metadata && it.metadata[CONDLABEL]));
+    const del = [], upd = {}, seen = new Set();
+    for (const it of have) {
+      const tok = it.attachedTo || (it.metadata[CONDLABEL] || {}).for;
+      if (!want[tok] || seen.has(tok)) { del.push(it.id); continue; }
+      seen.add(tok); if ((it.text && it.text.plainText) !== want[tok]) upd[it.id] = want[tok];
+    }
+    if (del.length) await OBRX.api.scene.items.deleteItems(del);
+    if (Object.keys(upd).length) await OBRX.api.scene.items.updateItems(Object.keys(upd), ds => { for (const d of ds) d.text.plainText = upd[d.id]; });
+    const add = [];
+    for (const [tok, text] of Object.entries(want)) {
+      if (seen.has(tok)) continue;
+      let at; try { const b = await OBRX.api.scene.items.getItemBounds([tok]); at = { x: b.center.x, y: b.max.y + 6 }; } catch (e) { continue; }
+      const it = OBRX.tokCache[tok] || Object.values(OBRX.monTokens).flat().concat(Object.values(OBRX.pcTokens).flat()).find(x => x.id === tok);
+      add.push(mkCondLabel(tok, text, at, it ? it.visible : true));
+    }
+    if (add.length) await OBRX.api.scene.items.addItems(add);
+  } catch (e) { } finally { condBusy = false; }
 }
 function syncTokens(st) {
   if (!OBRX.ready || !OBRX.links.length) return;
@@ -3316,6 +3367,7 @@ function saveEnc(opts = {}) {
   const all = readJSON(ENCKEY) || {}; all[roomKey()] = encs(); writeJSON(ENCKEY, all);
   try { encHistRecord(); } catch (e) { }
   if (!opts.quiet) { publishInit(); syncMonTokens(); }
+  syncCondLabels();
 }
 window.addEventListener('storage', ev => {
   if (ev.key === ENCKEY) { ENCS = null; enc(); try { encHistRecord(); } catch (e) { } if (encView()) renderGrid(); syncMonTokens(); publishInit(); }
@@ -6620,6 +6672,8 @@ function settingsHtml() {
       <button class="switch ${SETTINGS.monShare ? 'on' : ''}" data-act="setmonshare" aria-pressed="${!!SETTINGS.monShare}"><i></i>${SETTINGS.monShare ? 'On' : 'Off'}</button></div>
     <div class="setrow"><div class="grow"><b>Apply damage automatically after a hit</b><div class="muted">Once you confirm a hit, the damage the player (or you) rolls next is applied straight away, with resistances. Saving throws still wait for you.</div></div>
       <button class="switch ${SETTINGS.autoDmg ? 'on' : ''}" data-act="setautodmg" aria-pressed="${!!SETTINGS.autoDmg}"><i></i>${SETTINGS.autoDmg ? 'On' : 'Off'}</button></div>
+    <div class="setrow"><div class="grow"><b>Show conditions under tokens</b><div class="muted">A small label under each linked token (monsters and players) lists its conditions, e.g. "Prone · Poisoned (2)". Everyone at the table sees it; it follows the token's visibility. Kept up to date while your Grimsheet panel is open.</div></div>
+      <button class="switch ${SETTINGS.condLabels !== false ? 'on' : ''}" data-act="setcondlabels" aria-pressed="${SETTINGS.condLabels !== false}"><i></i>${SETTINGS.condLabels !== false ? 'On' : 'Off'}</button></div>
     <div class="setrow"><div class="grow"><b>Also update Owlbear's initiative tracker</b><div class="muted">Writes initiative and the current turn onto tokens, for tables that use that tracker.</div></div>
       <button class="switch ${SETTINGS.obrTracker !== false ? 'on' : ''}" data-act="setobrtracker" aria-pressed="${SETTINGS.obrTracker !== false}"><i></i>${SETTINGS.obrTracker !== false ? 'On' : 'Off'}</button></div>` : ''}
     <div class="setrow"><div class="grow"><b>Try it</b><div class="muted">Settings are saved in this browser. Grimsheet ${APP_VERSION}${IN_OBR ? (bgAlive() ? ' · background page running' + ((readJSON(BGKEY) || {}).v ? ' (' + readJSON(BGKEY).v + ')' : '') : ' · background page not running: re-add the extension in Owlbear') : ''}.</div></div><button class="btn" data-act="settest">Roll 1d20 + 2d6</button></div>
@@ -6965,6 +7019,7 @@ document.addEventListener('click', ev => {
     case 'atkrolldmg': rollCardDamage(id); break;
     case 'setautodmg': SETTINGS.autoDmg = !SETTINGS.autoDmg; saveSettings(); renderModal(); renderAtkQueue(); break;
     case 'setmonshare': SETTINGS.monShare = !SETTINGS.monShare; saveSettings(); renderModal(); break;
+    case 'setcondlabels': SETTINGS.condLabels = SETTINGS.condLabels === false; saveSettings(); syncCondLabels(); renderModal(); break;
     case 'setobrtracker': SETTINGS.obrTracker = SETTINGS.obrTracker === false; saveSettings(); publishInit(); renderModal(); break;
     case 'addmon': openModal('addmon', { tab: 'list', q: '' }); break;
     case 'amtab': ui.modal.tab = v; renderModal(); break;

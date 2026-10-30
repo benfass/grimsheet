@@ -1,6 +1,6 @@
-# D&D Character Sheet App — Product Spec (v1.21)
+# D&D Character Sheet App — Product Spec (v1.22)
 
-*Working name: Grimsheet. v0.2 recorded the platform decision and first build; v0.3 added the SRD 5.2 content pack and locked skill proficiency to Edit mode; v0.4 expanded the pack; v0.5 added PDF import and documented the saved character format; v0.6 replaced the grid with a row-and-column layout; v0.7 added dice animation and a Settings panel; v0.8 added the Owlbear Rodeo extension and a backup reminder; v0.9 added panel sizes and compact mode; v1.0 added the background page and token linking; v1.1 added GM tools; v1.2 added monsters, the Encounter view and initiative; v1.3 added attacks against a target on the map; v1.4 added rerolls; v1.5 added spell areas on the map; v1.6 added combat prompts; v1.7 added the level-up wizard; v1.8 added undo; v1.9 added campaign notes; v1.10 added GM mode; v1.11 added several encounters; v1.12 added finding tokens, fog-aware targets and target buttons; v1.13 showed prompts next to what they're about; v1.14 read monster spellcasting; v1.15 added search; v1.16 adds rules automation (resistances, conditions, durations), token pictures, encounter difficulty and Heroic Inspiration; v1.17 added room homebrew; v1.18 linked monsters to tokens from the Encounter view; v1.19 added fixes and GM conveniences from the first real-room test; v1.20 let players end their own turn; v1.21 adds reactions, legendary resistance and other small rules helpers.*
+*Working name: Grimsheet. v0.2 recorded the platform decision and first build; v0.3 added the SRD 5.2 content pack and locked skill proficiency to Edit mode; v0.4 expanded the pack; v0.5 added PDF import and documented the saved character format; v0.6 replaced the grid with a row-and-column layout; v0.7 added dice animation and a Settings panel; v0.8 added the Owlbear Rodeo extension and a backup reminder; v0.9 added panel sizes and compact mode; v1.0 added the background page and token linking; v1.1 added GM tools; v1.2 added monsters, the Encounter view and initiative; v1.3 added attacks against a target on the map; v1.4 added rerolls; v1.5 added spell areas on the map; v1.6 added combat prompts; v1.7 added the level-up wizard; v1.8 added undo; v1.9 added campaign notes; v1.10 added GM mode; v1.11 added several encounters; v1.12 added finding tokens, fog-aware targets and target buttons; v1.13 showed prompts next to what they're about; v1.14 read monster spellcasting; v1.15 added search; v1.16 adds rules automation (resistances, conditions, durations), token pictures, encounter difficulty and Heroic Inspiration; v1.17 added room homebrew; v1.18 linked monsters to tokens from the Encounter view; v1.19 added fixes and GM conveniences from the first real-room test; v1.20 let players end their own turn; v1.21 added reactions, legendary resistance and other small rules helpers; v1.22 shows conditions under tokens.*
 
 ## 1. Vision
 
@@ -403,13 +403,18 @@ Decisions: a party journal anyone can edit; its own view; typed entries.
 - **+1** on a monster card adds another of that kind to the same encounter, numbered, sharing initiative unless it rolls its own.
 - **Unlinking** a token (panel, GM token menu, player menu) also removes its HP/AC bubbles.
 
+### Built in v2.20: Conditions under tokens
+- The GM's panel keeps a small label (an Owlbear Label item on the Attachment layer, attached to the token, locked, not clickable, metadata `com.grimsheet/condlabel`) under every linked token that has conditions: monsters from their card (with rounds left, e.g. "Prone (2) · Poisoned"), characters from what each player publishes (plus "Concentrating"). More than three show as "+N".
+- Labels are added, changed or removed whenever conditions, links or the party change; they move, hide and delete with their token (Owlbear's attachment behaviour). Everyone at the table sees them.
+- Settings → **Show conditions under tokens** (on by default); turning it off removes them. Updated while the GM's panel is open.
+
 ### Roadmap
 Ordered by when it gets built. Priority applies inside a goal.
 
 **Current goal: Choose targets on the map**
 - *Done (v2.1):* **Attacks against a target** (see above).
 - *Done (v2.3):* **Spell areas on the map** (see above).
-- *Low:* **Conditions on tokens.** Small markers on tokens for conditions and concentration, kept in step with the sheet and the monster cards.
+- *Done (v2.20):* **Conditions on tokens.** Small markers on tokens for conditions and concentration, kept in step with the sheet and the monster cards.
 - *Done (v2.4):* **Combat prompts** (see above).
 - *Done (v2.15):* **Shared homebrew** (see above).
 
