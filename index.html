@@ -3168,7 +3168,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.33.0';
+const APP_VERSION = '1.34.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -6072,13 +6072,40 @@ function asiLevels(def) {
   return [...new Set([f.level].concat(lv))].filter(l => l >= 1 && l <= 20).sort((a, b) => a - b);
 }
 const asiNameAt = (def, lvl) => ((def.table || {})[lvl] || []).find(isAsiName) || (def.features.find(x => isAsiName(x.name)) || {}).name || 'Ability Score Improvement';
-// an ability's maximum: 20, or what a feature on the sheet says ("Your Strength score maximum is 24")
-function abilityMax(c, key) {
-  const full = { STR: 'strength', DEX: 'dexterity', CON: 'constitution', INT: 'intelligence', WIS: 'wisdom', CHA: 'charisma' }[key];
-  let max = 20;
-  for (const { e } of allEntries(c)) for (const m of String(e.text + ' ' + e.short).toLowerCase().matchAll(/\b(strength|dexterity|constitution|intelligence|wisdom|charisma)(?: score)? maximum (?:is|is now|becomes|increases to) (\d{2})\b/g)) if (m[1] === full) max = Math.max(max, +m[2]);
+// what features say about ability scores, from the sheet and from the character's imported classes (up to their
+// level), so it works even when the feature isn't on the sheet:
+//   max: "Your Strength score maximum is 24"
+//   grow: "your current and maximum Strength scores increase by 2 at 5th level, 9th level, 13th level, and 17th level"
+const ABKEY = { strength: 'STR', dexterity: 'DEX', constitution: 'CON', intelligence: 'INT', wisdom: 'WIS', charisma: 'CHA' };
+function abilityRules(c) {
+  const src = new Map(); // feature name → { text, cls }
+  for (const cl of classesOf(c)) {
+    const def = importedClass(cl.name); if (!def) continue;
+    const sd = importedSub(def, cl.sub);
+    for (const f of def.features.concat(sd ? sd.features : [])) if (f.level <= cl.level) src.set(clsNorm(f.name), { text: f.text, cls: cl.name });
+  }
+  for (const { e } of allEntries(c)) if (!src.has(clsNorm(e.name))) src.set(clsNorm(e.name), { text: e.text + ' ' + e.short, cls: '' });
+  const max = {}, grow = [];
+  for (const [name, { text, cls }] of src) {
+    const t = String(text).toLowerCase().replace(/\s+/g, ' ');
+    for (const m of t.matchAll(/\b(strength|dexterity|constitution|intelligence|wisdom|charisma)(?: score)? maximum (?:is|is now|becomes|increases to) (\d{2})\b/g)) max[ABKEY[m[1]]] = Math.max(max[ABKEY[m[1]]] || 20, +m[2]);
+    for (const m of t.matchAll(/\byour (current and maximum |maximum and current )?(strength|dexterity|constitution|intelligence|wisdom|charisma)(?: scores?)? (?:and maximum )?increases? by (\d+) at ((?:\d{1,2}(?:st|nd|rd|th)(?: level)?(?:,|,? and| and)? ?)+)/g)) {
+      const levels = [...m[4].matchAll(/(\d{1,2})(?:st|nd|rd|th)/g)].map(x => +x[1]);
+      grow.push({ key: ABKEY[m[2]], n: +m[3], levels, maxToo: !!m[1] || /and maximum/.test(m[0]), cls, name });
+    }
+  }
+  return { max, grow };
+}
+// a class's level now, or what it will be (the level being gained)
+function levelIn(c, cls, at) { if (at && at.cls && (!cls || clsNorm(at.cls) === clsNorm(cls))) return at.lvl; const cl = cls && classesOf(c).find(x => clsNorm(x.name) === clsNorm(cls)); return cl ? cl.level : at ? at.total : (+c.level || 1); }
+// an ability's maximum: 20, or what features say, with growth up to the level (at: the level being gained)
+function abilityMax(c, key, at) {
+  const r = abilityRules(c); let max = r.max[key] || 20;
+  for (const g of r.grow) if (g.key === key && g.maxToo) max += g.n * g.levels.filter(l => l <= levelIn(c, g.cls, at)).length;
   return max;
 }
+// raises that come by themselves at this level ("+2 Strength at 5th level")
+function autoRaises(c, at) { return abilityRules(c).grow.filter(g => g.levels.includes(levelIn(c, g.cls, at))); }
 // info in the shape the level-up wizard uses for built-in classes
 // a subclass with its own spell table (Ogre Mage) casts from that table with its own ability
 function importedInfo(def, sub) {
@@ -6736,7 +6763,8 @@ function luPlan(md) {
   // imported classes follow their own table (no 2024 Epic Boon at 19)
   const asiAt = info.imported ? (info.asi.includes(lvl) ? 'asi' : null) : lvl === 19 ? 'boon' : (info.asi || ASI_STD).includes(lvl) ? 'asi' : null;
   const slots = slotsFor(list);
-  return { c, list, cl, isNew, info, lvl, needSub, sub, feats, hd, avg, con, extra, gain, asiAt, slots, first, bookSubs };
+  const at = { cls: cl.name, lvl, total: (+c.level || 1) + 1 }, auto = autoRaises(c, at);
+  return { c, list, cl, isNew, info, lvl, needSub, sub, feats, hd, avg, con, extra, gain, asiAt, slots, first, bookSubs, at, auto };
 }
 function levelUpHtml(md) {
   const P = luPlan(md), c = P.c, abil = c.abilities;
@@ -6762,12 +6790,13 @@ function levelUpHtml(md) {
     ${P.feats.length ? `<div class="lu-feats">${P.feats.map((f, i) => { if (f.note) return `<div class="muted">↑ <b>${esc(f.name)}</b>: see your ${esc(f.improves)} feature for what changes.</div>`; const k = f.text ? -1 : srdFeature(f.name); const key = f.name; return `<label><input type="checkbox" id="luf-${i}" ${f.optional ? `data-luo="${esc(key)}" ${md.on && md.on[key] ? 'checked' : ''}` : `data-luf="${esc(key)}" ${md.off[key] ? '' : 'checked'}`}> <b>${esc(f.name)}</b> <span class="muted">${f.optional ? 'optional · ' : ''}${esc(f.from)}${f.text ? ' · full text' + (f.replaces ? ', replaces ' + esc(f.replaces) + (allEntries(c).some(({ e }) => replacedNames(f.replaces).includes(clsNorm(e.name))) ? ' (taken off your sheet)' : '') : '') : k >= 0 ? ' · full text from the SRD' : ' · added as a note to fill in'}</span></label>`; }).join('')}</div>`
       : `<div class="muted">${P.info.homebrew ? 'Grimsheet doesn\'t know this class\'s features. <button class="btn small" data-act="modal" data-v="classes">Import the class</button> to have them added with their text, or add them from your library after levelling up.' : 'No new class features at this level.'}</div>`}
     ${P.needSub && md.sub === 'other' ? '<div class="muted">Add your subclass features from your library or by pasting their text.</div>' : ''}
+    ${P.auto.map(g => { const a = abil.find(x => x.key === g.key); return `<div>↑ <b>${esc(g.name.replace(/\b\w/g, ch => ch.toUpperCase()))}</b>: ${a.name} +${g.n} (${a.score} → ${Math.min(abilityMax(c, g.key, P.at), a.score + g.n)})${g.maxToo ? `, maximum ${abilityMax(c, g.key, P.at)}` : ''}.</div>`; }).join('')}
     ${P.info.note && P.info.note[P.lvl] ? `<div class="muted">${esc(P.info.note[P.lvl])}</div>` : ''}
     ${scaling.length ? `<div class="muted">These update by themselves: ${esc(scaling.slice(0, 8).join(', '))}${scaling.length > 8 ? '…' : ''}.</div>` : ''}`);
   // 4. ability scores / feat / epic boon
   if (P.asiAt) {
     // room under each ability's maximum (20 unless a feature raises it); room: how far below it the score must be
-    const abOpts = (v, max, room) => abil.map(a => { const m = max || abilityMax(c, a.key); return `<option value="${a.key}" ${v === a.key ? 'selected' : ''} ${a.score > m - (room || 1) ? 'disabled' : ''}>${a.name} (${a.score}${m !== 20 && !max ? ', max ' + m : ''})</option>`; }).join('');
+    const abOpts = (v, max, room) => abil.map(a => { const m = max || abilityMax(c, a.key, P.at); return `<option value="${a.key}" ${v === a.key ? 'selected' : ''} ${a.score > m - (room || 1) ? 'disabled' : ''}>${a.name} (${a.score}${m !== 20 && !max ? ', max ' + m : ''})</option>`; }).join('');
     const feats = SRD.items.map((it, i) => ({ it, i })).filter(({ it }) => it.kind === 'feature' && /feat/i.test(it.group));
     if (P.asiAt === 'boon') h += sec(n++, 'Epic Boon', `<label class="fld"><span>Boon</span><select id="lu-boon" data-lufeat="1"><option value="">Pick one…</option>${EPIC_BOONS.map(([b]) => `<option ${md.feat === b ? 'selected' : ''}>${b}</option>`).join('')}<option value="other" ${md.feat === 'other' ? 'selected' : ''}>Another feat…</option></select></label>
       ${md.feat === 'other' ? `<label class="fld"><span>Feat name</span><input id="lu-feato" data-lufeato="1" value="${esc(md.featOther || '')}"></label>` : ''}
@@ -6777,7 +6806,7 @@ function levelUpHtml(md) {
         <label class="lu-opt ${md.asi === 'two' ? 'on' : ''}"><input type="radio" name="lu-asi" data-luasi="two" ${md.asi === 'two' ? 'checked' : ''}> +2 to one ability</label>
         <label class="lu-opt ${md.asi === 'split' ? 'on' : ''}"><input type="radio" name="lu-asi" data-luasi="split" ${md.asi === 'split' ? 'checked' : ''}> +1 to two abilities</label>
         <label class="lu-opt ${md.asi === 'feat' ? 'on' : ''}"><input type="radio" name="lu-asi" data-luasi="feat" ${md.asi === 'feat' ? 'checked' : ''}> A feat</label></div>
-      ${md.asi === 'two' ? `<label class="fld"><span>+2 to</span><select id="lu-a1" data-luab="a1"><option value="">Pick an ability…</option>${abOpts(md.a1, 0, 2)}</select></label>` : ''}
+      ${md.asi === 'two' ? `<label class="fld"><span>+2 to</span><select id="lu-a1" data-luab="a1"><option value="">Pick an ability…</option>${abOpts(md.a1, 0, 1)}</select></label>` : ''}
       ${md.asi === 'split' ? `<div class="frow"><label class="fld"><span>+1 to</span><select id="lu-a1" data-luab="a1"><option value="">Pick…</option>${abOpts(md.a1, 0, 1)}</select></label><label class="fld"><span>and +1 to</span><select id="lu-a2" data-luab="a2"><option value="">Pick…</option>${abOpts(md.a2, 0, 1)}</select></label></div>` : ''}
       ${md.asi === 'feat' ? `<label class="fld"><span>Feat</span><select id="lu-feat" data-lufeat="1"><option value="">Pick one…</option>${feats.map(({ it }) => `<option ${md.feat === it.name ? 'selected' : ''}>${esc(it.name)}</option>`).join('')}<option value="other" ${md.feat === 'other' ? 'selected' : ''}>Another feat…</option></select></label>
         ${md.feat === 'other' ? `<label class="fld"><span>Feat name</span><input id="lu-feato" data-lufeato="1" value="${esc(md.featOther || '')}" placeholder="Sentinel"></label>` : ''}` : ''}`);
@@ -6829,9 +6858,10 @@ function applyLevelUp(md) {
   }
   if (P.needSub && P.sub) done.push('subclass ' + P.sub);
   const raise = (key, n, max) => { const a = c.abilities.find(x => x.key === key); if (a) { const was = a.score; a.score = Math.max(was, Math.min(max, was + n)); done.push(key + ' ' + was + ' → ' + a.score); } };
+  for (const g of P.auto) raise(g.key, g.n, abilityMax(c, g.key, P.at));
   if (P.asiAt === 'asi') {
-    if (md.asi === 'two') raise(md.a1, 2, abilityMax(c, md.a1));
-    else if (md.asi === 'split') { raise(md.a1, 1, abilityMax(c, md.a1)); raise(md.a2, 1, abilityMax(c, md.a2)); }
+    if (md.asi === 'two') raise(md.a1, 2, abilityMax(c, md.a1, P.at));
+    else if (md.asi === 'split') { raise(md.a1, 1, abilityMax(c, md.a1, P.at)); raise(md.a2, 1, abilityMax(c, md.a2, P.at)); }
     else addFeature(md.feat === 'other' ? md.featOther.trim() : md.feat, 'Feat');
   }
   if (P.asiAt === 'boon') {
