@@ -2507,6 +2507,30 @@ const CLASSIMP = (() => {
     return out.slice(0, n);
   }
 
+  /* ---- a subclass's own spellcasting table ("Ogre Mage Spellcasting": Level, Cantrips, Spells Known, 1st…) ---- */
+  function readSubCasting(L, names) {
+    const out = [];
+    for (const nm of names) {
+      const want = norm(nm + ' spellcasting');
+      const i = L.findIndex(l => norm(l) === want || norm(l) === 'the ' + want); if (i < 0) continue;
+      let j = i + 1; const row = l => /^\d{1,2}(?: \d{1,2}){2,}$/.test(l);
+      while (j < L.length && j < i + 15 && !row(L[j])) j++;
+      if (j >= L.length || !row(L[j])) continue;
+      const header = L.slice(i + 1, j).join(' '), nOrd = (header.match(/\b\d(?:st|nd|rd|th)\b/g) || []).length; if (!nOrd || !/\blevel\b/i.test(header)) continue;
+      const rows = []; let k = j, want2 = +L[j].split(' ')[0];
+      while (k < L.length && row(L[k]) && +L[k].split(' ')[0] === want2) { rows.push(L[k].split(' ').map(Number)); k++; want2++; }
+      if (rows.length < 5) continue;
+      const lead = Math.max(...rows.map(r => r.length)) - 1 - nOrd;
+      const slots = Array.from({ length: 20 }, () => ({}));
+      for (const r of rows) r.slice(1 + lead).forEach((n, x) => { if (n) slots[r[0] - 1][x + 1] = n; });
+      // its spellcasting ability: said nearby ("Strength is your spellcasting ability")
+      let ab = '', best = 1e9;
+      for (let x = Math.max(0, i - 200); x < Math.min(L.length, k + 200); x++) { const m = (L[x] + ' ' + (L[x + 1] || '')).match(/\b(strength|dexterity|constitution|intelligence|wisdom|charisma) is your spellcasting ability/i); if (m && Math.abs(x - i) < best) { best = Math.abs(x - i); ab = ABFULL[m[1].toLowerCase()]; } }
+      out.push({ name: nm, at: i, end: k, slots, ab });
+    }
+    return out;
+  }
+
   /* ---- features ---- */
   function readFeatures(L, tables) {
     const marks = [];
@@ -2515,7 +2539,12 @@ const CLASSIMP = (() => {
       let owner = m[2].replace(/\s+/g, ' ').trim();
       // "barbarian feature": the class's own; only after a heading-like name, not mid-sentence
       if (/^[a-z]/.test(owner)) { if (!looksLikeName(L[i - 1] || '')) return; owner = titleCase(owner); }
-      marks.push({ i, level: +m[1], owner, note: (m[3] || '').trim() });
+      let note = (m[3] || '').trim(), skip = 0;
+      if (/\breplaces?\b/i.test(note) && !/\bfeatures?\b/i.test(note)) for (let n = 1; n <= 2; n++) {
+        const more = L.slice(i + 1, i + 1 + n).join(' ');
+        if (/\bfeatures?[.,]?$/i.test(more) && more.length < 80) { note += ' ' + more; skip = n; break; }
+      }
+      marks.push({ i, level: +m[1], owner, note, skip });
     });
     // one name per owner: scans misspell some lines ("Rune KniSht" for "Rune Knight")
     const cnt = {}; marks.forEach(m => { cnt[m.owner] = (cnt[m.owner] || 0) + 1; });
@@ -2531,7 +2560,7 @@ const CLASSIMP = (() => {
       const nameAt = m.i - 1, name = fixName((L[nameAt] || '').replace(/[.:]$/, '').trim());
       const nextName = k + 1 < marks.length ? marks[k + 1].i - 1 : L.length;
       const body = []; let bodyLen = 0;
-      for (let x = m.i + 1; x < nextName; x++) {
+      for (let x = m.i + 1 + (m.skip || 0); x < nextName; x++) {
         const l = L[x], ln = norm(l);
         // stop at a heading that starts something else: a subclass or class title, or a class table
         // a chapter's drop cap ("L" then "ycanthropes are…") starts something new too
@@ -2543,7 +2572,7 @@ const CLASSIMP = (() => {
         if (bodyLen > 5000 && /^[A-Z][A-Z' ]{3,40}$/.test(l)) break;
         body.push(l); bodyLen += l.length;
       }
-      const rp = (m.note.match(/replaces (?:the |your )?(.+?) feature/i) || [])[1];
+      const rp = (m.note.match(/replaces (?:the |your )?(.+?) features?\b/i) || [])[1];
       return { name, level: m.level, owner: m.owner, at: m.i, text: (m.note ? m.note.replace(/^which /, 'This ').replace(/^(.)/, c => c.toUpperCase()) + (/[.]$/.test(m.note) ? '' : '.') + '\n' : '') + reflow(body), replaces: rp || '' };
     }).filter(f => f.name && !MARK.test(f.name));
     // books with capitals headings: a name that isn't one came from a table or sidebar laid over it; the
@@ -2571,6 +2600,7 @@ const CLASSIMP = (() => {
   const isWord = x => { x = x.toLowerCase(); return SHORTW.has(x) || (x.length >= 3 && (VOCAB.get(x) || 0) >= 2); };
   function fixName(n) {
     n = n.replace(/(\w)- (\w)/g, '$1-$2').replace(/[\s·•,;:]+$/, '');
+    if (/^[a-z]/.test(n) && n.split(' ').length <= 6) n = n[0].toUpperCase() + n.slice(1); // "overchannel" 
     if (!/[A-Z]{2}/.test(n) || /[a-z]{2}/.test(n.replace(/\b(of|the|and|or|to|in|on|with|for)\b/g, ''))) return n;
     // "OFTHE", "OFMERCY": a small word glued to the next
     let t = n.split(/\s+/).flatMap(x => { const m = x.match(/^(OF|THE|AND)(THE)?([A-Z']{3,})$/); return m && !isWord(x) && isWord(m[3]) ? [m[1], m[2], m[3]].filter(Boolean) : [x]; }), out = [];
@@ -2657,7 +2687,9 @@ const CLASSIMP = (() => {
     // names of table columns mentioned in the text ("as shown in the Sacred Fire Damage column")
     const colNames = [...new Set([...L.join(' ').matchAll(/\b(?:the|your)\s+([A-Z][\w' ]{2,40}?)\s+column\b/g)].map(m => m[1].replace(/^(the|your)\s+/i, '')))];
     const tables = readTables(L, colNames);
-    const feats = readFeatures(L, tables);
+    const ownerNames = [...new Set(L.map(l => (l.match(MARK) || [])[2]).filter(o => o && /^[A-Z]/.test(o)))];
+    const subCast = readSubCasting(L, ownerNames);
+    const feats = readFeatures(L, tables.concat(subCast));
     const racial = readRacial(L, tables, feats.map(f => ({ i: f.at, owner: f.owner })));
     const kinds = ownerKinds(L, tables, feats, (opts && opts.classes) || []);
     const kindOf = o => kinds[norm(o)] || { type: 'sub' };
@@ -2689,7 +2721,7 @@ const CLASSIMP = (() => {
       const ns = cols.find(x => /^spell slots$/i.test(x.name)), sl = cols.find(x => /^slot level$/i.test(x.name));
       if (sc.length) slots = Array.from({ length: 20 }, (_, i) => { const s = {}; sc.forEach(x => { const n = parseInt(x.vals[i], 10); if (n) s[lvlOf(x.name)] = n; }); return s; });
       else if (ns && sl) slots = Array.from({ length: 20 }, (_, i) => { const n = parseInt(ns.vals[i], 10), l = lvlOf(sl.vals[i]); return n && l ? { [l]: n } : {}; });
-      const subs = Object.entries(subsByName).map(([name, fs]) => ({ name, features: fs.map(f => Object.assign({ level: f.level, name: f.name, text: f.text }, f.replaces ? { replaces: f.replaces } : {})) }));
+      const subs = Object.entries(subsByName).map(([name, fs]) => subExtras({ name, features: fs.map(f => Object.assign({ level: f.level, name: f.name, text: f.text }, f.replaces ? { replaces: f.replaces } : {})) }, subCast));
       // racial traits: the class's at level 1, a subclass's at its first level
       for (const r of racial) {
         if (norm(r.owner) === norm(c.name)) own.unshift(...r.traits.map(t => ({ level: 1, name: t.name, text: t.text, racial: true })));
@@ -2716,9 +2748,16 @@ const CLASSIMP = (() => {
       if (k.how === 'text') w.push(`Its class (${k.parent}) was guessed from its text: check it.`);
       if (fs.some(f => f.text.length < 20)) w.push('Some features have very little text; check them.');
       if (k.type === 'opt') result.push(Object.assign(base, { id: 'opt:' + slug(k.parent), name: k.parent + ' optional features', optional: true, subAt: 99, features: fs, subs: [], warnings: w }));
-      else result.push(Object.assign(base, { id: 'sub:' + slug(k.parent || 'any') + ':' + slug(k.name), name: k.name, subAt: Math.min(...fs.map(f => f.level)), features: [], subs: [{ name: k.name, features: fs }], warnings: w }));
+      else result.push(Object.assign(base, { id: 'sub:' + slug(k.parent || 'any') + ':' + slug(k.name), name: k.name, subAt: Math.min(...fs.map(f => f.level)), features: [], subs: [subExtras({ name: k.name, features: fs }, subCast)], warnings: w }));
     }
     return result;
+  }
+  // a subclass that casts on its own (Ogre Mage, Eldritch Knight-like): its slot table and spellcasting ability
+  function subExtras(sb, subCast) {
+    const t = subCast.find(x => norm(x.name) === norm(sb.name)); if (t) { sb.slots = t.slots; if (t.ab) sb.ab = t.ab; }
+    const m = sb.features.map(f => f.text).join(' ').match(/\b(strength|dexterity|constitution|intelligence|wisdom|charisma) is your spellcasting ability/i);
+    if (m && !sb.ab) sb.ab = ABFULL[m[1].toLowerCase()];
+    return sb;
   }
   // what each feature owner is: a class, a subclass of a class in the text, a subclass of a basic class
   // (by the section it sits in, its name, or its text), or a basic class's own optional features
@@ -3129,7 +3168,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.31.0';
+const APP_VERSION = '1.32.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -6022,15 +6061,26 @@ const sameDef = (a, b) => a.addon ? (b.addon && (a.optional ? b.optional && clsN
 function importedSub(def, sub) { const n = clsNorm(sub); return def && n ? def.subs.find(s => clsNorm(s.name) === n) || def.subs.find(s => n.includes(clsNorm(s.name)) || clsNorm(s.name).includes(n)) : null; }
 const isAsiName = n => /^ability score improvements?$/i.test(String(n).trim());
 // info in the shape the level-up wizard uses for built-in classes
-function importedInfo(def) {
+// a subclass with its own spell table (Ogre Mage) casts from that table with its own ability
+function importedInfo(def, sub) {
   const f = {}; def.features.forEach(x => { if (!isAsiName(x.name)) f[x.level] = (f[x.level] ? f[x.level] + ', ' : '') + x.name; });
-  return { hd: def.hd || 8, cast: def.slots ? 'table' : '', ab: def.ab || '', asi: def.asi || [], subAt: def.subs.length ? def.subAt : 99, f, s: {}, imported: def };
+  const sd = importedSub(def, sub), slots = (sd && sd.slots) || def.slots;
+  return { hd: def.hd || 8, cast: slots ? 'table' : '', ab: (sd && sd.slots && sd.ab) || def.ab || (sd && sd.ab) || '', asi: def.asi || [], subAt: def.subs.length ? def.subAt : 99, f, s: {}, imported: def, slots };
+}
+// "Divine Strike or Potent Spellcasting" → both names
+const replacedNames = r => String(r || '').split(/\s+or\s+|\s*,\s*|\s*\/\s*/).map(clsNorm).filter(Boolean);
+// a feature that replaces another: take the other off the sheet (Mystical Skin for Thick Skin)
+function dropReplaced(fm, f) {
+  const names = replacedNames(f.replaces); if (!names.length) return [];
+  const gone = fm.entries.filter(e => names.includes(clsNorm(e.name)));
+  fm.entries = fm.entries.filter(e => !gone.includes(e)); return gone.map(e => e.name);
 }
 // a level's features from an imported class: full text, subclass features, and "X improvement" notes
 function importedFeatures(def, lvl, sub) {
   const sd = importedSub(def, sub), out = [];
   const subF = sd ? sd.features.filter(x => x.level === lvl) : [];
-  const replaced = new Set(subF.filter(x => x.replaces).map(x => clsNorm(x.replaces)));
+  // replaced by the subclass at this level or before: never gained
+  const replaced = new Set(sd ? sd.features.filter(x => x.level <= lvl && x.replaces).flatMap(x => replacedNames(x.replaces)) : []);
   for (const x of def.features) if (x.level === lvl && !isAsiName(x.name) && !replaced.has(clsNorm(x.name))) out.push({ name: x.name, from: def.name, text: x.text });
   for (const x of subF) out.push({ name: x.name, from: sd.name, text: x.text, replaces: x.replaces || '' });
   for (const n of (def.table || {})[lvl] || []) {
@@ -6077,7 +6127,7 @@ function missingImported(c) {
 function addImportedFeatures(c, list) {
   let fm = c.modules.find(m => m.type === 'features'); if (!fm) { fm = mkModule('features'); c.modules.push(fm); }
   c.hidden = c.hidden.filter(x => x !== fm.id);
-  for (const f of list) fm.entries.push(Object.assign(importedEntry(f.def, f), { id: uid() }));
+  for (const f of list) { dropReplaced(fm, f); fm.entries.push(Object.assign(importedEntry(f.def, f), { id: uid() })); }
 }
 
 /* ---- the Classes dialog: import (paste or PDF), check, keep ---- */
@@ -6189,8 +6239,11 @@ function clsAct(act, el, v, i) {
     case 'clsexport': openModal('export', { json: JSON.stringify({ grimsheetClasses: 1, classes: myClasses }), title: 'Export classes', fname: 'grimsheet-classes' }); return true;
     case 'clscatch': {
       const c = C();
-      document.querySelectorAll('[data-clssub]').forEach(s => { if (!s.value) return; const list = classesOf(c); const cl = list[+s.dataset.clssub]; if (cl) { cl.sub = s.value; c.classes = list; c.cls = classString(list); } });
-      const miss = missingImported(c); addImportedFeatures(c, miss); save(); render(); renderModal();
+      let picked = false; document.querySelectorAll('[data-clssub]').forEach(s => { if (!s.value) return; const list = classesOf(c); const cl = list[+s.dataset.clssub]; if (cl) { cl.sub = s.value; const d = importedClass(cl.name), sd = d && importedSub(d, cl.sub); if (sd && sd.slots) picked = true; c.classes = list; c.cls = classString(list); } });
+      const miss = missingImported(c); addImportedFeatures(c, miss);
+      // a subclass with its own spell table (Ogre Mage) brings its slots
+      const sl = picked && slotsFor(classesOf(c)); if (sl) { for (let l = 1; l <= 9; l++) { c.slots[l].max = sl[l] || 0; c.slots[l].used = Math.min(c.slots[l].used, c.slots[l].max); } const ab = classesOf(c).map(classInfo).map(x => x.ab).find(Boolean); if (!c.spellAbility && ab) c.spellAbility = ab; }
+      save(); render(); renderModal();
       toast(miss.length ? `Added ${miss.length} feature${miss.length === 1 ? '' : 's'} to Features & Traits.` : 'Nothing to add.'); return true;
     }
     case 'clsshare': { const d = myClasses[i]; if (d) hbShareClass(d); return true; }
@@ -6568,7 +6621,7 @@ const EPIC_BOONS = [
 ];
 const FULL_SLOTS = [[], [2], [3], [4, 2], [4, 3], [4, 3, 2], [4, 3, 3], [4, 3, 3, 1], [4, 3, 3, 2], [4, 3, 3, 3, 1], [4, 3, 3, 3, 2], [4, 3, 3, 3, 2, 1], [4, 3, 3, 3, 2, 1], [4, 3, 3, 3, 2, 1, 1], [4, 3, 3, 3, 2, 1, 1], [4, 3, 3, 3, 2, 1, 1, 1], [4, 3, 3, 3, 2, 1, 1, 1], [4, 3, 3, 3, 2, 1, 1, 1, 1], [4, 3, 3, 3, 3, 1, 1, 1, 1], [4, 3, 3, 3, 3, 2, 1, 1, 1], [4, 3, 3, 3, 3, 2, 2, 1, 1]];
 const classKey = name => Object.keys(CLASSES).find(k => String(name || '').toLowerCase().startsWith(k.toLowerCase())) || null;
-const classInfo = cl => CLASSES[classKey(cl.name)] || (importedClass(cl.name) ? importedInfo(importedClass(cl.name)) : null) || { hd: cl.hd || 8, cast: cl.cast || '', ab: '', asi: ASI_STD, subAt: 3, f: {}, s: {}, homebrew: true };
+const classInfo = cl => CLASSES[classKey(cl.name)] || (importedClass(cl.name) ? importedInfo(importedClass(cl.name), cl.sub) : null) || { hd: cl.hd || 8, cast: cl.cast || '', ab: '', asi: ASI_STD, subAt: 3, f: {}, s: {}, homebrew: true };
 // "Paladin (Oath of Devotion)", "Fighter 3 / Wizard 2"
 function classesOf(c) {
   if (Array.isArray(c.classes) && c.classes.length && c.classes.reduce((a, x) => a + (+x.level || 0), 0) === (+c.level || 1)) return c.classes;
@@ -6593,7 +6646,7 @@ function slotsFor(list) {
     const i = classInfo(x);
     if (i.cast === 'full') lv += x.level; else if (i.cast === 'half') lv += Math.ceil(x.level / 2); else if (i.cast === 'third') lv += Math.floor(x.level / 3);
     else if (i.cast === 'pact') pact = { n: x.level >= 17 ? 4 : x.level >= 11 ? 3 : x.level >= 2 ? 2 : 1, lvl: Math.min(5, Math.ceil(x.level / 2)) };
-    else if (i.cast === 'table' && i.imported.slots) (tableSlots = tableSlots || []).push(i.imported.slots[Math.min(20, x.level) - 1] || {});
+    else if (i.cast === 'table' && i.slots) (tableSlots = tableSlots || []).push(i.slots[Math.min(20, x.level) - 1] || {});
   }
   const caster = list.some(x => classInfo(x).cast);
   if (!caster) return null;
@@ -6684,7 +6737,7 @@ function levelUpHtml(md) {
   const subList = Object.values(CLASSES).map(x => x.sub);
   h += sec(n++, `New features: ${esc(P.cl.name)} level ${P.lvl}`, `${P.needSub ? `<label class="fld"><span>Choose your subclass</span><select id="lu-sub" data-lusub="1"><option value="">Pick one…</option>${P.info.sub ? `<option value="${esc(P.info.sub)}" ${md.sub === P.info.sub ? 'selected' : ''}>${esc(P.info.sub)} (SRD)</option>` : ''}${P.info.imported ? P.info.imported.subs.map(sb => `<option value="${esc(sb.name)}" ${md.sub === sb.name ? 'selected' : ''}>${esc(sb.name)}</option>`).join('') : ''}${P.bookSubs.map(x => `<option value="${esc(x.sub.name)}" ${md.sub === x.sub.name ? 'selected' : ''}>${esc(x.sub.name)}</option>`).join('')}<option value="other" ${md.sub === 'other' ? 'selected' : ''}>Another subclass…</option></select></label>
       ${md.sub === 'other' ? `<label class="fld"><span>Subclass name</span><input id="lu-subo" data-lusubo="1" value="${esc(md.subOther)}" placeholder="Oath of Vengeance"></label>` : ''}` : ''}
-    ${P.feats.length ? `<div class="lu-feats">${P.feats.map((f, i) => { if (f.note) return `<div class="muted">↑ <b>${esc(f.name)}</b>: see your ${esc(f.improves)} feature for what changes.</div>`; const k = f.text ? -1 : srdFeature(f.name); const key = f.name; return `<label><input type="checkbox" id="luf-${i}" ${f.optional ? `data-luo="${esc(key)}" ${md.on && md.on[key] ? 'checked' : ''}` : `data-luf="${esc(key)}" ${md.off[key] ? '' : 'checked'}`}> <b>${esc(f.name)}</b> <span class="muted">${f.optional ? 'optional · ' : ''}${esc(f.from)}${f.text ? ' · full text' + (f.replaces ? ', replaces ' + esc(f.replaces) : '') : k >= 0 ? ' · full text from the SRD' : ' · added as a note to fill in'}</span></label>`; }).join('')}</div>`
+    ${P.feats.length ? `<div class="lu-feats">${P.feats.map((f, i) => { if (f.note) return `<div class="muted">↑ <b>${esc(f.name)}</b>: see your ${esc(f.improves)} feature for what changes.</div>`; const k = f.text ? -1 : srdFeature(f.name); const key = f.name; return `<label><input type="checkbox" id="luf-${i}" ${f.optional ? `data-luo="${esc(key)}" ${md.on && md.on[key] ? 'checked' : ''}` : `data-luf="${esc(key)}" ${md.off[key] ? '' : 'checked'}`}> <b>${esc(f.name)}</b> <span class="muted">${f.optional ? 'optional · ' : ''}${esc(f.from)}${f.text ? ' · full text' + (f.replaces ? ', replaces ' + esc(f.replaces) + (allEntries(c).some(({ e }) => replacedNames(f.replaces).includes(clsNorm(e.name))) ? ' (taken off your sheet)' : '') : '') : k >= 0 ? ' · full text from the SRD' : ' · added as a note to fill in'}</span></label>`; }).join('')}</div>`
       : `<div class="muted">${P.info.homebrew ? 'Grimsheet doesn\'t know this class\'s features. <button class="btn small" data-act="modal" data-v="classes">Import the class</button> to have them added with their text, or add them from your library after levelling up.' : 'No new class features at this level.'}</div>`}
     ${P.needSub && md.sub === 'other' ? '<div class="muted">Add your subclass features from your library or by pasting their text.</div>' : ''}
     ${P.info.note && P.info.note[P.lvl] ? `<div class="muted">${esc(P.info.note[P.lvl])}</div>` : ''}
@@ -6749,7 +6802,7 @@ function applyLevelUp(md) {
   for (const f of P.feats) {
     if (f.note) { done.push(f.name); continue; }
     if (f.optional ? !(md.on && md.on[f.name]) : md.off[f.name]) continue;
-    if (f.text && (f.addon || P.info.imported)) { fm.entries.push(Object.assign(importedEntry(f.addon || P.info.imported, f), { id: uid() })); done.push(f.name); } else addFeature(f.name, f.from);
+    if (f.text && (f.addon || P.info.imported)) { const gone = dropReplaced(fm, f); fm.entries.push(Object.assign(importedEntry(f.addon || P.info.imported, f), { id: uid() })); done.push(f.name + (gone.length ? ' (instead of ' + gone.join(', ') + ')' : '')); } else addFeature(f.name, f.from);
   }
   if (P.needSub && P.sub) done.push('subclass ' + P.sub);
   const raise = (key, n, max) => { const a = c.abilities.find(x => x.key === key); if (a) { a.score = Math.min(max, a.score + n); done.push(key + ' ' + (a.score - n) + ' → ' + a.score); } };
@@ -6765,7 +6818,7 @@ function applyLevelUp(md) {
   }
   if (P.slots) {
     for (let l = 1; l <= 9; l++) { c.slots[l].max = P.slots[l]; c.slots[l].used = Math.min(c.slots[l].used, P.slots[l]); }
-    if (!c.spellAbility && P.info.ab) c.spellAbility = P.info.ab;
+    const ab = classInfo(P.cl).ab || P.info.ab; if (!c.spellAbility && ab) c.spellAbility = ab;
   }
   c.levelUndo = { at: Date.now(), from, to: c.level, done, snap };
   closeModal(); save(); render(); publishStatus();
