@@ -1,7 +1,7 @@
 /* Grimsheet helpers shared by background.html and gm.html (the panel keeps its own copy). */
 window.GS = (function () {
   const GS = {
-    VERSION: '1.28.0',
+    VERSION: '1.29.0',
     CH_ROLL: 'com.grimsheet/roll',
     CH_GM: 'com.grimsheet/gm',        // GM ↔ player: hp changes, sheet requests and replies
     CH_LOCAL: 'com.grimsheet/local',  // same browser: GM menu → GM panel
@@ -125,6 +125,13 @@ window.GS = (function () {
     if (old && old.changedAt >= d.changedAt) return false;
     p.chars[d.charId] = { name: d.name, cls: d.cls || '', level: d.level || '', changedAt: d.changedAt, data: d.data, at: Date.now() };
     return true;
+  };
+  // room homebrew entries too big for one message (whole classes) go packed, in parts (same as the panel's hbSendItem)
+  GS.hbSendItem = async (send, x) => {
+    const json = JSON.stringify(x);
+    if (json.length < 12000) return send({ type: 'up', item: x });
+    const data = await GS.pack(x), id = GS.uid(), parts = GS.chunks(data);
+    for (let i = 0; i < parts.length; i++) await send({ type: 'upz', id, part: i, parts: parts.length, data: parts[i] });
   };
   GS.chunks = (s, n = 12000) => { const out = []; for (let i = 0; i < s.length; i += n) out.push(s.slice(i, i + n)); return out.length ? out : ['']; };
   GS.load = src => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); });

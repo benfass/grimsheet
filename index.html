@@ -396,6 +396,9 @@ select.ed-inline{width:auto}
 .ico.plus1{font-size:.78rem;font-weight:700;width:auto;padding:0 6px}
 .sb-warn{color:var(--gold);font-size:.84rem;line-height:1.45}
 .roll.alt small{font-size:.7em;opacity:.8;margin-left:2px}
+.cls-card{border:1px solid var(--line);border-radius:8px;padding:8px 10px;display:grid;gap:6px}
+.cls-h{display:flex;gap:8px;align-items:center}
+.cls-levels{overflow-x:auto;font-size:.84rem}.cls-levels table{border-collapse:collapse;width:100%}.cls-levels td{padding:3px 6px;border-top:1px solid var(--line);vertical-align:top}
 .chip.hbup{color:var(--accent);border-color:var(--accent);cursor:pointer;background:transparent;white-space:nowrap}
 .hb-hidden b{opacity:.7}
 .hb-i .e-name{background:none;border:0;text-align:left;cursor:pointer;color:inherit;font:inherit}
@@ -2366,6 +2369,258 @@ Poison Breath (Recharge 5-6). The dragon exhales poisonous gas in a 30-foot cone
   }
   return { parse, srd, avgDice, mod, spells: readSpellcasting, clean, splitBlocks, warnings, titleCase };
 })();
+/* ============ CLASS IMPORTER ============
+   Reads homebrew classes and subclasses from pasted text or a PDF: the class table (features by level, ability
+   score improvements, spell slots, cantrips, scaling columns), the hit die, saves and spellcasting ability, and
+   every feature marked "3rd-level Deva feature" / "6th-level Bronze Dragon feature" with its full text.
+   Several classes in one text (a whole book) come back as several classes. */
+const CLASSIMP = (() => {
+  const ORD = /^(\d{1,2})(?:st|nd|rd|th)$/i;
+  const MARK = /^(\d{1,2})(?:st|nd|rd|th|h)?[- ]level\s+([A-Z][\w'’-]*(?:\s+(?:of|the|and|[A-Z][\w'’-]*)){0,3})\s+feature\b(?:[.,]\s*(.*))?$/;
+  const ROW = /^(\d{1,2})(?:st|nd|rd|th)\b\s*(.*)$/i;
+  const VAL = /^(—|–|-|\d+|\d+d\d+|[+-]\d+|\d+(?:st|nd|rd|th)|\d+ ?ft\.?|ft\.?|\d+\/\d+|x\d+|\d+%)$/i;
+  const ABFULL = { strength: 'STR', dexterity: 'DEX', constitution: 'CON', intelligence: 'INT', wisdom: 'WIS', charisma: 'CHA' };
+  const KNOWN_COLS = ['Cantrips Known', 'Spells Known', 'Spells Prepared', 'Prepared Spells', 'Spell Slots', 'Slot Level', 'Invocations Known', 'Sorcery Points', 'Ki Points', 'Focus Points', 'Martial Arts', 'Unarmored Movement', 'Rages', 'Rage Damage', 'Sneak Attack', 'Weapon Mastery', 'Infusions Known', 'Infused Items'];
+  const isFooter = l => /^\d{1,3}$/.test(l) || /^\d{1,3}\s+[A-Za-z][\w' &-]{0,40}$/.test(l) || /^[A-Z][A-Z' &-]{1,40}\s+\d{1,3}$/.test(l) || /^chapter \d+/i.test(l);
+  const norm = s => String(s || '').toLowerCase().replace(/[’']/g, "'").replace(/\s+/g, ' ').trim();
+  const lvlOf = s => +(String(s).match(/\d+/) || [0])[0];
+
+  const TAGS = new Map();
+  function lines(text) {
+    TAGS.clear();
+    const clean = typeof MONSTERS !== 'undefined' && MONSTERS.clean ? MONSTERS.clean(text) : String(text || '');
+    const all = clean.replace(/[−–]/g, '-').replace(/-\n(?=[a-z])/g, '').split('\n').map(l => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
+    // running headers: a class or subclass name alone on a line, page after page ("Vampire", "DEVA")
+    const owners = new Set(); all.forEach(l => { const m = l.match(MARK); if (m) owners.add(m[2].toLowerCase()); });
+    const n = {}; all.forEach(l => { const k = l.toLowerCase(); if (owners.has(k)) n[k] = (n[k] || 0) + 1; });
+    // page headers and footers are dropped, but remember which chapter each line is in ("10 Dragon", "DEVA")
+    const out = []; let tag = '';
+    for (const l of all) {
+      const k = l.toLowerCase();
+      if (isFooter(l) || n[k] >= 4) { const w = k.replace(/\d+/g, '').trim(); if (w && owners.has(w)) tag = w; continue; }
+      out.push(l); TAGS.set(out.length - 1, tag);
+    }
+    return out;
+  }
+  // where a feature's text ends: a heading for something else
+  const SPELLHEAD = /^[A-Z][\w']*(?: [A-Z][\w']*){0,3} (?:Spells|Spell List)$/;
+  const STOP = /^((?:d\d+\s+)?(?:personality traits?|ideals?|bonds?|flaws?|quirks?|origins?)\b|casting time\s*:|optional\b|variant\b|creating an? |quick build\b|racial (?:features|traits)$|class features$|racial & class features$|equipment$|hit points$|proficiencies$|(?:age|alignment|size|lair|diet|treasure|personality|appearance|society|names?)\.\s)/i;
+
+  /* ---- class tables ---- */
+  function readTables(L, colNames) {
+    const out = [];
+    for (let i = 0; i < L.length; i++) {
+      // "The Deva", "THE DEVA", "THe DeVA" (small capitals), maybe with the slot heading after it
+      const tm = L[i].match(/^the ([a-z][\w'-]*(?: [a-z][\w'-]*){0,3})(\s+[—-]\s.*)?$/i); if (!tm || /^(spells?|following|table|class|level|first|same|number|end)\b/i.test(tm[1])) continue;
+      // the header runs from the title to the first "1st" row (not the "1st 2nd 3rd" slot headings)
+      const first = l => /^1st\b/i.test(l) && !/^1st\s+2nd\b/i.test(l);
+      let j = i + 1; while (j < L.length && j < i + 30 && !first(L[j])) j++;
+      if (j >= L.length || !first(L[j])) continue;
+      const header = ((tm[2] || '') + ' ' + L.slice(i + 1, j).join(' ')).trim();
+      if (!/\blevel\b/i.test(header)) continue;
+      // rows: a line starting with the next level; anything else continues the row before
+      const rows = []; let k = j, want = 1;
+      while (k < L.length && want <= 20) {
+        const m = L[k].match(ROW);
+        if (m && +m[1] === want) { rows.push(m[2]); want++; k++; continue; }
+        if (!rows.length || m) break;
+        if (MARK.test(L[k]) || (k + 1 < L.length && MARK.test(L[k + 1]))) break;
+        if (want > 20) break;
+        rows[rows.length - 1] += ' ' + L[k]; k++;
+      }
+      if (rows.length < 10) continue;
+      // a 20th row's own values may sit on the next line
+      while (rows.length === 20 && k < L.length && L[k].split(' ').every(t => VAL.test(t))) { rows[19] += ' ' + L[k]; k++; }
+      const nm = tm[1].trim(), proper = nm === nm.toUpperCase() || /[a-z][A-Z]/.test(nm) ? nm.toLowerCase().replace(/(^|\s)([a-z])/g, (x, a, b) => a + b.toUpperCase()) : nm;
+      out.push(Object.assign({ name: proper, at: i, end: k }, splitRows(rows, header, colNames)));
+      i = k - 1;
+    }
+    return out;
+  }
+  function splitRows(rows, header, colNames) {
+    const hasPB = rows.filter(r => /^\+\d\b/.test(r)).length > rows.length / 2;
+    const parsed = rows.map(r => {
+      let toks = r.split(' '); if (hasPB && /^\+\d$/.test(toks[0])) toks = toks.slice(1);
+      // join "20" "ft." and "10 ft."
+      const t2 = []; for (const t of toks) { if (/^ft\.?$/i.test(t) && t2.length && /^\d+$/.test(t2[t2.length - 1])) t2[t2.length - 1] += ' ft.'; else t2.push(t); }
+      let a = 0; while (a < t2.length && VAL.test(t2[a])) a++;
+      let b = t2.length; while (b > a && VAL.test(t2[b - 1])) b--;
+      return { toks: t2, a, b, words: t2.slice(a, b).join(' ') };
+    });
+    const mode = xs => { const c = {}; xs.forEach(x => { c[x] = (c[x] || 0) + 1; }); return +Object.entries(c).sort((p, q) => q[1] - p[1])[0][0]; };
+    const withF = parsed.filter(p => p.words);
+    const Lc = withF.length ? mode(withF.map(p => p.a)) : 0, Tc = withF.length ? mode(withF.map(p => p.toks.length - p.b)) : 0;
+    const feats = [], vals = [];
+    parsed.forEach(p => {
+      let lead, trail, words = p.words;
+      if (p.words) { lead = p.toks.slice(0, p.a); trail = p.toks.slice(p.b); }
+      else { const t = p.toks; lead = t.slice(0, Lc); let rest = t.slice(Lc); if (rest.length > Tc && /^[—-]$/.test(rest[0])) rest = rest.slice(1); trail = rest; words = ''; }
+      while (lead.length < Lc) lead.push(''); while (trail.length < Tc) trail.push('');
+      feats.push(words && !/^[—-]$/.test(words) ? words.split(/,\s*(?![^(]*\))/).map(s => s.trim()).filter(Boolean) : []);
+      vals.push(lead.slice(0, Lc).concat(trail.slice(0, Tc)));
+    });
+    // column names from the header: what comes before "Features" and after it
+    const h = header.replace(/[—-]\s*spell slots per spell level\s*[—-]/i, ' ').replace(/\s+/g, ' ').trim();
+    const fi = h.search(/\bfeatures\b/i);
+    const pre = (fi >= 0 ? h.slice(0, fi) : '').replace(/^level\s*/i, '').replace(/^prof[a-z]*\s+bonus\s*/i, '').trim();
+    const post = (fi >= 0 ? h.slice(fi + 8) : h.replace(/^level\s*/i, '').replace(/^prof[a-z]*\s+bonus\s*/i, '')).trim();
+    const names = groupNames(pre, Lc, colNames).concat(groupNames(post, Tc, colNames));
+    const cols = names.map((n, ci) => ({ name: n, vals: vals.map(v => v[ci] || '') }));
+    return { hasPB, feats, cols };
+  }
+  // split header words into n column names: known names first (from the features' own text and common ones)
+  function groupNames(s, n, extra) {
+    if (!n) return [];
+    const words = s.split(' ').filter(Boolean), known = [...new Set((extra || []).concat(KNOWN_COLS))].map(k => k.split(' ')).sort((a, b) => b.length - a.length);
+    const out = []; let buf = [];
+    for (let i = 0; i < words.length;) {
+      if (ORD.test(words[i])) { if (buf.length) { out.push(buf.join(' ')); buf = []; } out.push(words[i] + ' slots'); i++; continue; }
+      const k = known.find(kw => kw.every((w, x) => (words[i + x] || '').toLowerCase() === w.toLowerCase()));
+      if (k) { if (buf.length) { out.push(buf.join(' ')); buf = []; } out.push(words.slice(i, i + k.length).join(' ')); i += k.length; continue; }
+      buf.push(words[i]); i++;
+    }
+    if (buf.length) out.push(buf.join(' '));
+    while (out.length > n) { // too many: join the shortest neighbours
+      let bi = 0, best = 1e9; for (let i = 0; i < out.length - 1; i++) { if (/ slots$/.test(out[i]) || / slots$/.test(out[i + 1])) continue; const l = out[i].length + out[i + 1].length; if (l < best) { best = l; bi = i; } }
+      if (best === 1e9) break; out.splice(bi, 2, out[bi] + ' ' + out[bi + 1]);
+    }
+    while (out.length < n) { // too few: split the longest multi-word name
+      let bi = -1, best = 0; out.forEach((x, i) => { const w = x.split(' ').length; if (w > 1 && !/ slots$/.test(x) && w > best) { best = w; bi = i; } });
+      if (bi < 0) { out.push('Column ' + (out.length + 1)); continue; }
+      const w = out[bi].split(' '), half = Math.ceil(w.length / 2); out.splice(bi, 1, w.slice(0, half).join(' '), w.slice(half).join(' '));
+    }
+    return out.slice(0, n);
+  }
+
+  /* ---- features ---- */
+  function readFeatures(L, tables) {
+    const marks = [];
+    L.forEach((l, i) => { const m = l.match(MARK); if (m) marks.push({ i, level: +m[1], owner: m[2].replace(/\s+/g, ' ').trim(), note: (m[3] || '').trim() }); });
+    const owners = new Set(marks.map(m => norm(m.owner)));
+    return marks.map((m, k) => {
+      const tag0 = TAGS.get(m.i) || '';
+      const nameAt = m.i - 1, name = (L[nameAt] || '').replace(/[.:]$/, '').trim();
+      const nextName = k + 1 < marks.length ? marks[k + 1].i - 1 : L.length;
+      const body = [];
+      for (let x = m.i + 1; x < nextName; x++) {
+        const l = L[x], ln = norm(l);
+        // stop at a heading that starts something else: a subclass or class title, or a class table
+        // a chapter's drop cap ("L" then "ycanthropes are…") starts something new too
+        // the page headers now name another chapter
+        const tg = TAGS.get(x) || '';
+        if (tag0 && tg && tg !== tag0 && !norm(m.owner).includes(tg) && !tg.includes(norm(m.owner))) { const own = norm(m.owner); if (!own.endsWith(tag0) && !tag0.endsWith(own)) { /* subclass chapter tags vary */ } else break; }
+        if (owners.has(ln) || STOP.test(l) || SPELLHEAD.test(l) || (tables || []).some(t => x >= t.at && x < t.end) || (/^[A-Z]$/.test(l) && /^[a-z]/.test(L[x + 1] || ''))) break;
+        body.push(l);
+      }
+      const rp = (m.note.match(/replaces (?:the |your )?(.+?) feature/i) || [])[1];
+      return { name, level: m.level, owner: m.owner, at: m.i, text: (m.note ? m.note.replace(/^which /, 'This ').replace(/^(.)/, c => c.toUpperCase()) + (/[.]$/.test(m.note) ? '' : '.') + '\n' : '') + reflow(body), replaces: rp || '' };
+    }).filter(f => f.name && !MARK.test(f.name));
+  }
+  // lines broken by the page layout back into paragraphs
+  function reflow(ls) {
+    const out = [];
+    for (const l of ls) {
+      const prev = out[out.length - 1];
+      if (prev != null && !/[.:!?]$/.test(prev) && !/^[•▪●\-*]\s/.test(l) && !/^[A-Z][\w' -]{1,40}\.\s/.test(l)) out[out.length - 1] = prev + ' ' + l;
+      else out.push(l);
+    }
+    return out.join('\n').replace(/\s+([,.;:])/g, '$1').trim();
+  }
+
+  /* ---- basics around a class ---- */
+  function readBasics(L, from, to, name) {
+    const seg = L.slice(Math.max(0, from), Math.min(L.length, to)).join('\n'), flat = seg.replace(/\n/g, ' ');
+    const b = {};
+    let m;
+    if ((m = seg.match(/hit (?:dice|die|point die)\s*:?\s*1?d(\d+)/i)) || (m = seg.match(/\b1?d(\d+)\s+per\s+[\w' -]*level/i))) b.hd = +m[1];
+    if ((m = seg.match(/saving throws\s*:?\s*([a-z]+)(?:,\s*|\s+and\s+)([a-z]+)/i))) b.saves = [m[1], m[2]].map(x => ABFULL[x.toLowerCase()]).filter(Boolean);
+    if ((m = flat.match(/\b(strength|dexterity|constitution|intelligence|wisdom|charisma) is your spellcasting ability/i))) b.ab = ABFULL[m[1].toLowerCase()];
+    if ((m = seg.match(/armor\s*:\s*([^\n]+)/i))) b.armor = m[1].trim();
+    if ((m = seg.match(/weapons\s*:\s*([^\n]+)/i))) b.weapons = m[1].trim();
+    return b;
+  }
+
+  /* ---- put it together ---- */
+  function parse(text) {
+    const L = lines(text);
+    // names of table columns mentioned in the text ("as shown in the Sacred Fire Damage column")
+    const colNames = [...new Set([...L.join(' ').matchAll(/\b(?:the|your)\s+([A-Z][\w' ]{2,40}?)\s+column\b/g)].map(m => m[1].replace(/^(the|your)\s+/i, '')))];
+    const tables = readTables(L, colNames);
+    const feats = readFeatures(L, tables);
+    const ownerCount = {}; feats.forEach(f => { ownerCount[norm(f.owner)] = (ownerCount[norm(f.owner)] || 0) + 1; });
+    // classes: each table, plus owners with level-1 features that have no table
+    const classes = tables.map(t => ({ name: t.name, at: t.at, table: t }));
+    for (const f of feats) if (f.level === 1 && !classes.some(c => norm(c.name) === norm(f.owner)) && !tables.length) classes.push({ name: f.owner, at: f.at, table: null });
+    if (!classes.length && feats.length) { const top = Object.entries(ownerCount).sort((a, b) => b[1] - a[1])[0][0]; const f = feats.find(x => norm(x.owner) === top); classes.push({ name: f.owner, at: f.at, table: null }); }
+    classes.sort((a, b) => a.at - b.at);
+    const isClassOwner = o => classes.some(c => norm(c.name) === norm(o));
+    // where each class's part of the text starts (its table or its first feature, whichever comes first)
+    classes.forEach(c => { const first = feats.find(f => norm(f.owner) === norm(c.name)); c.start = Math.min(c.at, first ? first.at : c.at); });
+    classes.sort((a, b) => a.start - b.start);
+    const sectionOf = at => { let r = classes[0]; for (const c of classes) if (c.start <= at + 40) r = c; return r; };
+    const result = [];
+    for (const c of classes) {
+      const idx = classes.indexOf(c), end = idx + 1 < classes.length ? classes[idx + 1].start : L.length;
+      const basics = readBasics(L, c.start - 120, end, c.name);
+      const own = feats.filter(f => norm(f.owner) === norm(c.name));
+      const subsByName = {};
+      for (const f of feats) if (!isClassOwner(f.owner) && sectionOf(f.at) === c) (subsByName[f.owner] = subsByName[f.owner] || []).push(f);
+      const t = c.table, cols = t ? t.cols : [];
+      const asi = [], tableF = {};
+      if (t) t.feats.forEach((fs, i) => { tableF[i + 1] = fs; if (fs.some(n => /^ability score improvements?$/i.test(n))) asi.push(i + 1); });
+      // spellcasting from the table: per-level slots ("1st".."9th" columns) or pact-style ("Spell Slots" + "Slot Level")
+      let slots = null;
+      const sc = cols.filter(x => / slots$/.test(x.name) && ORD.test(x.name.split(' ')[0]));
+      const ns = cols.find(x => /^spell slots$/i.test(x.name)), sl = cols.find(x => /^slot level$/i.test(x.name));
+      if (sc.length) slots = Array.from({ length: 20 }, (_, i) => { const s = {}; sc.forEach(x => { const n = parseInt(x.vals[i], 10); if (n) s[lvlOf(x.name)] = n; }); return s; });
+      else if (ns && sl) slots = Array.from({ length: 20 }, (_, i) => { const n = parseInt(ns.vals[i], 10), l = lvlOf(sl.vals[i]); return n && l ? { [l]: n } : {}; });
+      const subs = Object.entries(subsByName).map(([name, fs]) => ({ name, features: fs.map(f => Object.assign({ level: f.level, name: f.name, text: f.text }, f.replaces ? { replaces: f.replaces } : {})) }));
+      const subAt = subs.length ? Math.min(...subs.flatMap(s => s.features.map(f => f.level))) : 3;
+      const scale = cols.filter(x => !(/ slots$/.test(x.name) && ORD.test(x.name.split(' ')[0])) && !/^(spell slots|slot level)$/i.test(x.name));
+      result.push({
+        id: 'cls:' + norm(c.name).replace(/[^a-z0-9]+/g, '-'),
+        name: c.name, hd: basics.hd || 8, saves: basics.saves || [], ab: basics.ab || '', armor: basics.armor || '', weapons: basics.weapons || '',
+        asi: asi.length ? asi : null, subAt, slots, cols: scale.map(x => ({ name: x.name, vals: x.vals })),
+        table: tableF, features: own.map(f => ({ level: f.level, name: f.name, text: f.text })), subs,
+      });
+    }
+    result.forEach(r => { r.warnings = warn(r); });
+    return result;
+  }
+  function warn(c) {
+    const w = [], have = new Set(c.features.map(f => norm(f.name)));
+    if (!Object.keys(c.table).length) w.push('No class table found: levels come from the features alone, and there are no ability score improvements or spell slots.');
+    for (const [lv, fs] of Object.entries(c.table)) for (const n of fs) {
+      const k = norm(n);
+      if (/^ability score improvements?$/.test(k) || /\bimprovement$/.test(k) || /\bfeature$/.test(k) || have.has(k) || have.has(k.replace(/\s*\(.*\)$/, ''))) continue;
+      if (c.features.some(f => k.startsWith(norm(f.name)) || norm(f.name).startsWith(k))) continue;
+      w.push(`Level ${lv}: "${n}" is in the table but its description wasn't found.`);
+    }
+    for (const f of c.features) if (Object.keys(c.table).length && !Object.values(c.table).flat().some(n => norm(n).startsWith(norm(f.name)) || norm(f.name).startsWith(norm(n)))) w.push(`"${f.name}" (level ${f.level}) isn't in the class table.`);
+    if (c.features.some(f => f.text.length < 20)) w.push('Some features have very little text; check them.');
+    return w;
+  }
+  // text of a PDF (pdf.js document), line by line in the order the page was written, which keeps columns together
+  async function pdfText(doc, onPage) {
+    const out = [];
+    for (let p = 1; p <= doc.numPages; p++) {
+      const tc = await (await doc.getPage(p)).getTextContent();
+      let line = '', y = null;
+      for (const it of tc.items) {
+        if (typeof it.str !== 'string') continue;
+        const iy = it.transform ? it.transform[5] : y;
+        if (y != null && iy != null && Math.abs(iy - y) > 2 && line.trim()) { out.push(line.trim()); line = ''; }
+        line += (line && !/\s$/.test(line) && it.str && !/^\s/.test(it.str) ? (Math.abs((iy || 0) - (y || 0)) <= 2 ? '' : ' ') : '') + it.str;
+        y = iy;
+        if (it.hasEOL) { if (line.trim()) out.push(line.trim()); line = ''; }
+      }
+      if (line.trim()) out.push(line.trim());
+      if (onPage) onPage(p, doc.numPages);
+    }
+    return out.join('\n');
+  }
+  return { parse, lines, pdfText };
+})();
 if (typeof module !== 'undefined') module.exports = MONSTERS;
 </script>
 
@@ -2694,7 +2949,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.28.0';
+const APP_VERSION = '1.29.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -5123,9 +5378,9 @@ function notesMarkdown() {
 // hidden or not, straight to a player's sheet. Entries on a sheet remember their source (e.hb) so a GM
 // edit can be taken over later. Same rules as GS.hb* in shared.js (the background page).
 const HBKEY = 'grimsheet.homebrew.v1', CH_HB = 'com.grimsheet/homebrew', HB_MAX = 14000;
-const HB_KIND = { item: 'Item', spell: 'Spell', feature: 'Feature', attack: 'Attack', creature: 'Creature' };
+const HB_KIND = { class: 'Class', item: 'Item', spell: 'Spell', feature: 'Feature', attack: 'Attack', creature: 'Creature' };
 const HB_MOD = { item: 'inventory', spell: 'spells', feature: 'features', attack: 'attacks', creature: 'companions' };
-const hbKind = e => e.spell ? 'spell' : e.creature ? 'creature' : e.item ? 'item' : e.attack ? 'attack' : 'feature';
+const hbKind = e => e.cls ? 'class' : e.spell ? 'spell' : e.creature ? 'creature' : e.item ? 'item' : e.attack ? 'attack' : 'feature';
 const hbOn = () => IN_OBR && OBRX.ready;
 const hbIsGM = () => hbOn() && OBRX.me.role === 'GM';
 function hbAll() { return readJSON(HBKEY) || {}; }
@@ -5152,14 +5407,23 @@ function hbClean(e) {
   if (x.creature) x.creature.hp = x.creature.hpMax;
   return x;
 }
-function hbTooBig(e) { return JSON.stringify(e).length > HB_MAX; }
+function hbTooBig(e) { return JSON.stringify(e).length > (e.cls ? 800000 : HB_MAX); }
+// big entries (whole classes) travel packed, in parts; GS.hbSendItem in shared.js does the same
+async function hbSendItem(x) {
+  const json = JSON.stringify(x);
+  if (json.length < 12000) { hbSend({ type: 'up', item: x }); return; }
+  const data = await packJSON(x), id = uid(), parts = [];
+  for (let i = 0; i < data.length; i += 12000) parts.push(data.slice(i, i + 12000));
+  for (let i = 0; i < parts.length; i++) hbSend({ type: 'upz', id, part: i, parts: parts.length, data: parts[i] });
+}
+const hbParts = {};
 
 /* ---- GM: change the pack and tell the room ---- */
 function hbChanged(h, changed) {
   saveHb(h);
   const vis = hbVisible(h);
   hbSend({ type: 'list', items: vis.map(x => [x.id, x.updated]) });
-  (changed || []).filter(x => !x.hidden).forEach(x => hbSend({ type: 'up', item: x }));
+  (changed || []).filter(x => !x.hidden).forEach(x => hbSendItem(x));
   if (ui.modal && (ui.modal.type === 'roomhb' || ui.modal.type === 'fromlib')) renderModal();
 }
 function hbAddEntry(e, hidden) {
@@ -5218,9 +5482,18 @@ function hbReceive(d) {
     if (d.type !== 'hello' || bgAlive()) return;
     const vis = hbVisible(hb()), have = new Map(d.have || []);
     hbSend({ type: 'list', items: vis.map(x => [x.id, x.updated]) });
-    vis.filter(x => !have.has(x.id) || have.get(x.id) < x.updated).forEach(x => hbSend({ type: 'up', item: x }));
+    vis.filter(x => !have.has(x.id) || have.get(x.id) < x.updated).forEach(x => hbSendItem(x));
     return;
   }
+  if (d.type === 'upz') {
+    if (bgAlive()) { if (d.part === d.parts - 1) setTimeout(() => hbReceive({ type: 'list-refresh' }), 600); return; }
+    const b = hbParts[d.id] = hbParts[d.id] || { p: [], n: d.parts, t: Date.now() }; b.p[d.part] = d.data;
+    if (b.p.filter(x => x != null).length < b.n) return;
+    delete hbParts[d.id];
+    unpackJSON(b.p.join('')).then(item => hbReceive({ type: 'up', item })).catch(() => { });
+    return;
+  }
+  if (d.type === 'list-refresh') { if (ui.modal && ui.modal.type === 'fromlib') renderModal(); return; }
   if (d.type !== 'up' && d.type !== 'list') return;
   const notice = () => {
     if (d.type === 'up' && d.item) { const has = Object.values(store.chars).some(c => c.modules.some(m => m.entries.some(e => e.hb && e.hb.id === d.item.id && e.hb.v < d.item.updated))); if (has) toast(`The GM updated ${d.item.e.name}. Tap “GM update” on it to take the changes.`); }
@@ -5259,11 +5532,11 @@ function hbOnSheet(c, id) { for (const m of c.modules) for (const e of m.entries
 function hbTabHtml(m) {
   const h = hb(), gm = hbIsGM(), c = C(), list = gm ? h.items : hbVisible(h);
   const kinds = Object.keys(HB_KIND).filter(k => list.some(x => hbKind(x.e) === k));
-  const rows = kinds.map(k => `<div class="lvl-h">${HB_KIND[k]}s</div>` + list.filter(x => hbKind(x.e) === k).sort((a, b) => a.e.name.localeCompare(b.e.name)).map(x => {
+  const rows = kinds.map(k => `<div class="lvl-h">${HB_KIND[k]}${k === "class" ? "es" : "s"}</div>` + list.filter(x => hbKind(x.e) === k).sort((a, b) => a.e.name.localeCompare(b.e.name)).map(x => {
     const mine = hbOnSheet(c, x.id), upd = mine && mine.hb.v < x.updated, open = ui.hbPeek === x.id;
     return `<div class="list-i hb-i"><div class="grow"><button class="e-name" data-act="hbpeek" data-v="${esc(x.id)}" style="padding:0"><b>${esc(x.e.name)}</b>${x.hidden ? ' <span class="chip">Hidden</span>' : ''}</button><div class="muted" style="font-size:.85rem">${esc(x.e.short || '')}</div>${open && x.e.text ? `<div class="e-body" style="margin-top:6px">${esc(x.e.text).replace(/\n/g, '<br>')}</div>` : ''}</div>
-      ${upd ? `<button class="btn small primary" data-act="hbupd" data-id="${esc(mine.id)}">Update</button>` : `<button class="btn small ${mine ? '' : 'primary'}" data-act="hbadd" data-v="${esc(x.id)}" data-id="${esc(m.id)}">${mine ? 'Add again' : 'Add'}</button>`}
-      <button class="ico" data-act="hblib" data-v="${esc(x.id)}" title="Save to my library">${ICON.book}</button></div>`;
+      ${x.e.cls ? (() => { const have = myClasses.find(d => clsNorm(d.name) === clsNorm(x.e.name)); return `<button class="btn small ${have && (have.at || 0) >= x.updated ? '' : 'primary'}" data-act="hbadd" data-v="${esc(x.id)}" data-id="${esc(m.id)}">${have ? ((have.at || 0) >= x.updated ? 'In my classes ✓' : 'Update my copy') : 'Add to my classes'}</button>`; })() : upd ? `<button class="btn small primary" data-act="hbupd" data-id="${esc(mine.id)}">Update</button>` : `<button class="btn small ${mine ? '' : 'primary'}" data-act="hbadd" data-v="${esc(x.id)}" data-id="${esc(m.id)}">${mine ? 'Add again' : 'Add'}</button>`}
+      ${x.e.cls ? '' : `<button class="ico" data-act="hblib" data-v="${esc(x.id)}" title="Save to my library">${ICON.book}</button>`}</div>`;
   }).join('')).join('');
   const empty = gm ? '<div class="empty">Nothing shared yet. Share entries from your library, or make new ones, in Room homebrew.</div>' : '<div class="empty">The GM hasn\'t shared any homebrew in this room yet.</div>';
   return `<div>${rows || empty}</div>${gm ? '<div class="addrow"><button class="btn small" data-act="modal" data-v="roomhb">Manage room homebrew</button></div>' : ''}`;
@@ -5276,8 +5549,8 @@ function roomHbHtml(m) {
   const shared = items.length ? items.map(x => `<div class="list-i hb-i ${x.hidden ? 'hb-hidden' : ''}"><div class="grow"><b>${esc(x.e.name)}</b> <span class="chip">${HB_KIND[hbKind(x.e)]}</span>${x.hidden ? ' <span class="chip">Hidden</span>' : ''}<div class="muted" style="font-size:.85rem">${esc(x.e.short || '')}</div>
       ${ui.hbGiveOpen === x.id ? `<div class="inline" style="margin-top:6px">${ps.length ? ps.map(p => `<button class="btn small" data-act="hbgiveto" data-v="${esc(x.id)}" data-player="${esc(p.id)}">${esc(p.s.char)} <span class="muted">${esc(p.name)}</span></button>`).join('') : '<span class="muted">No players with Grimsheet open in this room.</span>'}<button class="btn small" data-act="hbgive" data-v="">Cancel</button></div>` : ''}</div>
       <button class="btn small" data-act="hbhide" data-v="${esc(x.id)}" data-on="${x.hidden ? 0 : 1}" title="${x.hidden ? 'Players can\'t see it. Tap to show it to them.' : 'Players can see and add it. Tap to hide it.'}">${x.hidden ? 'Show' : 'Hide'}</button>
-      <button class="btn small" data-act="hbgive" data-v="${esc(x.id)}" title="Add it to a player's sheet now">Give…</button>
-      <button class="ico" data-act="hbedit" data-v="${esc(x.id)}" title="Edit">${ICON.edit}</button>
+      ${x.e.cls ? '' : `<button class="btn small" data-act="hbgive" data-v="${esc(x.id)}" title="Add it to a player's sheet now">Give…</button>
+      <button class="ico" data-act="hbedit" data-v="${esc(x.id)}" title="Edit">${ICON.edit}</button>`}
       <button class="ico ${ui.confirm === 'hbdel-' + x.id ? 'danger' : ''}" data-act="hbdel" data-v="${esc(x.id)}" title="${ui.confirm === 'hbdel-' + x.id ? 'Tap again to remove' : 'Remove from the room'}">${ICON.trash}</button></div>`).join('')
     : '<div class="empty">Nothing here yet. Share entries from your library or make new ones below.</div>';
   const inPack = new Set(h.items.map(x => x.e.name + '|' + (x.e.text || '').length));
@@ -5289,7 +5562,7 @@ function roomHbHtml(m) {
     <div class="sub-h" style="margin:0">In this room (${h.items.length})</div>
     <div>${shared}</div>
     <div class="sub-h" style="margin:4px 0 0">Add</div>
-    <div class="addrow" style="margin:0"><button class="btn small ${ui.hbLibOpen ? 'on' : ''}" data-act="hblibopen">From my library (${library.length})</button><button class="btn small" data-act="hbnew" data-v="item">New item</button><button class="btn small" data-act="hbnew" data-v="spell">New spell</button><button class="btn small" data-act="hbnew" data-v="feature">New feature</button></div>
+    <div class="addrow" style="margin:0"><button class="btn small ${ui.hbLibOpen ? 'on' : ''}" data-act="hblibopen">From my library (${library.length})</button><button class="btn small" data-act="hbnew" data-v="item">New item</button><button class="btn small" data-act="hbnew" data-v="spell">New spell</button><button class="btn small" data-act="hbnew" data-v="feature">New feature</button><button class="btn small" data-act="modal" data-v="classes" title="Open Classes and tap Share on one">Share a class…</button></div>
     ${lib ? `<div>${lib}</div>` : ''}
   </div><div class="dlg-f"><button class="btn primary" data-act="close">Done</button></div>`;
 }
@@ -5299,6 +5572,7 @@ function hbAct(act, el, v, c, id) {
     case 'hbpeek': ui.hbPeek = ui.hbPeek === v ? null : v; renderModal(); return true;
     case 'hbadd': {
       const src = hb().items.find(x => x.id === v); if (!src) return true;
+      if (src.e.cls) { addSharedClass(src.e.cls); renderModal(); return true; }
       const pref = c.modules.find(x => x.id === id), e = hbPrep(src), m = hbPlace(c, e, pref);
       save(); render(); renderModal(); toast(`${e.name} added to ${m.title}.`); return true;
     }
@@ -5530,6 +5804,174 @@ function bkAct(act, el, v) {
     case 'pcbrefresh': pcbAsk(); renderModal(); return true;
   }
   return false;
+}
+
+/* ---------- IMPORTED CLASSES: homebrew classes and subclasses for the level-up wizard ---------- */
+// Stored in this browser (grimsheet.classes.v1) as read by CLASSIMP; the level-up wizard treats them like the
+// built-in classes. GMs can share them with the room through Room homebrew.
+const CLSKEY = 'grimsheet.classes.v1';
+let myClasses = (() => { const a = readJSON(CLSKEY); return Array.isArray(a) ? a : []; })();
+function saveClasses() { writeJSON(CLSKEY, myClasses); }
+window.addEventListener('storage', ev => { if (ev.key === CLSKEY) { myClasses = readJSON(CLSKEY) || []; if (ui.modal && (ui.modal.type === 'classes' || ui.modal.type === 'levelup')) renderModal(); } });
+const clsNorm = s => String(s || '').toLowerCase().replace(/[’']/g, "'").replace(/\s+/g, ' ').trim();
+function importedClass(name) { const n = clsNorm(name); return n ? myClasses.find(c => clsNorm(c.name) === n) || myClasses.find(c => n.startsWith(clsNorm(c.name))) : null; }
+function importedSub(def, sub) { const n = clsNorm(sub); return def && n ? def.subs.find(s => clsNorm(s.name) === n) || def.subs.find(s => n.includes(clsNorm(s.name)) || clsNorm(s.name).includes(n)) : null; }
+const isAsiName = n => /^ability score improvements?$/i.test(String(n).trim());
+// info in the shape the level-up wizard uses for built-in classes
+function importedInfo(def) {
+  const f = {}; def.features.forEach(x => { if (!isAsiName(x.name)) f[x.level] = (f[x.level] ? f[x.level] + ', ' : '') + x.name; });
+  return { hd: def.hd || 8, cast: def.slots ? 'table' : '', ab: def.ab || '', asi: def.asi || [], subAt: def.subs.length ? def.subAt : 99, f, s: {}, imported: def };
+}
+// a level's features from an imported class: full text, subclass features, and "X improvement" notes
+function importedFeatures(def, lvl, sub) {
+  const sd = importedSub(def, sub), out = [];
+  const subF = sd ? sd.features.filter(x => x.level === lvl) : [];
+  const replaced = new Set(subF.filter(x => x.replaces).map(x => clsNorm(x.replaces)));
+  for (const x of def.features) if (x.level === lvl && !isAsiName(x.name) && !replaced.has(clsNorm(x.name))) out.push({ name: x.name, from: def.name, text: x.text });
+  for (const x of subF) out.push({ name: x.name, from: sd.name, text: x.text, replaces: x.replaces || '' });
+  for (const n of (def.table || {})[lvl] || []) {
+    const m = n.match(/^(.*?)\s+improvements?$/i);
+    if (m && !out.some(o => clsNorm(o.name) === clsNorm(n))) out.push({ name: n, from: def.name, note: true, improves: m[1] });
+  }
+  return out;
+}
+// a scaling table column as a formula: "1d8 … 7d8" → d(table(LEVEL, 3,1, 5,2…), 8); numbers → table(LEVEL, …)
+function columnFormula(col) {
+  const pts = (get) => { const out = []; let last = null; col.vals.forEach((v, i) => { const x = get(v); if (x == null) return; if (x !== last) { out.push(i + 1, x); last = x; } }); return out; };
+  const dice = col.vals.filter(v => v && !/^[—-]$/.test(v));
+  if (!dice.length) return null;
+  if (dice.every(v => /^\d*d\d+$/i.test(v))) {
+    const n = pts(v => { const m = v.match(/^(\d*)d(\d+)$/i); return m ? +(m[1] || 1) : null; }), s = pts(v => { const m = v.match(/^(\d*)d(\d+)$/i); return m ? +m[2] : null; });
+    return { kind: 'dice', f: `d(${n.length > 2 ? 'table(LEVEL, ' + n.join(',') + ')' : n[1]}, ${s.length > 2 ? 'table(LEVEL, ' + s.join(',') + ')' : s[1]})` };
+  }
+  if (dice.every(v => /^[+-]?\d+$/.test(v))) { const n = pts(v => /^[+-]?\d+$/.test(v) ? +v : null); return { kind: 'num', f: n.length > 2 ? 'table(LEVEL, ' + n.join(',') + ')' : String(n[1]) }; }
+  return null;
+}
+// an entry for a feature: its text, everything Grimsheet recognises in it, and table columns it refers to
+function importedEntry(def, f) {
+  const first = (f.text.split(/(?<=[.!?])\s/)[0] || '').slice(0, 140);
+  const e = newEntry({ name: f.name, short: first, text: f.text });
+  try { (E.scan(f.text) || []).forEach(s => { try { s.apply(e); } catch (x) { } }); } catch (x) { }
+  for (const col of def.cols || []) {
+    if (!new RegExp('\\b' + col.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i').test(f.text)) continue;
+    const cf = columnFormula(col); if (!cf) continue;
+    if (cf.kind === 'dice' && e.damage && e.damage.length) e.damage[0].dice = cf.f;
+    else if (cf.kind === 'num' && e.counter) e.counter.max = cf.f;
+  }
+  return normalizeEntry(e);
+}
+// "catch up": everything a character should have from an imported class up to its level, not on the sheet yet
+function missingImported(c) {
+  const have = new Set(allEntries(c).map(({ e }) => clsNorm(e.name))), out = [];
+  for (const cl of classesOf(c)) {
+    const def = importedClass(cl.name); if (!def) continue;
+    for (let l = 1; l <= cl.level; l++) for (const f of importedFeatures(def, l, cl.sub)) if (!f.note && !have.has(clsNorm(f.name))) out.push(Object.assign({ level: l, def }, f));
+  }
+  return out;
+}
+function addImportedFeatures(c, list) {
+  let fm = c.modules.find(m => m.type === 'features'); if (!fm) { fm = mkModule('features'); c.modules.push(fm); }
+  c.hidden = c.hidden.filter(x => x !== fm.id);
+  for (const f of list) fm.entries.push(Object.assign(importedEntry(f.def, f), { id: uid() }));
+}
+
+/* ---- the Classes dialog: import (paste or PDF), check, keep ---- */
+function classesHtml(md) {
+  const tab = md.tab || (myClasses.length ? 'mine' : 'import');
+  const head = dlgHead('Classes') + `<div class="dlg-b" style="gap:10px"><div class="tabs" style="margin:0"><button class="${tab === 'mine' ? 'on' : ''}" data-act="clstab" data-v="mine">My classes (${myClasses.length})</button><button class="${tab === 'import' ? 'on' : ''}" data-act="clstab" data-v="import">Import</button></div>`;
+  if (tab === 'mine') {
+    const c = C(), miss = !ui.viewing ? missingImported(c) : [];
+    const cls = classesOf(c), subPick = cls.map(cl => ({ cl, def: importedClass(cl.name) })).filter(x => x.def && x.def.subs.length && !x.cl.sub && x.cl.level >= x.def.subAt);
+    return head + `${miss.length || subPick.length ? `<div class="sugg" style="margin:0"><h3>${esc(c.name)}</h3>${subPick.map(x => `<label class="fld"><span>${esc(x.def.name)} subclass</span><select id="cls-sub-${esc(x.def.id)}" data-clssub="${esc(x.def.id)}"><option value="">Pick one…</option>${x.def.subs.map(s => `<option>${esc(s.name)}</option>`).join('')}</select></label>`).join('')}
+        ${miss.length ? `<span>${miss.length} feature${miss.length === 1 ? '' : 's'} from ${esc([...new Set(miss.map(f => f.from))].join(', '))} up to level ${Math.max(...miss.map(f => f.level))} aren't on the sheet yet: ${esc(miss.slice(0, 6).map(f => f.name).join(', '))}${miss.length > 6 ? '…' : ''}</span><div><button class="btn small primary" data-act="clscatch">Add them</button></div>` : ''}</div>` : ''}
+      ${myClasses.length ? myClasses.map((d, i) => `<div class="list-i"><div class="grow"><b>${esc(d.name)}</b> <span class="muted" style="font-size:.85rem">d${d.hd} · ${d.features.length} features${d.subs.length ? ' · ' + d.subs.length + ' subclasses (' + esc(d.subs.map(s => s.name).join(', ')) + ')' : ''}${d.slots ? ' · spellcasting' : ''}</span></div>
+        <button class="btn small" data-act="clsview" data-i="${i}">Details</button>${IN_OBR && OBRX.ready && OBRX.me.role === 'GM' ? `<button class="btn small" data-act="clsshare" data-i="${i}" title="Share it with your players through Room homebrew">Share</button>` : ''}
+        <button class="ico ${ui.confirm === 'clsdel-' + i ? 'danger' : ''}" data-act="clsdel" data-i="${i}" title="${ui.confirm === 'clsdel-' + i ? 'Tap again to delete' : 'Delete'}">${ICON.trash}</button></div>
+        ${md.view === i ? classDetailHtml(d) : ''}`).join('') : '<div class="empty">No classes yet. Import one from a PDF or pasted text, or add one your GM shared (Browse → Room homebrew).</div>'}
+      <div class="addrow" style="margin:0">${myClasses.length ? '<button class="btn small" data-act="clsexport">Export classes</button>' : ''}</div></div><div class="dlg-f"><button class="btn primary" data-act="close">Done</button></div>`;
+  }
+  if (md.found) {
+    return head + `<div class="muted" style="font-size:.88rem">${md.found.length} class${md.found.length === 1 ? '' : 'es'} found${md.src ? ' in ' + esc(md.src) : ''}. Check them, then keep the ones you want.</div>
+      ${md.found.map((d, i) => `<div class="cls-card"><label class="cls-h"><input type="checkbox" id="clsk-${i}" data-clskeep="${i}" ${md.keep[i] ? 'checked' : ''}> <input class="ed-inline" id="clsn-${i}" data-clsname="${i}" value="${esc(d.name)}" aria-label="Class name" style="font-weight:700;width:160px"></label>
+        <span class="muted" style="font-size:.85rem">d<input class="ed-inline" id="clshd-${i}" data-clshd="${i}" value="${d.hd}" style="width:34px" inputmode="numeric" aria-label="Hit die"> · ${d.features.length} features${d.subs.length ? ' · ' + d.subs.length + ' subclasses' : ''}${d.slots ? ' · spell slots' : ''}${d.ab ? ' · ' + d.ab : ''}${d.asi ? ' · ASI ' + d.asi.join(', ') : ''}</span>
+        ${myClasses.some(x => clsNorm(x.name) === clsNorm(d.name)) ? '<span class="chip">Replaces yours</span>' : ''}
+        ${d.warnings.length ? `<div class="sb-warn">${d.warnings.slice(0, 4).map(w => '⚠ ' + esc(w)).join('<br>')}${d.warnings.length > 4 ? '<br>…and ' + (d.warnings.length - 4) + ' more' : ''}</div>` : '<div class="ok" style="font-size:.82rem">✓ Every feature in the table has its description.</div>'}
+        <button class="btn small ghost" data-act="clsfview" data-i="${i}">${md.fview === i ? 'Hide levels' : 'Show levels'}</button>${md.fview === i ? classDetailHtml(d) : ''}</div>`).join('')}
+      <div class="addrow" style="margin:0"><button class="btn primary" data-act="clskeep">Keep selected</button><button class="btn" data-act="clsagain">Start over</button></div></div>`;
+  }
+  return head + `<div class="muted" style="font-size:.88rem">Grimsheet reads the class table (features by level, ability score improvements, spell slots, columns like Sneak Attack), the hit die and saving throws, and every feature marked like “3rd-level Deva feature”, with its full text. Subclass features (“6th-level Bronze Dragon feature”) become subclasses. A whole book with several classes works.</div>
+    <label class="fld"><span>From a PDF</span><input type="file" id="cls-file" accept="application/pdf,.pdf" data-clsfile="1"></label>
+    ${md.reading ? `<div class="muted">${esc(md.reading)}</div>` : ''}
+    <label class="fld"><span>Or paste the class text</span><textarea id="cls-text" class="code" style="min-height:160px" placeholder="The class table and the class features: from a PDF, Homebrewery, GM Binder or a web page.">${esc(md.text || '')}</textarea></label>
+    ${md.err ? `<div class="banner warn" style="margin:0">${esc(md.err)}</div>` : ''}
+    <div class="addrow" style="margin:0"><button class="btn primary" data-act="clsread">Read</button></div></div>`;
+}
+function classDetailHtml(d) {
+  const lv = Array.from({ length: 20 }, (_, i) => i + 1);
+  const row = l => {
+    const cf = d.features.filter(f => f.level === l && !isAsiName(f.name)).map(f => `<span title="${esc(f.text.slice(0, 300))}">${esc(f.name)}</span>`);
+    const t = ((d.table || {})[l] || []).filter(n => /improvements?$/i.test(n) && !isAsiName(n)).map(n => `<span class="muted">${esc(n)}</span>`);
+    const sb = d.subs.some(s => s.features.some(f => f.level === l)) ? `<span class="chip">subclass</span>` : '';
+    const asi = (d.asi || []).includes(l) ? '<span class="chip">ASI</span>' : '';
+    const sl = d.slots && d.slots[l - 1] ? Object.entries(d.slots[l - 1]).map(([k, v]) => v + '×' + E.ordinal(+k)).join(' ') : '';
+    const cols = (d.cols || []).map(c => c.vals[l - 1] && !/^[—-]$/.test(c.vals[l - 1]) ? `${esc(c.name)} ${esc(c.vals[l - 1])}` : '').filter(Boolean).join(' · ');
+    return `<tr><td class="mono">${l}</td><td>${cf.concat(t).join(', ') || '<span class="muted">—</span>'} ${sb}${asi}</td><td class="muted">${esc(sl)}${sl && cols ? ' · ' : ''}${cols}</td></tr>`;
+  };
+  return `<div class="cls-levels"><table><tbody>${lv.map(row).join('')}</tbody></table>
+    ${d.subs.length ? `<div style="margin-top:6px">${d.subs.map(s => `<div><b>${esc(s.name)}</b> <span class="muted">${esc(s.features.slice().sort((a, b) => a.level - b.level).map(f => f.level + ': ' + f.name + (f.replaces ? ' (replaces ' + f.replaces + ')' : '')).join(' · '))}</span></div>`).join('')}</div>` : ''}</div>`;
+}
+async function clsReadPdf(file) {
+  const m = ui.modal; m.reading = 'Reading ' + file.name + '…'; m.err = ''; renderModal();
+  try {
+    const lib = await loadPdfJs();
+    const doc = await lib.getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false }).promise;
+    const text = await CLASSIMP.pdfText(doc, (p, n) => { if (ui.modal === m && p % 10 === 0) { m.reading = `Reading page ${p} of ${n}…`; renderModal(); } });
+    m.reading = ''; clsFound(text, file.name);
+  } catch (e) { m.reading = ''; m.err = 'That PDF couldn\'t be read. Try copying the class text and pasting it instead.'; renderModal(); }
+}
+function clsFound(text, src) {
+  const m = ui.modal; let found = [];
+  try { found = CLASSIMP.parse(text); } catch (e) { }
+  if (!found.length) { m.err = 'No class found. Grimsheet looks for a class table ("The Deva" with Level and Features columns) and features marked like "3rd-level Deva feature".'; renderModal(); return; }
+  m.found = found; m.keep = found.map(() => true); m.src = src || ''; m.err = ''; m.fview = null; renderModal();
+}
+function clsAct(act, el, v, i) {
+  const m = ui.modal;
+  switch (act) {
+    case 'clstab': m.tab = v; m.view = null; renderModal(); return true;
+    case 'clsread': { const t = ($('#cls-text') || {}).value || ''; m.text = t; if (!t.trim()) { m.err = 'Paste the class text first, or choose a PDF.'; renderModal(); return true; } clsFound(t, ''); return true; }
+    case 'clsagain': m.found = null; renderModal(); return true;
+    case 'clsfview': m.fview = m.fview === i ? null : i; renderModal(); return true;
+    case 'clsview': m.view = m.view === i ? null : i; renderModal(); return true;
+    case 'clskeep': {
+      const keep = (m.found || []).filter((d, k) => m.keep[k]);
+      for (const d of keep) { d.at = Date.now(); const k = myClasses.findIndex(x => clsNorm(x.name) === clsNorm(d.name)); if (k >= 0) myClasses[k] = d; else myClasses.push(d); }
+      saveClasses(); m.found = null; m.tab = 'mine'; renderModal(); toast(keep.length ? `Kept ${keep.map(d => d.name).join(', ')}. Level-ups in ${keep.length === 1 ? 'it' : 'them'} now add features with their text.` : 'Nothing kept.'); return true;
+    }
+    case 'clsdel': if (ui.confirm !== 'clsdel-' + i) { ui.confirm = 'clsdel-' + i; renderModal(); return true; } ui.confirm = null; myClasses.splice(i, 1); saveClasses(); renderModal(); return true;
+    case 'clsexport': openModal('export', { json: JSON.stringify({ grimsheetClasses: 1, classes: myClasses }), title: 'Export classes', fname: 'grimsheet-classes' }); return true;
+    case 'clscatch': {
+      const c = C();
+      document.querySelectorAll('[data-clssub]').forEach(s => { if (!s.value) return; const def = myClasses.find(d => d.id === s.dataset.clssub); const list = classesOf(c); const cl = list.find(x => importedClass(x.name) === def); if (cl) { cl.sub = s.value; c.classes = list; c.cls = classString(list); } });
+      const miss = missingImported(c); addImportedFeatures(c, miss); save(); render(); renderModal();
+      toast(miss.length ? `Added ${miss.length} feature${miss.length === 1 ? '' : 's'} to Features & Traits.` : 'Nothing to add.'); return true;
+    }
+    case 'clsshare': { const d = myClasses[i]; if (d) hbShareClass(d); return true; }
+  }
+  return false;
+}
+// a class goes into Room homebrew as an entry carrying the whole class
+function hbShareClass(d) {
+  const h = hb(), ex = h.items.find(x => x.e && x.e.cls && clsNorm(x.e.name) === clsNorm(d.name));
+  const e = { name: d.name, short: `Class · d${d.hd} · ${d.features.length} features${d.subs.length ? ' · ' + d.subs.length + ' subclasses' : ''}`, text: '', cls: d, tags: {} };
+  if (ex) { ex.e = e; ex.updated = Date.now(); hbChanged(h, [ex]); toast(d.name + ' updated in Room homebrew.'); return; }
+  const it = { id: uid(), e, hidden: false, updated: Date.now() }; h.items.push(it); hbChanged(h, [it]);
+  toast(d.name + ' shared with the room. Players add it from Browse → Room homebrew.');
+}
+function addSharedClass(d) {
+  const k = myClasses.findIndex(x => clsNorm(x.name) === clsNorm(d.name)), cp = clone(d); cp.at = Date.now();
+  if (k >= 0) myClasses[k] = cp; else myClasses.push(cp); saveClasses();
+  toast(`${d.name} added to your classes. Level up in it, or open Characters → Classes to add its features to your sheet.`);
 }
 
 /* ---------- GM MODE: a GM who isn't playing a character ---------- */
@@ -5890,7 +6332,7 @@ const EPIC_BOONS = [
 ];
 const FULL_SLOTS = [[], [2], [3], [4, 2], [4, 3], [4, 3, 2], [4, 3, 3], [4, 3, 3, 1], [4, 3, 3, 2], [4, 3, 3, 3, 1], [4, 3, 3, 3, 2], [4, 3, 3, 3, 2, 1], [4, 3, 3, 3, 2, 1], [4, 3, 3, 3, 2, 1, 1], [4, 3, 3, 3, 2, 1, 1], [4, 3, 3, 3, 2, 1, 1, 1], [4, 3, 3, 3, 2, 1, 1, 1], [4, 3, 3, 3, 2, 1, 1, 1, 1], [4, 3, 3, 3, 3, 1, 1, 1, 1], [4, 3, 3, 3, 3, 2, 1, 1, 1], [4, 3, 3, 3, 3, 2, 2, 1, 1]];
 const classKey = name => Object.keys(CLASSES).find(k => String(name || '').toLowerCase().startsWith(k.toLowerCase())) || null;
-const classInfo = cl => CLASSES[classKey(cl.name)] || { hd: cl.hd || 8, cast: cl.cast || '', ab: '', asi: ASI_STD, subAt: 3, f: {}, s: {}, homebrew: true };
+const classInfo = cl => CLASSES[classKey(cl.name)] || (importedClass(cl.name) ? importedInfo(importedClass(cl.name)) : null) || { hd: cl.hd || 8, cast: cl.cast || '', ab: '', asi: ASI_STD, subAt: 3, f: {}, s: {}, homebrew: true };
 // "Paladin (Oath of Devotion)", "Fighter 3 / Wizard 2"
 function classesOf(c) {
   if (Array.isArray(c.classes) && c.classes.length && c.classes.reduce((a, x) => a + (+x.level || 0), 0) === (+c.level || 1)) return c.classes;
@@ -5910,20 +6352,23 @@ function classString(list) {
 }
 // spell slots for all classes together (half casters count half, rounded up) plus pact slots
 function slotsFor(list) {
-  let lv = 0, pact = null;
+  let lv = 0, pact = null, tableSlots = null;
   for (const x of list) {
     const i = classInfo(x);
     if (i.cast === 'full') lv += x.level; else if (i.cast === 'half') lv += Math.ceil(x.level / 2); else if (i.cast === 'third') lv += Math.floor(x.level / 3);
     else if (i.cast === 'pact') pact = { n: x.level >= 17 ? 4 : x.level >= 11 ? 3 : x.level >= 2 ? 2 : 1, lvl: Math.min(5, Math.ceil(x.level / 2)) };
+    else if (i.cast === 'table' && i.imported.slots) (tableSlots = tableSlots || []).push(i.imported.slots[Math.min(20, x.level) - 1] || {});
   }
   const caster = list.some(x => classInfo(x).cast);
   if (!caster) return null;
   const s = {}; for (let l = 1; l <= 9; l++) s[l] = (FULL_SLOTS[Math.min(20, lv)] || [])[l - 1] || 0;
   if (pact) s[pact.lvl] += pact.n;
+  for (const t of tableSlots || []) for (const [l, n] of Object.entries(t)) s[l] = (s[l] || 0) + n;
   return s;
 }
 function newFeatures(cl, lvl, sub) {
   const i = classInfo(cl), out = [];
+  if (i.imported) { const fs = importedFeatures(i.imported, lvl, sub); if (lvl === i.subAt) fs.unshift({ name: cl.name + ' Subclass', from: cl.name, subPick: true }); return fs; }
   const add = (str, from) => String(str || '').split(/,\s*/).filter(Boolean).forEach(n => out.push({ name: n.trim(), from }));
   add(i.f[lvl], cl.name);
   if (lvl === i.subAt) out.push({ name: cl.name + ' Subclass', from: cl.name, subPick: true });
@@ -5959,7 +6404,7 @@ function luPlan(md) {
   else cl = list[md.ci];
   cl.level++;
   const info = classInfo(cl), lvl = cl.level;
-  const needSub = lvl === info.subAt && !cl.sub;
+  const needSub = !cl.sub && (lvl === info.subAt || (info.imported && info.imported.subs.length && lvl > info.subAt));
   const sub = needSub ? (md.sub === 'other' ? md.subOther.trim() : md.sub) : cl.sub;
   if (sub) cl.sub = sub;
   const feats = newFeatures(cl, lvl, sub).filter(f => !f.subPick);
@@ -5990,10 +6435,10 @@ function levelUpHtml(md) {
   // 3. features
   const scaling = allEntries(c).filter(({ e }) => /LEVEL/.test(JSON.stringify([e.counter && e.counter.max, e.damage, e.effect, e.attack]))).map(({ e }) => e.name);
   const subList = Object.values(CLASSES).map(x => x.sub);
-  h += sec(n++, `New features: ${esc(P.cl.name)} level ${P.lvl}`, `${P.needSub ? `<label class="fld"><span>Choose your subclass</span><select id="lu-sub" data-lusub="1"><option value="">Pick one…</option>${P.info.sub ? `<option value="${esc(P.info.sub)}" ${md.sub === P.info.sub ? 'selected' : ''}>${esc(P.info.sub)} (SRD)</option>` : ''}<option value="other" ${md.sub === 'other' ? 'selected' : ''}>Another subclass…</option></select></label>
+  h += sec(n++, `New features: ${esc(P.cl.name)} level ${P.lvl}`, `${P.needSub ? `<label class="fld"><span>Choose your subclass</span><select id="lu-sub" data-lusub="1"><option value="">Pick one…</option>${P.info.sub ? `<option value="${esc(P.info.sub)}" ${md.sub === P.info.sub ? 'selected' : ''}>${esc(P.info.sub)} (SRD)</option>` : ''}${P.info.imported ? P.info.imported.subs.map(sb => `<option value="${esc(sb.name)}" ${md.sub === sb.name ? 'selected' : ''}>${esc(sb.name)}</option>`).join('') : ''}<option value="other" ${md.sub === 'other' ? 'selected' : ''}>Another subclass…</option></select></label>
       ${md.sub === 'other' ? `<label class="fld"><span>Subclass name</span><input id="lu-subo" data-lusubo="1" value="${esc(md.subOther)}" placeholder="Oath of Vengeance"></label>` : ''}` : ''}
-    ${P.feats.length ? `<div class="lu-feats">${P.feats.map((f, i) => { const k = srdFeature(f.name); const key = f.name; return `<label><input type="checkbox" id="luf-${i}" data-luf="${esc(key)}" ${md.off[key] ? '' : 'checked'}> <b>${esc(f.name)}</b> <span class="muted">${esc(f.from)}${k >= 0 ? ' · full text from the SRD' : ' · added as a note to fill in'}</span></label>`; }).join('')}</div>`
-      : `<div class="muted">${P.info.homebrew ? 'Grimsheet doesn\'t know this class\'s features. Add them from your library or by pasting their text after levelling up.' : 'No new class features at this level.'}</div>`}
+    ${P.feats.length ? `<div class="lu-feats">${P.feats.map((f, i) => { if (f.note) return `<div class="muted">↑ <b>${esc(f.name)}</b>: see your ${esc(f.improves)} feature for what changes.</div>`; const k = f.text ? -1 : srdFeature(f.name); const key = f.name; return `<label><input type="checkbox" id="luf-${i}" data-luf="${esc(key)}" ${md.off[key] ? '' : 'checked'}> <b>${esc(f.name)}</b> <span class="muted">${esc(f.from)}${f.text ? ' · full text' + (f.replaces ? ', replaces ' + esc(f.replaces) : '') : k >= 0 ? ' · full text from the SRD' : ' · added as a note to fill in'}</span></label>`; }).join('')}</div>`
+      : `<div class="muted">${P.info.homebrew ? 'Grimsheet doesn\'t know this class\'s features. <button class="btn small" data-act="modal" data-v="classes">Import the class</button> to have them added with their text, or add them from your library after levelling up.' : 'No new class features at this level.'}</div>`}
     ${P.needSub && md.sub === 'other' ? '<div class="muted">Add your subclass features from your library or by pasting their text.</div>' : ''}
     ${P.info.note && P.info.note[P.lvl] ? `<div class="muted">${esc(P.info.note[P.lvl])}</div>` : ''}
     ${scaling.length ? `<div class="muted">These update by themselves: ${esc(scaling.slice(0, 8).join(', '))}${scaling.length > 8 ? '…' : ''}.</div>` : ''}`);
@@ -6054,7 +6499,7 @@ function applyLevelUp(md) {
       : normalizeEntry(newEntry({ name, short: short || `${from}, level ${P.lvl}.`, text: text || `Gained at ${from} level ${P.lvl}. Paste the full text here (Edit) and Grimsheet will pick up its dice and uses.` }));
     fm.entries.push(e); done.push(name);
   };
-  for (const f of P.feats) if (!md.off[f.name]) addFeature(f.name, f.from);
+  for (const f of P.feats) { if (f.note) { done.push(f.name); continue; } if (md.off[f.name]) continue; if (f.text && P.info.imported) { fm.entries.push(Object.assign(importedEntry(P.info.imported, f), { id: uid() })); done.push(f.name); } else addFeature(f.name, f.from); }
   if (P.needSub && P.sub) done.push('subclass ' + P.sub);
   const raise = (key, n, max) => { const a = c.abilities.find(x => x.key === key); if (a) { a.score = Math.min(max, a.score + n); done.push(key + ' ' + (a.score - n) + ' → ' + a.score); } };
   if (P.asiAt === 'asi') {
@@ -6815,6 +7260,7 @@ function renderModal() {
   else if (m.type === 'toklink') h = tokLinkHtml(m);
   else if (m.type === 'monstat') h = monStatHtml(m);
   else if (m.type === 'gmload') h = gmLoadHtml(m);
+  else if (m.type === 'classes') h = classesHtml(m);
   else if (m.type === 'pcbrestore') h = pcbRestoreHtml(m);
   else if (m.type === 'viewwait') h = dlgHead('Opening ' + (m.name || 'sheet')) + `<div class="dlg-b">${m.failed ? `<div class="banner warn" style="margin:0">${esc(m.owner || 'The player')}'s Grimsheet didn't answer. They need to be in the room with Grimsheet 1.3 or newer installed.</div>` : `<div class="sugg"><h3>Asking ${esc(m.owner || 'the player')}'s Grimsheet…</h3><span>The sheet opens read-only in a moment.</span></div>`}</div><div class="dlg-f"><button class="btn" data-act="close">${m.failed ? 'Close' : 'Cancel'}</button></div>`;
   $('#ovl').innerHTML = `<div class="ovl" data-act="ovlbg"><div class="dlg" role="dialog" aria-modal="true">${h}</div></div>`;
@@ -6829,7 +7275,7 @@ function charsHtml() {
     <button class="btn small" data-act="dupchar" data-id="${c.id}">Duplicate</button>
     <button class="btn small" data-act="modal" data-v="export" data-id="${c.id}">Export</button>
     ${list.length > 1 ? `<button class="btn small ${ui.confirm === 'del-' + c.id ? 'danger' : ''}" data-act="delchar" data-id="${c.id}">${ui.confirm === 'del-' + c.id ? 'Confirm delete' : 'Delete'}</button>` : ''}</div>`).join('')}</div>
-    <div class="addrow"><button class="btn primary" data-act="newchar">New blank character</button><button class="btn" data-act="sample">Add example character</button><button class="btn" data-act="modal" data-v="import">Import</button><button class="btn" data-act="pdfopen">Import from PDF</button>${IN_OBR && OBRX.ready && OBRX.me.role !== 'GM' ? '<button class="btn" data-act="modal" data-v="pcbrestore">Restore from GM</button>' : ''}</div>
+    <div class="addrow"><button class="btn primary" data-act="newchar">New blank character</button><button class="btn" data-act="sample">Add example character</button><button class="btn" data-act="modal" data-v="import">Import</button><button class="btn" data-act="pdfopen">Import from PDF</button><button class="btn" data-act="modal" data-v="classes">Classes${myClasses.length ? ' (' + myClasses.length + ')' : ''}</button>${IN_OBR && OBRX.ready && OBRX.me.role !== 'GM' ? '<button class="btn" data-act="modal" data-v="pcbrestore">Restore from GM</button>' : ''}</div>
     <div class="muted" style="font-size:.85rem">Characters are saved in this browser automatically. Export a character to back it up or move it to another device.</div></div>`;
 }
 function addModuleHtml() {
@@ -7145,6 +7591,7 @@ document.addEventListener('click', ev => {
   const f = id ? findEntry(id) : null;
   if (!['edel', 'delchar', 'mdel', 'luundo', 'encclear', 'mondel', 'notedel', 'encdel', 'hbdel'].includes(act)) ui.confirm = null;
   if (act.startsWith('hb') && hbAct(act, el, v, c, id)) return;
+  if (act.startsWith('cls') && clsAct(act, el, v, i)) return;
   if ((act.startsWith('gm') || act.startsWith('pcb') || act === 'bkdismiss') && bkAct(act, el, v)) return;
   switch (act) {
     case 'mode': ui.mode = v; render(); break;
@@ -7562,6 +8009,10 @@ document.addEventListener('change', ev => {
   if (t.dataset.moncond) { const m = enc().mons.find(x => x.id === t.dataset.moncond); if (m && t.value) { const k = t.value; m.cond.push(k); if (INCAP.includes(k) && m.cond.includes('Concentrating')) { m.cond = m.cond.filter(x => x !== 'Concentrating'); toast(`${m.name} loses concentration (${k.toLowerCase()}).`); } saveEnc(); renderGrid(); if ((inCombatGM() || IN_OBR) && k !== 'Concentrating') { const b = document.querySelector(`[data-inst="${m.id}"] [data-act=moncond][data-v="${k}"]`); if (b) durPop(b, m.id, k); } } return; }
   if (t.dataset.amgroup) { SETTINGS.groupInit = t.checked; saveSettings(); return; }
   if (t.dataset.amrollhp) { SETTINGS.rollHp = t.checked; saveSettings(); return; }
+  if (t.dataset.clsfile && t.files && t.files[0]) { clsReadPdf(t.files[0]); return; }
+  if (t.dataset.clskeep && ui.modal && ui.modal.keep) { ui.modal.keep[+t.dataset.clskeep] = t.checked; return; }
+  if (t.dataset.clsname && ui.modal && ui.modal.found) { const d = ui.modal.found[+t.dataset.clsname]; if (d && t.value.trim()) { d.name = t.value.trim(); d.id = 'cls:' + clsNorm(d.name).replace(/[^a-z0-9]+/g, '-'); } return; }
+  if (t.dataset.clshd && ui.modal && ui.modal.found) { const d = ui.modal.found[+t.dataset.clshd]; if (d) d.hd = Math.max(4, Math.min(20, parseInt(t.value, 10) || d.hd)); return; }
   if (t.dataset.namecolor) { SETTINGS[t.dataset.namecolor === 'mon' ? 'nameColorMon' : 'nameColorPc'] = t.value; saveSettings(); syncCondLabels(); return; }
   if (t.dataset.amf && ui.modal && ui.modal.parsed) { const k = t.dataset.amf; ui.modal.parsed[k] = ['ac', 'hp', 'init'].includes(k) ? Math.round(+t.value || 0) : t.value.trim(); return; }
   if (t.id === 'pdf-file' && t.files && t.files[0]) { readPdf(t.files[0]); return; }

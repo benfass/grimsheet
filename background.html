@@ -101,13 +101,21 @@
     let hbAt = 0;
     const hbHello = () => { hbAt = Date.now(); hbSend({ type: 'hello', from: me.id, have: S.hbRoom(hbAll(), room).items.map(x => [x.id, x.updated]) }); };
     let hbAsk = null;
-    OBR.broadcast.onMessage(S.CH_HB, ev => {
+    const hbParts = {};
+    OBR.broadcast.onMessage(S.CH_HB, async ev => {
       const d = ev.data; if (!d) return;
       if (me.role === 'GM') {
         if (d.type !== 'hello') return;
         const vis = S.hbRoom(hbAll(), room).items.filter(x => !x.hidden), have = new Map(d.have || []);
         hbSend({ type: 'list', items: vis.map(x => [x.id, x.updated]) });
-        vis.filter(x => !have.has(x.id) || have.get(x.id) < x.updated).forEach(x => hbSend({ type: 'up', item: x }));
+        vis.filter(x => !have.has(x.id) || have.get(x.id) < x.updated).forEach(x => S.hbSendItem(hbSend, x));
+        return;
+      }
+      if (d.type === 'upz') {
+        const b = hbParts[d.id] = hbParts[d.id] || { p: [], n: d.parts, t: Date.now() }; b.p[d.part] = d.data;
+        if (b.p.filter(x => x != null).length < b.n) return;
+        delete hbParts[d.id];
+        try { const item = await S.unpack(b.p.join('')); const all = hbAll(), h = S.hbRoom(all, room), fresh = !h.items.some(x => x.id === item.id); if (S.hbMerge(h, item)) S.write(S.HB, all); if (fresh && Date.now() - hbAt > 5000) OBR.notification.show(`The GM shared ${item.e.name}. Add it from Grimsheet: Browse → Room homebrew.`, 'INFO').catch(() => { }); } catch (e) { }
         return;
       }
       const all = hbAll(), h = S.hbRoom(all, room);
