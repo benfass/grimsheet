@@ -2385,20 +2385,20 @@ const CLASSIMP = (() => {
   const norm = s => String(s || '').toLowerCase().replace(/[’']/g, "'").replace(/\s+/g, ' ').trim();
   const lvlOf = s => +(String(s).match(/\d+/) || [0])[0];
 
-  const TAGS = new Map();
+  const TAGS = new Map(), BREAKS = new Set();
   function lines(text) {
-    TAGS.clear();
+    TAGS.clear(); BREAKS.clear();
     const clean = typeof MONSTERS !== 'undefined' && MONSTERS.clean ? MONSTERS.clean(text) : String(text || '');
     const all = clean.replace(/[−–]/g, '-').replace(/-\n(?=[a-z])/g, '').split('\n').map(l => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
     // running headers: a class or subclass name alone on a line, page after page ("Vampire", "DEVA")
     const owners = new Set(); all.forEach(l => { const m = l.match(MARK); if (m) owners.add(m[2].toLowerCase()); });
     const n = {}; all.forEach(l => { const k = l.toLowerCase(); if (owners.has(k)) n[k] = (n[k] || 0) + 1; });
     // page headers and footers are dropped, but remember which chapter each line is in ("10 Dragon", "DEVA")
-    const out = []; let tag = '';
+    const out = []; let tag = '', brk = false;
     for (const l of all) {
       const k = l.toLowerCase();
-      if (isFooter(l) || n[k] >= 4) { const w = k.replace(/\d+/g, '').trim(); if (w && owners.has(w)) tag = w; continue; }
-      out.push(l); TAGS.set(out.length - 1, tag);
+      if (isFooter(l) || n[k] >= 4) { const w = k.replace(/\d+/g, '').trim(); if (w && owners.has(w)) tag = w; brk = true; continue; }
+      out.push(l); TAGS.set(out.length - 1, tag); if (brk) BREAKS.add(out.length - 1); brk = false;
     }
     return out;
   }
@@ -2527,6 +2527,40 @@ const CLASSIMP = (() => {
     return out.join('\n').replace(/\s+([,.;:])/g, '$1').trim();
   }
 
+  /* ---- racial traits (monster classes are a race and a class at once) ---- */
+  // "As a deva, you have the following racial traits:" then "Name. Text." entries, until the page ends or a
+  // heading or a class feature starts. They belong to whoever owns the next feature after them.
+  const SMALLW = /^(a|an|and|as|at|by|for|from|in|of|on|or|the|to|with)$/i;
+  // "Celestial Body", "Gift of the Forest", "Creature type" (not "You are immune to disease")
+  const titled = n => { const w = n.split(/\s+/); return w.length <= 6 && w.every((x, k) => /^[A-Z“"(]/.test(x) || (k > 0 && (SMALLW.test(x) || (k === w.length - 1 && /^type$/i.test(x))))); };
+  const isHeading = t => t.length <= 45 && !/[.:,;!?]$/.test(t) && t.split(/\s+/).length <= 5 && t.split(/\s+/).every((x, k) => /^[A-Z“"(]/.test(x) || (k > 0 && SMALLW.test(x)));
+  const SKIP_TRAIT = /^(age|alignment|ability score increases?)$/i;
+  function readRacial(L, tables, marks) {
+    const out = [];
+    L.forEach((l, i) => {
+      if (!/racial traits\s*:\s*$/i.test(l)) return;
+      const next = marks.find(m => m.i > i); if (!next) return;
+      const traits = []; let cur = null;
+      for (let x = i + 1; x < Math.min(L.length, i + 80); x++) {
+        const t = L[x];
+        if (x > i + 1 && BREAKS.has(x)) break;
+        if (MARK.test(t) || MARK.test(L[x + 1] || '') || STOP.test(t) && !/^(age|alignment|size|names?)\.\s/i.test(t) || /^(class features|hit points|proficiencies|equipment)$/i.test(t) || (tables || []).some(tb => x >= tb.at && x < tb.end)) break;
+        // a short heading after a finished sentence ("Fighting “Technique”") starts something else
+        if (cur && /[.!?)]$/.test(cur.text.trim()) && isHeading(t)) break;
+        const m = t.match(/^([A-Z][\w'’ -]{1,40})\.\s+(.*)$/);
+        if (m && titled(m[1])) { cur = { name: m[1].replace(/\btype\b/, 'Type'), text: m[2] }; traits.push(cur); }
+        else if (cur) cur.text += ' ' + t; else break;
+      }
+      const keep = [];
+      for (const t of traits.filter(t => !SKIP_TRAIT.test(t.name))) {
+        const txt = t.text.replace(/\s+/g, ' ').trim() + (/[.!?)]$/.test(t.text.trim()) ? '' : '…'), same = keep.find(k => norm(k.name) === norm(t.name));
+        if (same) same.text += '\n' + txt; else keep.push({ name: t.name, text: txt });
+      }
+      if (keep.length) out.push({ owner: next.owner, at: i, traits: keep });
+    });
+    return out;
+  }
+
   /* ---- basics around a class ---- */
   function readBasics(L, from, to, name) {
     const seg = L.slice(Math.max(0, from), Math.min(L.length, to)).join('\n'), flat = seg.replace(/\n/g, ' ');
@@ -2547,6 +2581,7 @@ const CLASSIMP = (() => {
     const colNames = [...new Set([...L.join(' ').matchAll(/\b(?:the|your)\s+([A-Z][\w' ]{2,40}?)\s+column\b/g)].map(m => m[1].replace(/^(the|your)\s+/i, '')))];
     const tables = readTables(L, colNames);
     const feats = readFeatures(L, tables);
+    const racial = readRacial(L, tables, feats.map(f => ({ i: f.at, owner: f.owner })));
     const ownerCount = {}; feats.forEach(f => { ownerCount[norm(f.owner)] = (ownerCount[norm(f.owner)] || 0) + 1; });
     // classes: each table, plus owners with level-1 features that have no table
     const classes = tables.map(t => ({ name: t.name, at: t.at, table: t }));
@@ -2575,13 +2610,18 @@ const CLASSIMP = (() => {
       if (sc.length) slots = Array.from({ length: 20 }, (_, i) => { const s = {}; sc.forEach(x => { const n = parseInt(x.vals[i], 10); if (n) s[lvlOf(x.name)] = n; }); return s; });
       else if (ns && sl) slots = Array.from({ length: 20 }, (_, i) => { const n = parseInt(ns.vals[i], 10), l = lvlOf(sl.vals[i]); return n && l ? { [l]: n } : {}; });
       const subs = Object.entries(subsByName).map(([name, fs]) => ({ name, features: fs.map(f => Object.assign({ level: f.level, name: f.name, text: f.text }, f.replaces ? { replaces: f.replaces } : {})) }));
+      // racial traits: the class's at level 1, a subclass's at its first level
+      for (const r of racial) {
+        if (norm(r.owner) === norm(c.name)) own.unshift(...r.traits.map(t => ({ level: 1, name: t.name, text: t.text, racial: true })));
+        else { const sb = subs.find(x => norm(x.name) === norm(r.owner)); if (sb) { const lv = Math.min(...sb.features.map(f => f.level)); sb.features.unshift(...r.traits.map(t => ({ level: lv, name: t.name, text: t.text, racial: true }))); } }
+      }
       const subAt = subs.length ? Math.min(...subs.flatMap(s => s.features.map(f => f.level))) : 3;
       const scale = cols.filter(x => !(/ slots$/.test(x.name) && ORD.test(x.name.split(' ')[0])) && !/^(spell slots|slot level)$/i.test(x.name));
       result.push({
         id: 'cls:' + norm(c.name).replace(/[^a-z0-9]+/g, '-'),
         name: c.name, hd: basics.hd || 8, saves: basics.saves || [], ab: basics.ab || '', armor: basics.armor || '', weapons: basics.weapons || '',
         asi: asi.length ? asi : null, subAt, slots, cols: scale.map(x => ({ name: x.name, vals: x.vals })),
-        table: tableF, features: own.map(f => ({ level: f.level, name: f.name, text: f.text })), subs,
+        table: tableF, features: own.map(f => Object.assign({ level: f.level, name: f.name, text: f.text }, f.racial ? { racial: true } : {})), subs,
       });
     }
     result.forEach(r => { r.warnings = warn(r); });
@@ -2596,8 +2636,8 @@ const CLASSIMP = (() => {
       if (c.features.some(f => k.startsWith(norm(f.name)) || norm(f.name).startsWith(k))) continue;
       w.push(`Level ${lv}: "${n}" is in the table but its description wasn't found.`);
     }
-    for (const f of c.features) if (Object.keys(c.table).length && !Object.values(c.table).flat().some(n => norm(n).startsWith(norm(f.name)) || norm(f.name).startsWith(norm(n)))) w.push(`"${f.name}" (level ${f.level}) isn't in the class table.`);
-    if (c.features.some(f => f.text.length < 20)) w.push('Some features have very little text; check them.');
+    for (const f of c.features) if (!f.racial && Object.keys(c.table).length && !Object.values(c.table).flat().some(n => norm(n).startsWith(norm(f.name)) || norm(f.name).startsWith(norm(n)))) w.push(`"${f.name}" (level ${f.level}) isn't in the class table.`);
+    if (c.features.some(f => !f.racial && f.text.length < 20)) w.push('Some features have very little text; check them.');
     return w;
   }
   // text of a PDF (pdf.js document), line by line in the order the page was written, which keeps columns together
@@ -2949,7 +2989,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.29.0';
+const APP_VERSION = '1.30.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -5909,7 +5949,7 @@ function classesHtml(md) {
 function classDetailHtml(d) {
   const lv = Array.from({ length: 20 }, (_, i) => i + 1);
   const row = l => {
-    const cf = d.features.filter(f => f.level === l && !isAsiName(f.name)).map(f => `<span title="${esc(f.text.slice(0, 300))}">${esc(f.name)}</span>`);
+    const cf = d.features.filter(f => f.level === l && !isAsiName(f.name)).map(f => `<span title="${esc(f.text.slice(0, 300))}">${esc(f.name)}${f.racial ? ' <small class="muted">(trait)</small>' : ''}</span>`);
     const t = ((d.table || {})[l] || []).filter(n => /improvements?$/i.test(n) && !isAsiName(n)).map(n => `<span class="muted">${esc(n)}</span>`);
     const sb = d.subs.some(s => s.features.some(f => f.level === l)) ? `<span class="chip">subclass</span>` : '';
     const asi = (d.asi || []).includes(l) ? '<span class="chip">ASI</span>' : '';
