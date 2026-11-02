@@ -101,6 +101,8 @@ button{cursor:pointer}
 .cw-checks label{display:flex;gap:6px;align-items:center}
 .cw-sum{display:flex;flex-direction:column;gap:6px;padding:10px;border:1px solid var(--line);border-radius:8px}
 .prep-count{font-size:.92rem}.prep-count .over{color:var(--danger)}
+.hpmax-b{font:inherit;color:inherit;background:none;border:0;border-bottom:1px dotted var(--muted);padding:0 2px;cursor:pointer}.hpmax-b:hover{color:var(--accent)}
+.hpmax-l{font-size:.7rem;color:var(--muted);margin-left:4px;font-family:var(--f-body,inherit)}
 .simple-h{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px}
 .chip.warnchip{background:var(--danger-soft);color:var(--danger);border-color:transparent}
 
@@ -3221,7 +3223,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.40.0';
+const APP_VERSION = '1.41.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -6749,14 +6751,24 @@ function srdFeature(name) {
   return SRD.items.findIndex(it => it.kind === 'feature' && it.name.toLowerCase().replace(/[’']/g, "'") === n);
 }
 // "your hit point maximum increases by 1 … whenever you gain a level" (Dwarven Toughness, Tough…)
+// features that raise maximum HP for every level: Tough (2), Dwarven Toughness (1), or text that says so
+function hpBonusOf(e) {
+  const t = String((e.text || '') + ' ' + (e.short || '')).toLowerCase().replace(/\s+/g, ' '), n = clsNorm(e.name);
+  let m;
+  if ((m = t.match(/hit point maximum increases by an amount equal to (twice|two times|three times|\d+ times)? ?your (?:character |total |\w+ )?level/))) return { k: { twice: 2, 'two times': 2, 'three times': 3 }[m[1]] || parseInt(m[1], 10) || 1 };
+  if ((m = t.match(/hit point maximum increases by (\d+|one|two)[^.]*?(?:whenever you gain a level|for each (?:level|of your levels)|every level)/))) return { k: { one: 1, two: 2 }[m[1]] || +m[1] };
+  if ((m = t.match(/whenever you gain a (?:character )?level[^.]*?hit point maximum increases by an additional (\d+)/))) return { k: +m[1] };
+  if (n === 'tough') return { k: 2 };
+  if (n === 'dwarven toughness') return { k: 1 };
+  return null;
+}
 function hpPerLevel(c) {
   let n = 0; const out = [];
-  allEntries(c).forEach(({ e }) => {
-    const m = String(e.text + ' ' + e.short).toLowerCase().match(/hit point maximum increases by (\d+|one|two)[^.]*?(?:whenever you gain a level|for each (?:level|of your levels)|every level)/);
-    if (m) { const k = { one: 1, two: 2 }[m[1]] || +m[1]; n += k; out.push(e.name + ' +' + k); }
-  });
+  allEntries(c).forEach(({ e }) => { const b = hpBonusOf(e); if (b) { n += b.k; out.push(e.name + ' +' + b.k); } });
   return { n, out };
 }
+// ones whose bonus for the levels already gained hasn't been added (a feat taken, a character imported)
+const hpBonusPending = c => allEntries(c).filter(({ e }) => hpBonusOf(e) && !(c.hpBonusDone || {})[e.id]).map(({ e }) => e);
 const conMod = c => Math.floor(((c.abilities.find(a => a.key === 'CON') || { score: 10 }).score - 10) / 2);
 
 /* ---- the dialog ---- */
@@ -7303,6 +7315,7 @@ function renderBanner() {
   }
   h += bkBannerHtml();
   h += levelUndoBanner(c);
+  for (const e of hpBonusPending(c).slice(0, 2)) { const k = hpBonusOf(e).k, amt = k * (+c.level || 1); h += `<div class="banner"><span style="flex:1;min-width:200px"><b>${esc(e.name)}</b> raises your maximum HP by ${k} for every level: <b>+${amt}</b> at level ${+c.level || 1}. Is it in your maximum (${c.hp.max}) yet? Level-ups add ${k} each from now on.</span><button class="btn small primary" data-act="hpbonus" data-id="${e.id}">Add +${amt}</button><button class="btn small ghost" data-act="hpbonusskip" data-id="${e.id}">Already counted</button></div>`; }
   if (!storageOK) h += IN_OBR && !isGM()
     ? `<div class="banner warn"><span style="flex:1;min-width:200px">This browser blocks Grimsheet from saving (cookies or site data are turned off). Your character is backed up to your GM's Grimsheet as you play and comes back by itself when you reopen Grimsheet in this room${gmHasCopy(c) ? ' (the GM has your latest changes)' : ''}. For a copy of your own, use <b>Characters → Export</b>.</span></div>`
     : `<div class="banner warn">This browser view isn't saving changes (cookies or site data are turned off). Use <b>Characters → Export</b> to keep a copy of your character.</div>`;
@@ -7664,6 +7677,7 @@ function cwMake(md) {
   if (!C0.cast) c.hidden = c.modules.filter(m => m.type === 'spells').map(m => m.id);
   // what isn't tracked elsewhere
   c.notes = [`Background: ${c.background}${bg.tool ? ' (tool: ' + bg.tool + ')' : ''}.`, C0.def ? (C0.training || 'Training: see the class') + '.' : `Armor training: ${C0.armor.length ? C0.armor.join(', ') : 'none'}. Weapons: ${{ martial: 'simple and martial', simple: 'simple', monk: 'simple, and martial weapons with the Light property', rogue: 'simple, and martial weapons with the Finesse or Light property' }[C0.weapons]}.`, `Size ${sp.size}. Languages: Common and two more of your choice.`].join('\n');
+  c.hpBonusDone = {}; allEntries(c).forEach(({ e }) => { if (hpBonusOf(e)) c.hpBonusDone[e.id] = true; });
   normalize(c); c.fresh = false;
   if (store.chars[prev] && isPlaceholder(store.chars[prev])) delete store.chars[prev];
   ui.open.clear(); ui.mode = 'play'; save(); closeModal(); render(); if (IN_OBR) publishStatus();
@@ -7979,7 +7993,7 @@ function renderCombat() {
     <button class="insp react ${c.reactUsed ? 'used' : ''}" data-act="react" aria-pressed="${!!c.reactUsed}" title="${c.reactUsed ? 'Reaction used this round. It comes back at the start of your turn.' : 'Reaction available. Tap when you use it.'}">${c.reactUsed ? '⟲ Reaction used' : '⟲ Reaction ready'}</button>
     <button class="insp ${c.inspiration ? 'on' : ''}" data-act="insp" aria-pressed="${!!c.inspiration}" title="${c.inspiration ? 'You have Heroic Inspiration: spend it to reroll any die (the button appears after a roll). Tap to clear.' : 'No Heroic Inspiration. Tap if your GM gives you one.'}">${c.inspiration ? '★' : '☆'} Heroic Inspiration</button>
     <div class="hp">
-      <div class="cur mono">${c.hp.cur}<small> / ${ed ? `<input id="f-hpmax" class="ed-inline" data-bind="hp.max" data-num value="${esc(c.hp.max)}" aria-label="Max HP">` : c.hp.max}</small></div>
+      <div class="cur mono">${c.hp.cur}<small> / ${ed || ui.hpMaxEdit ? `<input id="f-hpmax" class="ed-inline" data-bind="hp.max" data-num value="${esc(c.hp.max)}" aria-label="Maximum HP" title="Maximum HP">${ed ? '<span class="hpmax-l">max HP</span>' : ''}` : `<button class="hpmax-b" data-act="hpmaxedit" title="Change your maximum HP">${c.hp.max}</button>`}</small></div>
       ${c.hp.temp ? `<span class="temp">+${c.hp.temp} temp</span>` : ''}
       <span style="flex:1"></span>
       <input class="qm" id="hp-qm" data-qm="hp" placeholder="−7 or +5" aria-label="Change HP: type -7 for damage, +5 to heal, or a number to set">
@@ -8701,6 +8715,8 @@ document.addEventListener('click', ev => {
     case 'setspeed': SETTINGS.diceSpeed = v; saveSettings(); renderModal(); break;
     case 'setshare': SETTINGS.share = v; saveSettings(); renderModal(); break;
     case 'tour': tourStart(v); break;
+    case 'hpmaxedit': if (ui.viewing) break; ui.hpMaxEdit = true; renderGrid(); setTimeout(() => { const f = $('#f-hpmax'); if (f) { f.focus(); f.select(); } }, 0); break;
+    case 'hpbonus': case 'hpbonusskip': { const e = (findEntry(id) || {}).e; if (!e) break; const b = hpBonusOf(e), amt = b ? b.k * (+c.level || 1) : 0; c.hpBonusDone = Object.assign({}, c.hpBonusDone, { [e.id]: true }); if (act === 'hpbonus' && amt) { c.hp.max += amt; c.hp.cur += amt; toast(`${e.name}: maximum HP ${c.hp.max - amt} → ${c.hp.max}. Level-ups add ${b.k} more each.`); } rerender(); break; }
     case 'create': openCreate(); break;
     case 'prepopen': openPrep(); break;
     case 'touroff': SETTINGS.tourOffer = false; saveSettings(); renderBanner(); toast('Tours are in Settings whenever you want them.'); break;
@@ -9016,7 +9032,7 @@ document.addEventListener('change', ev => {
     let v = t.value; if ('num' in t.dataset) v = v === '' ? 0 : +v || 0;
     setPath(C(), t.dataset.bind, v);
     if (C().fresh) { C().fresh = false; renderBanner(); }
-    if (t.dataset.bind === 'hp.max') C().hp.cur = Math.min(C().hp.cur, C().hp.max);
+    if (t.dataset.bind === 'hp.max') { C().hp.cur = Math.min(C().hp.cur, C().hp.max); ui.hpMaxEdit = false; }
     if (/^abilities\.\d+\.name$/.test(t.dataset.bind)) { /* keep key */ }
     save(); render(); return;
   }

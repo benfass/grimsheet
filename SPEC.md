@@ -539,3 +539,15 @@ Ordered by when it gets built. Priority applies inside a goal.
   - **Subclasses at level 1**: a subclass that starts at level 1 is picked on the class step (required, or optional when its subclasses only swap features, like the Ogre Mage). A higher starting level runs the level-up wizard as for any imported class.
   - **Species from the class**: for a class with racial traits (monster classes), "<Class> (from the class)" uses the class's own Size and Speed traits, with nothing added twice.
   - **Another species**: name, size and speed, and its traits pasted as "Name. Text." paragraphs. Each becomes a feature, scanned for dice, saves and uses (e.g. "a number of times equal to your proficiency bonus per long rest" becomes a counter). The step shows what it found.
+
+
+## Built in app 1.41
+
+- **Maximum HP**:
+  - In Play mode, the maximum after the slash is a button: tap it, type the new maximum and press Enter.
+  - In Edit mode, the field is labelled "max HP".
+  - Current HP is capped at the new maximum.
+- **Features that raise maximum HP per level**: Tough (2 per level), Dwarven Toughness (1), and any feature whose text says "hit point maximum increases by an amount equal to twice your character level", "by 1 … whenever you gain a level" or "increases by an additional 2 … whenever you gain a level".
+  - Level-ups add their amount, as before.
+  - When one is on the sheet but its bonus for the levels already gained hasn't been counted (a feat taken, a character imported from a PDF), a banner asks: "Tough raises your maximum HP by 2 for every level: +10 at level 5. Is it in your maximum yet?" It offers **Add +10** and **Already counted**, and each choice is remembered per feature.
+  - The character wizard counts Dwarven Toughness itself.
