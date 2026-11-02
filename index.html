@@ -3221,7 +3221,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.39.0';
+const APP_VERSION = '1.40.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -7399,8 +7399,39 @@ function maxSpellLevel(k, lvl) { const s = slotsFor([{ name: k, level: lvl }]) |
 
 /* ---- the wizard ---- */
 function openCreate() {
-  openModal('create', { step: 0, name: '', cls: '', species: '', spChoice: '', spSkill: '', bg: '', bgCustom: { name: '', ab: ['STR', 'DEX', 'CON'], skills: ['', ''], feat: 'Alert' }, bgMode: 'two', plus2: '', plus1: '', feat: 'Alert', method: 'array', arr: {}, pb: { STR: 8, DEX: 8, CON: 8, INT: 8, WIS: 8, CHA: 8 }, rolled: null, skills: [], armor: '', shield: false, weapons: [], style: '', spells: [], level: 1 });
+  openModal('create', { step: 0, name: '', cls: '', sub: '', species: '', spChoice: '', spSkill: '', spCustom: { name: '', size: 'Medium', speed: 30, text: '' }, bg: '', bgCustom: { name: '', ab: ['STR', 'DEX', 'CON'], skills: ['', ''], feat: 'Alert' }, bgMode: 'two', plus2: '', plus1: '', feat: 'Alert', method: 'array', arr: {}, pb: { STR: 8, DEX: 8, CON: 8, INT: 8, WIS: 8, CHA: 8 }, rolled: null, skills: [], armor: '', shield: false, weapons: [], style: '', spells: [], level: 1 });
 }
+// the chosen class, built in or imported (homebrew), in the shape the wizard uses
+function cwC(md) {
+  if (!md.cls) return null;
+  if (CW_CLASS[md.cls]) { const K = CLASSES[md.cls]; return Object.assign({ name: md.cls, hd: K.hd, cast: K.cast, ab: K.ab || '', f1: String(K.f[1] || '').split(/,\s*/).filter(Boolean) }, CW_CLASS[md.cls]); }
+  const def = myClasses.find(d => !d.addon && d.id === md.cls); if (!def) return null;
+  const saves = (def.saves || []).filter(Boolean), pri = [...new Set([def.ab, ...saves].filter(Boolean).concat(ABIL.map(a => a[0])))];
+  const f1 = importedFeatures(def, 1, md.sub).filter(f => !f.note).map(f => f.name);
+  return { name: def.name, hd: def.hd || 8, cast: def.slots ? 'table' : '', ab: def.ab || '', saves, n: 2, skills: 'any', armor: ['Light', 'Medium', 'Heavy', 'Shield'], weapons: 'martial', pri, kit: {}, f1, def,
+    training: [def.armor ? 'Armor: ' + def.armor : '', def.weapons ? 'Weapons: ' + def.weapons : ''].filter(Boolean).join('. ') };
+}
+// a homebrew class whose subclass starts at level 1 (picked here); optional when its subclasses only swap features
+const cwSubAt1 = C0 => C0 && C0.def && C0.def.subs.length && C0.def.subAt <= 1;
+const cwSubOptional = C0 => C0.def.subs.every(sb => sb.features.every(f => f.replaces || f.racial));
+// the chosen species: built in, the class's own racial traits (monster classes), or one you describe
+function cwSp(md) {
+  if (CW_SPECIES[md.species]) return Object.assign({ name: md.species }, CW_SPECIES[md.species]);
+  if (md.species === 'class') {
+    const C0 = cwC(md), fs = C0 && C0.def ? C0.def.features.filter(f => f.racial) : [], txt = n => (fs.find(f => f.name.toLowerCase() === n) || {}).text || '';
+    return { name: C0 ? C0.name : 'From the class', size: (txt('size').match(/\b(Tiny|Small|Medium|Large|Huge)\b/) || [])[1] || 'Medium', speed: +(txt('speed').match(/(\d+) (?:feet|ft)/) || [])[1] || 30, traits: [], fromClass: true };
+  }
+  if (md.species === 'custom') {
+    const traits = []; let cur = null;
+    for (const l of String(md.spCustom.text || '').split(/\n+/).map(x => x.trim()).filter(Boolean)) {
+      const m = l.match(/^([A-Z][\w'’ -]{1,40})\.\s+(.*)$/);
+      if (m && m[1].split(' ').length <= 6) { cur = [m[1], m[2]]; traits.push(cur); } else if (cur) cur[1] += ' ' + l; else { cur = ['Species Traits', l]; traits.push(cur); }
+    }
+    return { name: md.spCustom.name.trim() || 'Custom species', size: md.spCustom.size || 'Medium', speed: +md.spCustom.speed || 30, traits, custom: true };
+  }
+  return null;
+}
+const cwSpeed = md => { const sp = cwSp(md); return sp ? ((md.species === 'Elf' && md.spChoice === 'Wood Elf') ? 35 : sp.speed) : 30; };
 const CW_STEPS = ['Class', 'Species', 'Background', 'Abilities', 'Skills', 'Equipment', 'Spells', 'Finish'];
 const cwBg = md => md.bg === 'custom' ? Object.assign({ custom: true }, md.bgCustom) : CW_BACKGROUNDS[md.bg] || null;
 const cwHasSpells = md => !!SPELL_LISTS[md.cls];
@@ -7416,22 +7447,22 @@ function cwFinal(md) {
 }
 const cwMod = v => Math.floor((v - 10) / 2);
 function cwDefaults(md) {
-  const C0 = CW_CLASS[md.cls]; if (!C0) return;
+  const C0 = cwC(md); if (!C0) return;
   // standard array in the class's order, its starting kit, and the background bonus on its best abilities
   if (md.method !== 'points') { const vals = md.method === 'roll' && md.rolled ? md.rolled.slice().sort((a, b) => b - a) : CW_ARRAY; md.arr = {}; C0.pri.forEach((k, i) => { md.arr[k] = vals[i]; }); }
   md.armor = C0.kit.armor || ''; md.shield = !!C0.kit.shield; md.weapons = (C0.kit.weapons || []).slice();
   md.skills = []; md.spells = [];
 }
 function cwBgDefaults(md) {
-  const bg = cwBg(md), C0 = CW_CLASS[md.cls]; if (!bg) return;
+  const bg = cwBg(md), C0 = cwC(md); if (!bg) return;
   const order = (C0 ? C0.pri : ABIL.map(a => a[0])).filter(k => bg.ab.includes(k));
   md.plus2 = order[0] || bg.ab[0]; md.plus1 = order[1] || bg.ab[1];
 }
 // what's missing on a step (or '' when it's done)
 function cwCheck(md, step) {
-  const C0 = CW_CLASS[md.cls], name = CW_STEPS[step];
-  if (name === 'Class') return !md.cls ? 'Pick a class.' : C0 && C0.style && !md.style ? 'Pick a fighting style.' : '';
-  if (name === 'Species') { const sp = CW_SPECIES[md.species]; if (!sp) return 'Pick a species.'; if (sp.choice && !md.spChoice) return 'Choose your ' + sp.choice.label.toLowerCase() + '.'; if (sp.skill && !md.spSkill) return 'Choose a skill.'; return ''; }
+  const C0 = cwC(md), name = CW_STEPS[step];
+  if (name === 'Class') return !C0 ? 'Pick a class.' : C0.style && !md.style ? 'Pick a fighting style.' : cwSubAt1(C0) && !cwSubOptional(C0) && !md.sub ? `Pick a ${C0.name.toLowerCase()} subclass.` : '';
+  if (name === 'Species') { const sp = cwSp(md); if (!sp) return 'Pick a species.'; if (sp.custom && !md.spCustom.name.trim()) return 'Name the species.'; if (sp.choice && !md.spChoice) return 'Choose your ' + sp.choice.label.toLowerCase() + '.'; if (sp.skill && !md.spSkill) return 'Choose a skill.'; return ''; }
   if (name === 'Background') { const bg = cwBg(md); if (!bg) return 'Pick a background.'; if (bg.custom && (!bg.name.trim() || bg.skills.some(s => !s) || new Set(bg.ab).size < 3)) return 'Name it, and pick three different abilities and two skills.'; if (md.bgMode === 'two' && (!md.plus2 || !md.plus1 || md.plus2 === md.plus1)) return 'Pick where the +2 and the +1 go.'; return ''; }
   if (name === 'Abilities') {
     if (md.method === 'points') { const spent = ABIL.reduce((a, [k]) => a + CW_COST[md.pb[k]], 0); return spent > 27 ? `That's ${spent} points; you have 27.` : ''; }
@@ -7450,7 +7481,7 @@ function cwCheck(md, step) {
   return '';
 }
 function createHtml(md) {
-  const step = md.step, name = CW_STEPS[step], C0 = CW_CLASS[md.cls];
+  const step = md.step, name = CW_STEPS[step], C0 = cwC(md);
   const steps = CW_STEPS.filter(s => s !== 'Spells' || cwHasSpells(md) || !md.cls);
   const opt = (v, cur, label) => `<option value="${esc(v)}" ${v === cur ? 'selected' : ''}>${esc(label || v)}</option>`;
   const card = (attr, v, cur, title, sub) => `<button class="cw-card ${v === cur ? 'on' : ''}" data-act="${attr}" data-v="${esc(v)}"><b>${esc(title)}</b>${sub ? `<span class="muted">${sub}</span>` : ''}</button>`;
@@ -7458,13 +7489,22 @@ function createHtml(md) {
   if (name === 'Class') {
     body = `<label class="fld"><span>Character name</span><input id="cw-name" data-cw="name" value="${esc(md.name)}" placeholder="Thorin"></label>
       <div class="cw-grid">${Object.keys(CW_CLASS).map(k => card('cwcls', k, md.cls, k, `d${CLASSES[k].hd} · ${CW_CLASS[k].saves.join(', ')} saves${CLASSES[k].cast ? ' · casts spells' : ''}`)).join('')}</div>
+      ${myClasses.some(d => !d.addon) ? `<div class="lvl-h">Your homebrew classes</div><div class="cw-grid">${myClasses.filter(d => !d.addon).map(d => card('cwcls', d.id, md.cls, d.name, `d${d.hd} · ${(d.saves || []).length ? esc(d.saves.join(', ')) + ' saves · ' : ''}homebrew${d.slots ? ' · casts spells' : ''}`)).join('')}</div>` : '<div class="muted" style="font-size:.85rem">Homebrew classes you import (Characters → Classes) show up here too.</div>'}
+      ${cwSubAt1(C0) ? `<label class="fld"><span>${esc(C0.name)} subclass${cwSubOptional(C0) ? ' (optional)' : ''}</span><select id="cw-sub" data-cw="sub"><option value="">${cwSubOptional(C0) ? 'None' : 'Pick one…'}</option>${C0.def.subs.map(sb => opt(sb.name, md.sub)).join('')}</select></label>` : ''}
       ${C0 && C0.style ? `<label class="fld"><span>Fighting style</span><select id="cw-style" data-cw="style"><option value="">Pick one…</option>${SRD.items.filter(it => it.group === 'Fighting Style').map(it => opt(it.name, md.style)).join('')}</select></label>` : ''}
-      ${md.cls ? `<div class="muted">${esc(md.cls)} level 1: ${esc(CLASSES[md.cls].f[1])}.</div>` : ''}
+      ${C0 ? `<div class="muted">${esc(C0.name)} level 1: ${esc(C0.f1.join(', ') || 'no features found')}.${C0.def ? ' Homebrew: any two skills, all armor and weapons offered; check its training.' : ''}</div>` : ''}
       <label class="fld" style="max-width:220px"><span>Starting level</span><select id="cw-level" data-cw="level">${Array.from({ length: 20 }, (_, i) => opt(String(i + 1), String(md.level))).join('')}</select><span class="hint">Above 1, the level-up wizard follows for each level.</span></label>`;
   } else if (name === 'Species') {
-    const sp = CW_SPECIES[md.species];
-    body = `<div class="cw-grid">${Object.keys(CW_SPECIES).map(k => card('cwsp', k, md.species, k, `${CW_SPECIES[k].size} · speed ${CW_SPECIES[k].speed} ft`)).join('')}</div>
-      ${sp ? `${sp.choice ? `<label class="fld"><span>${esc(sp.choice.label)}</span><select id="cw-spc" data-cw="spChoice"><option value="">Choose…</option>${sp.choice.opts.map(o => opt(o, md.spChoice)).join('')}</select></label>` : ''}
+    const sp = cwSp(md), racial = C0 && C0.def && C0.def.features.some(f => f.racial);
+    body = `<div class="cw-grid">${racial ? card('cwsp', 'class', md.species, C0.name + ' (from the class)', 'Its racial traits come with the class') : ''}${Object.keys(CW_SPECIES).map(k => card('cwsp', k, md.species, k, `${CW_SPECIES[k].size} · speed ${CW_SPECIES[k].speed} ft`)).join('')}${card('cwsp', 'custom', md.species, 'Another species', 'Homebrew: name it and paste its traits')}</div>
+      ${md.species === 'custom' ? `<div class="frow"><label class="fld"><span>Name</span><input id="cw-spn" data-cw="spCustom.name" value="${esc(md.spCustom.name)}" placeholder="Kenku"></label>
+        <label class="fld"><span>Size</span><select id="cw-spz" data-cw="spCustom.size">${['Tiny', 'Small', 'Medium', 'Large'].map(z => opt(z, md.spCustom.size)).join('')}</select></label>
+        <label class="fld"><span>Speed (ft)</span><input id="cw-spv" data-cw="spCustom.speed" value="${esc(md.spCustom.speed)}" inputmode="numeric" style="width:70px"></label></div>
+        <label class="fld"><span>Traits</span><textarea id="cw-spt" data-cw="spCustom.text" class="code" style="min-height:110px" placeholder="Paste the traits, one per paragraph:\nExpert Duplication. When you copy writing or craftwork, you have advantage…\nKenku Recall. …">${esc(md.spCustom.text)}</textarea>
+        <span class="hint">Each “Name. Text.” becomes a feature; Grimsheet picks up its dice, saves and uses.</span></label>
+        ${sp && sp.traits.length ? `<div class="muted">Found: ${esc(sp.traits.map(t => t[0]).join(', '))}.</div>` : ''}` : ''}
+      ${sp && sp.fromClass ? `<div class="muted">${esc(sp.size)} · speed ${sp.speed} ft · traits: ${esc(C0.def.features.filter(f => f.racial).map(f => f.name).join(', '))}.</div>` : ''}
+      ${sp && !sp.custom && !sp.fromClass ? `${sp.choice ? `<label class="fld"><span>${esc(sp.choice.label)}</span><select id="cw-spc" data-cw="spChoice"><option value="">Choose…</option>${sp.choice.opts.map(o => opt(o, md.spChoice)).join('')}</select></label>` : ''}
         ${sp.skill ? `<label class="fld"><span>${md.species === 'Human' ? 'Skillful: a skill' : 'Keen Senses: a skill'}</span><select id="cw-sps" data-cw="spSkill"><option value="">Choose…</option>${(sp.skill === 'any' ? SKILLS.map(s => s[0]) : sp.skill).map(s => opt(s, md.spSkill)).join('')}</select></label>` : ''}
         ${sp.feat ? `<label class="fld"><span>Versatile: an Origin feat</span><select id="cw-feat" data-cw="feat">${CW_FEATS.map(f => opt(f, md.feat)).join('')}</select></label>` : ''}
         <div class="muted">Traits: ${esc(sp.traits.map(t => t[0]).join(', '))}.</div>` : ''}`;
@@ -7508,10 +7548,10 @@ function createHtml(md) {
       <div class="lvl-h">1st-level spells <span class="muted">${sn} of ${np}</span></div><div class="cw-checks">${L.filter(x => x.level === 1).map(box).join('')}</div>
       <div class="muted">${md.cls === 'Wizard' ? 'These are the spells you prepare from your spellbook. ' : ''}You can change them after a long rest with <b>Prepare spells</b> in your Spells module.</div>`;
   } else {
-    const fin = cwFinal(md), bg = cwBg(md), hp = CLASSES[md.cls].hd + cwMod(fin.CON) + (md.species === 'Dwarf' ? 1 : 0);
-    body = `<div class="cw-sum"><div><b>${esc(md.name || 'Unnamed')}</b> · ${esc(md.species)} ${esc(md.cls)} · ${esc(bg.custom ? bg.name : md.bg)}</div>
+    const fin = cwFinal(md), bg = cwBg(md), sp = cwSp(md), hp = C0.hd + cwMod(fin.CON) + (md.species === 'Dwarf' ? 1 : 0);
+    body = `<div class="cw-sum"><div><b>${esc(md.name || 'Unnamed')}</b> · ${sp.fromClass ? '' : esc(sp.name) + ' '}${esc(C0.name)}${md.sub ? ' (' + esc(md.sub) + ')' : ''} · ${esc(bg.custom ? bg.name : md.bg)}</div>
       <div class="mono">${ABIL.map(([k]) => `${k} ${fin[k]}`).join(' · ')}</div>
-      <div>HP <b>${hp}</b> · AC <b>${cwAc(md)}</b> · speed ${(md.species === 'Elf' && md.spChoice === 'Wood Elf') ? 35 : CW_SPECIES[md.species].speed} ft · ${esc(CW_SPECIES[md.species].size)}</div>
+      <div>HP <b>${hp}</b> · AC <b>${cwAc(md)}</b> · speed ${cwSpeed(md)} ft · ${esc(sp.size)}</div>
       <div class="muted">Skills: ${esc(cwSkills(md).join(', '))}</div>
       ${md.spells.length ? `<div class="muted">Spells: ${esc(md.spells.join(', '))}</div>` : ''}
       ${md.level > 1 ? `<div>Then the level-up wizard runs ${md.level - 1} time${md.level > 2 ? 's' : ''} to reach level ${md.level}.</div>` : ''}</div>`;
@@ -7525,7 +7565,7 @@ function createHtml(md) {
 }
 const cwSkills = md => { const bg = cwBg(md); return [...new Set([...(bg ? bg.skills : []), md.spSkill, ...md.skills].filter(Boolean))]; };
 function cwAc(md) {
-  const fin = cwFinal(md), C0 = CW_CLASS[md.cls], a = md.armor && SRD.items.find(it => it.kind === 'armor' && it.name === md.armor);
+  const fin = cwFinal(md), C0 = cwC(md), a = md.armor && SRD.items.find(it => it.kind === 'armor' && it.name === md.armor);
   const map = {}; ABIL.forEach(([k]) => { map[k] = cwMod(fin[k]); });
   const f = a ? a.ac : (C0 && C0.unarmored) || '10 + DEX';
   const v = f.replace(/min\(DEX, 2\)/, Math.min(map.DEX, 2)).replace(/\b(STR|DEX|CON|INT|WIS|CHA)\b/g, k => map[k]);
@@ -7537,11 +7577,11 @@ function cwAct(act, el, v, i) {
   const md = ui.modal; if (!md || md.type !== 'create') return false;
   const steps = () => CW_STEPS.map((s, k) => k).filter(k => CW_STEPS[k] !== 'Spells' || cwHasSpells(md));
   switch (act) {
-    case 'cwcls': if (md.cls !== v) { md.cls = v; md.style = ''; cwDefaults(md); if (md.bg) cwBgDefaults(md); } renderModal(); return true;
+    case 'cwcls': if (md.cls !== v) { md.cls = v; md.style = ''; md.sub = ''; if (md.species === 'class') md.species = ''; cwDefaults(md); if (md.bg) cwBgDefaults(md); } renderModal(); return true;
     case 'cwsp': if (md.species !== v) { md.species = v; md.spChoice = ''; md.spSkill = ''; } renderModal(); return true;
     case 'cwbg': if (md.bg !== v) { md.bg = v; cwBgDefaults(md); } renderModal(); return true;
-    case 'cwmethod': { md.method = v; md.arr = {}; const C0 = CW_CLASS[md.cls]; if (v === 'array' && C0) C0.pri.forEach((k, x) => { md.arr[k] = CW_ARRAY[x]; }); if (v === 'roll' && md.rolled && C0) { const vals = md.rolled.slice().sort((a, b) => b - a); C0.pri.forEach((k, x) => { md.arr[k] = vals[x]; }); } renderModal(); return true; }
-    case 'cwroll': { const r = () => { const d = [0, 0, 0, 0].map(() => 1 + Math.floor(Math.random() * 6)).sort((a, b) => a - b); return d[1] + d[2] + d[3]; }; md.rolled = [r(), r(), r(), r(), r(), r()]; const C0 = CW_CLASS[md.cls]; const vals = md.rolled.slice().sort((a, b) => b - a); md.arr = {}; (C0 ? C0.pri : ABIL.map(a => a[0])).forEach((k, x) => { md.arr[k] = vals[x]; }); renderModal(); return true; }
+    case 'cwmethod': { md.method = v; md.arr = {}; const C0 = cwC(md); if (v === 'array' && C0) C0.pri.forEach((k, x) => { md.arr[k] = CW_ARRAY[x]; }); if (v === 'roll' && md.rolled && C0) { const vals = md.rolled.slice().sort((a, b) => b - a); C0.pri.forEach((k, x) => { md.arr[k] = vals[x]; }); } renderModal(); return true; }
+    case 'cwroll': { const r = () => { const d = [0, 0, 0, 0].map(() => 1 + Math.floor(Math.random() * 6)).sort((a, b) => a - b); return d[1] + d[2] + d[3]; }; md.rolled = [r(), r(), r(), r(), r(), r()]; const C0 = cwC(md); const vals = md.rolled.slice().sort((a, b) => b - a); md.arr = {}; (C0 ? C0.pri : ABIL.map(a => a[0])).forEach((k, x) => { md.arr[k] = vals[x]; }); renderModal(); return true; }
     case 'cwpb': md.pb[v] = Math.max(8, Math.min(15, md.pb[v] + i)); renderModal(); return true;
     case 'cwnext': { if (cwCheck(md, md.step)) return true; const s = steps(); md.step = s[s.indexOf(md.step) + 1] ?? md.step; if (CW_STEPS[md.step] === 'Skills') { const given = new Set([...((cwBg(md) || {}).skills || []), md.spSkill]); md.skills = md.skills.filter(x => !given.has(x)); } renderModal(); return true; }
     case 'cwback': { const s = steps(); md.step = s[Math.max(0, s.indexOf(md.step) - 1)]; renderModal(); return true; }
@@ -7553,7 +7593,7 @@ function cwAct(act, el, v, i) {
 function cwInput(t) {
   const md = ui.modal; if (!md || md.type !== 'create') return false;
   const k = t.dataset.cw;
-  if (k === 'skill') { const C0 = CW_CLASS[md.cls]; md.skillsTouched = true; if (t.checked) { if (md.skills.length >= C0.n) { t.checked = false; toast(`A ${md.cls.toLowerCase()} picks ${C0.n}. Untick one first.`); return true; } md.skills.push(t.value); } else md.skills = md.skills.filter(x => x !== t.value); }
+  if (k === 'skill') { const C0 = cwC(md); md.skillsTouched = true; if (t.checked) { if (md.skills.length >= C0.n) { t.checked = false; toast(`A ${md.cls.toLowerCase()} picks ${C0.n}. Untick one first.`); return true; } md.skills.push(t.value); } else md.skills = md.skills.filter(x => x !== t.value); }
   else if (k === 'spell') { const L = spellList(md.cls), lv = (L.find(x => x.name === t.value) || {}).level; if (t.checked) { const n = md.spells.filter(x => ((L.find(y => y.name === x) || {}).level === 0) === (lv === 0)).length, cap = lv === 0 ? cantripsKnown(md.cls, 1) : preparedAt(md.cls, 1); if (n >= cap) { t.checked = false; toast(`That's all ${cap} ${lv === 0 ? 'cantrips' : 'spells'}. Untick one first.`); return true; } md.spells.push(t.value); } else md.spells = md.spells.filter(x => x !== t.value); }
   else if (k === 'shield') md.shield = t.checked;
   else if (k === 'name') { md.name = t.value; return true; }
@@ -7561,6 +7601,7 @@ function cwInput(t) {
   else if (k === 'bgMode') md.bgMode = t.value;
   else if (/^arr\./.test(k)) md.arr[k.slice(4)] = +t.value || '';
   else if (/^weapons\./.test(k)) { md.weapons[+k.split('.')[1]] = t.value; md.weapons = md.weapons.map(x => x || ''); }
+  else if (/^spCustom\./.test(k)) { setPath(md, k, t.value); }
   else if (/^bgCustom\./.test(k)) { setPath(md, k, t.value); if (/\.ab\./.test(k)) cwBgDefaults(md); if (k === 'bgCustom.name') return true; }
   else md[k] = t.value;
   renderModal(); return true;
@@ -7589,12 +7630,12 @@ function cwFeature(name, text, from) {
   return normalizeEntry(e);
 }
 function cwMake(md) {
-  const C0 = CW_CLASS[md.cls], K = CLASSES[md.cls], sp = CW_SPECIES[md.species], bg = cwBg(md), fin = cwFinal(md);
+  const C0 = cwC(md), sp = cwSp(md), bg = cwBg(md), fin = cwFinal(md);
   const c = blankChar(md.name.trim() || 'Unnamed hero');
-  Object.assign(c, { cls: md.cls, level: 1, species: md.species, background: bg.custom ? bg.name.trim() : md.bg, hitDie: 'd' + K.hd, spellAbility: K.ab || '', speed: ((md.species === 'Elf' && md.spChoice === 'Wood Elf') ? 35 : sp.speed) + ' ft' });
+  Object.assign(c, { cls: C0.name + (md.sub ? ' (' + md.sub + ')' : ''), level: 1, species: sp.fromClass ? '' : sp.name, background: bg.custom ? bg.name.trim() : md.bg, hitDie: 'd' + C0.hd, spellAbility: C0.ab || '', speed: cwSpeed(md) + ' ft' });
   c.abilities.forEach(a => { a.score = fin[a.key]; a.save = C0.saves.includes(a.key); });
   const sk = new Set(cwSkills(md)); c.skills.forEach(s => { if (sk.has(s.name)) s.prof = 1; });
-  c.classes = [{ name: md.cls, sub: '', level: 1 }];
+  c.classes = [{ name: C0.name, sub: md.sub || '', level: 1 }];
   const M = t => c.modules.find(m => m.type === t);
   const prev = store.active; store.chars[c.id] = c; store.active = c.id; CTX = ctxFor(c);
   // armor and AC
@@ -7605,27 +7646,28 @@ function cwMake(md) {
   for (const w of md.weapons.filter(Boolean)) { const it = SRD.items.find(x => x.kind === 'weapon' && x.name === w); if (it) M('attacks').entries.push(normalizeEntry(Object.assign(SRD.toEntry(it, 'attacks', CTX), { id: uid() }))); }
   // features: the class's level-1 features, the fighting style, species traits, the background's feat
   const feats = M('features').entries;
-  String(K.f[1] || '').split(/,\s*/).filter(n => n && !(n === 'Fighting Style' && md.style)).forEach(n => feats.push(cwFeature(n, srdFeature(n) >= 0 ? '' : CW_FTEXT[n] ? CW_FTEXT[n](md.cls) : '', `${md.cls} level 1`)));
+  if (C0.def) { for (const f of importedFeatures(C0.def, 1, md.sub)) if (!f.note) feats.push(Object.assign(importedEntry(C0.def, f), { id: uid() })); }
+  else C0.f1.filter(n => !(n === 'Fighting Style' && md.style)).forEach(n => feats.push(cwFeature(n, srdFeature(n) >= 0 ? '' : CW_FTEXT[n] ? CW_FTEXT[n](md.cls) : '', `${md.cls} level 1`)));
   if (md.style) feats.push(cwFeature(md.style, '', 'Fighting style'));
   const ch = md.spChoice || '', type = (ch.match(/\((\w+)\)/) || [])[1] || '', leg = CW_LEGACY[ch] || [];
   for (const [n, txt] of sp.traits) {
     const t = txt && txt.replace(/\{X\}/g, ch).replace(/\{T\}/g, type).replace(/\{S\}/g, md.spSkill || 'chosen').replace(/\{F\}/g, md.feat).replace(/\{R\}/g, leg[0] || '').replace(/\{C\}/g, leg[1] || '');
-    feats.push(cwFeature(n, t || '', md.species));
+    feats.push(cwFeature(n, t || '', sp.name));
   }
   const featName = bg.custom ? bg.feat : bg.feat;
   for (const f of [featName].concat(sp.feat ? [md.feat] : [])) feats.push(Object.assign(cwFeature(f.replace(/ \(.*\)$/, ''), '', 'Origin feat'), { name: f }));
   // hit points: the hit die's maximum and CON at level 1 (+ Dwarven Toughness)
-  c.hp.max = c.hp.cur = Math.max(1, K.hd + cwMod(fin.CON) + (md.species === 'Dwarf' ? 1 : 0));
+  c.hp.max = c.hp.cur = Math.max(1, C0.hd + cwMod(fin.CON) + (md.species === 'Dwarf' ? 1 : 0));
   // spell slots and spells
   const sl = slotsFor(c.classes); if (sl) for (let l = 1; l <= 9; l++) c.slots[l] = { max: sl[l] || 0, used: 0 };
   for (const n of md.spells) { const it = srdSpell(n); if (it) M('spells').entries.push(normalizeEntry(Object.assign(SRD.toEntry(it, 'spells', CTX), { id: uid() }))); }
-  if (!K.cast) c.hidden = c.modules.filter(m => m.type === 'spells').map(m => m.id);
+  if (!C0.cast) c.hidden = c.modules.filter(m => m.type === 'spells').map(m => m.id);
   // what isn't tracked elsewhere
-  c.notes = [`Background: ${c.background}${bg.tool ? ' (tool: ' + bg.tool + ')' : ''}.`, `Armor training: ${C0.armor.length ? C0.armor.join(', ') : 'none'}. Weapons: ${{ martial: 'simple and martial', simple: 'simple', monk: 'simple, and martial weapons with the Light property', rogue: 'simple, and martial weapons with the Finesse or Light property' }[C0.weapons]}.`, `Size ${sp.size}. Languages: Common and two more of your choice.`].join('\n');
+  c.notes = [`Background: ${c.background}${bg.tool ? ' (tool: ' + bg.tool + ')' : ''}.`, C0.def ? (C0.training || 'Training: see the class') + '.' : `Armor training: ${C0.armor.length ? C0.armor.join(', ') : 'none'}. Weapons: ${{ martial: 'simple and martial', simple: 'simple', monk: 'simple, and martial weapons with the Light property', rogue: 'simple, and martial weapons with the Finesse or Light property' }[C0.weapons]}.`, `Size ${sp.size}. Languages: Common and two more of your choice.`].join('\n');
   normalize(c); c.fresh = false;
   if (store.chars[prev] && isPlaceholder(store.chars[prev])) delete store.chars[prev];
   ui.open.clear(); ui.mode = 'play'; save(); closeModal(); render(); if (IN_OBR) publishStatus();
-  toast(`${c.name} is ready: level 1 ${md.species} ${md.cls}.`);
+  toast(`${c.name} is ready: level 1 ${[c.species, c.cls].filter(Boolean).join(' ')}.`);
   if (md.level > 1) { c.levelTarget = md.level; save(); setTimeout(openLevelUp, 300); }
 }
 

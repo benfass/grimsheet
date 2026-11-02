@@ -530,3 +530,12 @@ Ordered by when it gets built. Priority applies inside a goal.
   - Spells from elsewhere (subclass, feats) are listed separately and not counted. Multiclass casters switch between classes. Going over the limit is allowed, with a warning, for features that grant extra spells.
 - **After a level-up**: the level-up dialog shows the new prepared and cantrip counts (with the increase). Prepare spells opens by itself when the count, cantrips or highest spell level went up, and after the last level of a higher starting level.
 - **Fix**: adding a spell from the built-in rules failed in 1.35–1.38 (an error when reading its repeat damage); fixed.
+
+
+## Built in app 1.40
+
+- **Homebrew in the character wizard**:
+  - **Classes**: classes imported in Characters → Classes appear under "Your homebrew classes". They use the class's hit die, saves, spellcasting ability and spell table (no spell step, since there's no list). Any two skills and all armor and weapons are offered, and its stated training goes into the notes. Its level-1 features (racial traits included) are added with their full text.
+  - **Subclasses at level 1**: a subclass that starts at level 1 is picked on the class step (required, or optional when its subclasses only swap features, like the Ogre Mage). A higher starting level runs the level-up wizard as for any imported class.
+  - **Species from the class**: for a class with racial traits (monster classes), "<Class> (from the class)" uses the class's own Size and Speed traits, with nothing added twice.
+  - **Another species**: name, size and speed, and its traits pasted as "Name. Text." paragraphs. Each becomes a feature, scanned for dice, saves and uses (e.g. "a number of times equal to your proficiency bonus per long rest" becomes a counter). The step shows what it found.
