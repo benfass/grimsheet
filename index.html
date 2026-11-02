@@ -77,6 +77,7 @@ button{cursor:pointer}
 
 .banner{max-width:1500px;margin:12px auto 0;display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;padding:8px 12px;border-radius:8px;background:var(--gold-soft);color:var(--ink);font-size:.9rem}
 .banner.warn{background:var(--danger-soft)}
+.chip.warnchip{background:var(--danger-soft);color:var(--danger);border-color:transparent}
 
 /* grid */
 .grid{display:flex;flex-direction:column;gap:14px;max-width:1500px;margin:14px auto 0}
@@ -717,8 +718,30 @@ const ENGINE = (() => {
     return { shape, size, width: shape === 'line' ? (w ? +w[1] : 5) : 0, self, half };
   }
 
+  // a second, repeatable part: "On each of your subsequent turns, you can take a Bonus Action to deal 1d12 Lightning
+  // damage" (Witch Bolt), "As a Bonus Action on your later turns, you can … repeat the attack" (Spiritual Weapon),
+  // "Until the spell ends, you can take a Magic action to … again" (Call Lightning). Returns the repeat and the text
+  // without those sentences (the first cast's damage is read from that).
+  const REP_WHEN = /\b(subsequent turns?|later turns?|each of your turns|until the spell ends, you can)\b/;
+  function repeatOf(text) {
+    const low = String(text || '').toLowerCase().replace(/[−–]/g, '-').replace(/\s+/g, ' ');
+    // the upcast paragraph isn't part of it
+    const main = low.replace(/(using a higher-level spell slot|at higher levels|cantrip upgrade)\b.*$/, '');
+    const sents = main.split(/(?<=[.!?])\s+/);
+    const reD = new RegExp('(\\d+d\\d+)(?:\\s*\\+\\s*(\\d+))?(?:\\s*\\+\\s*your\\s+(spellcasting ability|' + ABRE + ')\\s+modifier)?\\s+(' + TYPES + ')\\s+damage', 'g');
+    const hits = sents.filter(x => REP_WHEN.test(x) && (reD.test(x) || /\b(again|repeat the attack|this damage)\b/.test(x)) && (reD.lastIndex = 0, true));
+    if (!hits.length) return null;
+    const x = hits.join(' '), damage = []; let m; reD.lastIndex = 0;
+    while ((m = reD.exec(x))) damage.push({ dice: m[1], mod: [m[2] || '', modWord(m[3])].filter(Boolean).join(' + '), type: m[4] });
+    const action = /bonus action/.test(x) ? 'bonus' : /magic action|\ban action\b|\baction\b/.test(x) ? 'action' : '';
+    const attack = /repeat the attack|make the attack again|(melee|ranged) spell attack|attack roll/.test(x) && !/automatically/.test(x);
+    // its own dice don't grow with the slot when the upcast names the first hit ("The initial damage increases…")
+    const upcast = !damage.length || !/\binitial damage\b/.test(low);
+    const rest = sents.filter(s => !hits.includes(s)).join(' ');
+    return { repeat: { action, attack, damage, upcast, save: /saving throw|\bsave\b/.test(x) && !damage.length }, rest };
+  }
   function scan(text) {
-    const out = []; const t = String(text || ''); const low = t.toLowerCase();
+    const out = []; const t = String(text || ''); const rp = repeatOf(t); const low = t.toLowerCase(); const lowMain = rp ? rp.rest + ' ' + (low.match(/(using a higher-level spell slot|at higher levels|cantrip upgrade)\b[\s\S]*$/) || [''])[0] : low;
     const add = (key, label, apply) => { if (!out.some(s => s.key === key)) out.push({ key, label, apply }); };
     let m;
     // spell header
@@ -749,16 +772,20 @@ const ENGINE = (() => {
     // damage
     const dmg = []; const seen = new Set();
     const reD = new RegExp('(\\d+d\\d+)(?:\\s*\\+\\s*(\\d+))?(?:\\s*\\+\\s*your\\s+(spellcasting ability|' + ABRE + ')\\s+modifier)?\\s+(' + TYPES + ')\\s+damage', 'g');
-    while ((m = reD.exec(low))) { const k = m[1] + m[4]; if (seen.has(k)) continue; seen.add(k); dmg.push({ dice: m[1], mod: [m[2] || '', modWord(m[3])].filter(Boolean).join(' + '), type: m[4] }); }
+    while ((m = reD.exec(lowMain))) { const k = m[1] + m[4]; if (seen.has(k)) continue; seen.add(k); dmg.push({ dice: m[1], mod: [m[2] || '', modWord(m[3])].filter(Boolean).join(' + '), type: m[4] }); }
     const reM = new RegExp('\\((\\d+d\\d+)(?:\\s*([+−-])\\s*(\\d+))?\\)\\s+(' + TYPES + ')\\s+damage', 'g');
-    while ((m = reM.exec(low))) { const k = m[1] + m[4]; if (seen.has(k)) continue; seen.add(k); dmg.push({ dice: m[1], mod: m[3] ? (m[2] === '+' ? '' : '-') + m[3] : '', type: m[4] }); }
+    while ((m = reM.exec(lowMain))) { const k = m[1] + m[4]; if (seen.has(k)) continue; seen.add(k); dmg.push({ dice: m[1], mod: m[3] ? (m[2] === '+' ? '' : '-') + m[3] : '', type: m[4] }); }
+    // "takes Force damage equal to 1d8 plus your spellcasting ability modifier"
+    const reQ = new RegExp('(' + TYPES + ') damage equal to (\\d+d\\d+)(?:\\s*(?:\\+|plus)\\s*your\\s+(spellcasting ability|' + ABRE + ')\\s+modifier)?', 'g');
+    while ((m = reQ.exec(lowMain))) { const k = m[2] + m[1]; if (seen.has(k)) continue; seen.add(k); dmg.push({ dice: m[2], mod: modWord(m[3]), type: m[1] }); }
     const reT = new RegExp('(\\d+d\\d+)(?:\\s*\\+\\s*(\\d+))?\\s+(' + TYPES + ')\\b(?!\\s+damage)', 'g');
-    while ((m = reT.exec(low))) { const k = m[1] + m[3]; if (seen.has(k)) continue; seen.add(k); dmg.push({ dice: m[1], mod: m[2] || '', type: m[3] }); }
+    while ((m = reT.exec(lowMain))) { const k = m[1] + m[3]; if (seen.has(k)) continue; seen.add(k); dmg.push({ dice: m[1], mod: m[2] || '', type: m[3] }); }
     const reH = new RegExp('regains?\\s+(?:a number of\\s+)?hit points equal to\\s+(\\d+d\\d+)(?:\\s*\\+\\s*(\\d+))?(?:\\s*(?:\\+|plus)\\s*your\\s+(spellcasting ability|' + ABRE + ')\\s+modifier)?(\\s*(?:\\+|plus)\\s*your\\s+\\w+\\s+level)?');
     if ((m = low.match(reH))) dmg.push({ dice: m[1], mod: [m[2] || '', modWord(m[3]), m[4] ? 'LEVEL' : ''].filter(Boolean).join(' + '), type: 'healing' });
     // shorthand: untyped dice like "1D8 +5" when nothing typed was found and the text reads like an attack or effect
-    if (!dmg.length && (m = low.match(/(?:^|[^\w])(\d+d\d+)(?:\s*\+\s*(\d+))?(?![\w])/))) dmg.push({ dice: m[1], mod: m[2] || '', type: '' });
+    if (!dmg.length && !rp && (m = low.match(/(?:^|[^\w])(\d+d\d+)(?:\s*\+\s*(\d+))?(?![\w])/))) dmg.push({ dice: m[1], mod: m[2] || '', type: '' });
     for (const p of dmg) add('dmg-' + p.dice + p.type, (p.type === 'healing' ? 'Healing ' : 'Damage ') + p.dice + (p.mod ? ' + ' + p.mod : '') + (p.type === 'healing' || !p.type ? '' : ' ' + p.type), d => { d.damage = (d.damage || []).filter(x => !(x.dice === p.dice && x.type === p.type)).concat([{ ...p }]); });
+    if (rp) { const r = rp.repeat, lbl = r.damage.length ? r.damage.map(p => p.dice + (p.mod ? ' + ' + p.mod : '') + ' ' + p.type).join(' + ') : 'the same damage'; add('repeat', `Repeats on later turns${r.action ? ' (' + (r.action === 'bonus' ? 'bonus action' : 'action') + ')' : ''}: ${lbl}${r.attack ? ', with an attack roll' : ''}`, d => { d.repeat = Object.assign({}, r, { damage: r.damage.map(p => Object.assign({}, p)) }); d.damage = (d.damage || []).filter(x => !r.damage.some(p => p.dice === x.dice && p.type === x.type) || dmg.some(p => p.dice === x.dice && p.type === x.type)); }); }
     // save
     const SHORT = { str: 'strength', dex: 'dexterity', con: 'constitution', int: 'intelligence', wis: 'wisdom', cha: 'charisma' };
     if ((m = low.match(new RegExp('(' + ABRE + ')\\s+saving throw'))) || ((m = low.match(/\b(str|dex|con|int|wis|cha)\.?\s*(?:saving(?: throw)?|save|st)\b/)) && (m[1] = SHORT[m[1]]))) {
@@ -808,7 +835,7 @@ const ENGINE = (() => {
     return out;
   }
 
-  return { parse, tokenize, signedTerms, staticSum, rollComps, evalStatic, rollSimple, multDice, scaleLeadDice, scan, ordinal, hasDice, rerollOf, rerollText, areaOf };
+  return { parse, tokenize, signedTerms, staticSum, rollComps, evalStatic, rollSimple, multDice, scaleLeadDice, scan, ordinal, hasDice, rerollOf, rerollText, areaOf, repeatOf };
 })();
 if (typeof module !== 'undefined') module.exports = ENGINE;
 </script>
@@ -1552,6 +1579,7 @@ const SRD = (() => {
       if (it.atk) base.attack = { ability: 'SPELL', prof: true, bonus: '', crit: 20 };
       if (it.save) base.save = { ability: it.save, dc: 'SPELLDC' };
       if (it.dmg) base.damage = dmgList(it.dmg);
+      { const rp = E.repeatOf(it.text || ''); if (rp && base.damage.length) base.repeat = rp.repeat; }
       if (it.fx) base.effect = Object.assign({ active: false, attack: '', damage: '', save: '', ac: '', check: '', only: '' }, it.fx);
       return base;
     }
@@ -3168,7 +3196,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.34.0';
+const APP_VERSION = '1.35.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -3223,7 +3251,7 @@ const MULTI = new Set(['attacks', 'features', 'inventory', 'companions', 'notes'
 /* ---------- data ---------- */
 function newEntry(o = {}) {
   return Object.assign({ id: uid(), name: 'New entry', short: '', text: '', tags: { action: '', conc: false, ritual: false }, pinned: false,
-    attack: null, damage: [], save: null, counter: null, effect: null, spell: null, item: null, creature: null }, o);
+    attack: null, damage: [], save: null, counter: null, effect: null, spell: null, item: null, creature: null, repeat: null }, o);
 }
 function mkModule(type, title, extra = {}) { return Object.assign({ id: uid(), type, title: title || MODTYPES[type], collapsed: false, wide: false, entries: [] }, extra); }
 function blankChar(name = 'New Character') {
@@ -3371,6 +3399,16 @@ function normalize(c) {
   const b = blankChar();
   for (const k in b) if (c[k] === undefined) c[k] = clone(b[k]);
   for (let l = 1; l <= 9; l++) if (!c.slots[l]) c.slots[l] = { max: 0, used: 0 };
+  // spells read before 1.35 had their later-turn dice added to the first hit (Witch Bolt "2d12 + 1d12"): split them
+  for (const m of c.modules || []) for (const e of m.entries || []) {
+    if (e.repeat !== undefined || !e.spell || !e.text || !(e.damage || []).length) continue;
+    e.repeat = null;
+    try {
+      const rp = E.repeatOf(e.text); if (!rp || !rp.repeat.damage.length) continue;
+      const moved = e.damage.filter(x => rp.repeat.damage.some(p => p.dice === x.dice && p.type === x.type) && !new RegExp(x.dice + '(?:\\s*\\+[^.]*?)?\\s+' + x.type).test(rp.rest));
+      if (moved.length && moved.length < e.damage.length) { e.damage = e.damage.filter(x => !moved.includes(x)); e.repeat = rp.repeat; }
+    } catch (x) { }
+  }
   c.modules.forEach(m => { m.entries = (m.entries || []).map(e => Object.assign(newEntry(), e, { tags: Object.assign({ action: '', conc: false, ritual: false }, e.tags || {}) })); });
   if (c.layout && (!Array.isArray(c.layout.rows) || c.layout === b.layout)) c.layout = null;
   ensureLayout(c);
@@ -3426,7 +3464,9 @@ function attackComps(e) {
 }
 function damageComps(e, opt = {}) {
   const c = []; const tier = e.spell && e.spell.cantrip ? cantripTier() : 1;
-  e.damage.forEach(p => { if (p.dice) c.push({ f: E.scaleLeadDice(p.dice, tier), suffix: p.type }); if (p.mod) c.push({ f: p.mod }); });
+  const r = opt.rep && e.repeat, parts = r && r.damage && r.damage.length ? r.damage : e.damage;
+  if (r && !r.upcast) opt = Object.assign({}, opt, { lvl: 0 });
+  parts.forEach(p => { if (p.dice) c.push({ f: E.scaleLeadDice(p.dice, tier), suffix: p.type }); if (p.mod) c.push({ f: p.mod }); });
   if (opt.lvl && e.spell && e.spell.upcast && opt.lvl > e.spell.level) c.push({ src: 'Upcast', f: E.multDice(e.spell.upcast, opt.lvl - e.spell.level) });
   if (e.attack && !isHealing(e) && !e.creature) activeEffects().forEach(fx => { if (fx.effect.damage && fxMatch(fx, e)) c.push({ src: fx.name, f: fx.effect.damage }); });
   return c;
@@ -3552,7 +3592,7 @@ async function startOwlbear() {
 }
 function statusOf(c) {
   const ac = (() => { try { return E.staticSum(acComps(), CTX).flat; } catch (e) { return '?'; } })();
-  return { charId: c.id, char: c.name, cls: [c.species, c.cls].filter(Boolean).join(' '), level: c.level, hp: c.hp.cur, max: c.hp.max, temp: c.hp.temp, ac, cond: c.conditions.concat(c.exhaustion ? ['Exhaustion ' + c.exhaustion] : []), dead: c.death.f >= 3, down: c.hp.cur <= 0, conc: c.conc ? c.conc.name : '', death: c.death, def: charDefenses(c), insp: !!c.inspiration };
+  return { charId: c.id, char: c.name, ex: !!c.example, cls: [c.species, c.cls].filter(Boolean).join(' '), level: c.level, hp: c.hp.cur, max: c.hp.max, temp: c.hp.temp, ac, cond: c.conditions.concat(c.exhaustion ? ['Exhaustion ' + c.exhaustion] : []), dead: c.death.f >= 3, down: c.hp.cur <= 0, conc: c.conc ? c.conc.name : '', death: c.death, def: charDefenses(c), insp: !!c.inspiration };
 }
 let statusT = null;
 function publishStatus() {
@@ -3762,7 +3802,7 @@ function partyMembers() {
   return others.map(p => {
     const s = p.s, pct = s.max ? Math.max(0, Math.min(100, s.hp / s.max * 100)) : 0;
     const ptok = (OBRX.pcTokens[p.id] || []).length;
-    return `<div class="entry" data-pm="${esc(p.id)}"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${tokImg((OBRX.pcTokens[p.id] || [])[0]) ? `<img class="tokimg sm" src="${esc(tokImg(OBRX.pcTokens[p.id][0]))}" alt="">` : ''}<b ${ptok ? `data-dblfocus="pc|${esc(p.id)}" title="Double-click to find their token"` : ''}>${esc(s.char)}</b>${ptok ? locateBtn('focus', `data-v="pc|${esc(p.id)}"`, 'Find their token on the map') : ''}<span class="muted" style="font-size:.85rem">${esc(p.name)}${p.role === 'GM' ? ' · GM' : ''}${s.cls ? ' · ' + esc(s.cls) : ''}${s.level ? ' ' + esc(s.level) : ''}</span></div>
+    return `<div class="entry" data-pm="${esc(p.id)}"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${tokImg((OBRX.pcTokens[p.id] || [])[0]) ? `<img class="tokimg sm" src="${esc(tokImg(OBRX.pcTokens[p.id][0]))}" alt="">` : ''}<b ${ptok ? `data-dblfocus="pc|${esc(p.id)}" title="Double-click to find their token"` : ''}>${esc(s.char)}</b>${ptok ? locateBtn('focus', `data-v="pc|${esc(p.id)}"`, 'Find their token on the map') : ''}<span class="muted" style="font-size:.85rem">${esc(p.name)}${p.role === 'GM' ? ' · GM' : ''}${s.cls ? ' · ' + esc(s.cls) : ''}${s.level ? ' ' + esc(s.level) : ''}</span>${s.ex ? '<span class="chip warnchip" title="Their open character is still the example, not their own">example character</span>' : ''}</div>
       <div class="inline" style="margin-top:4px"><span class="pool">${esc(s.hp)}<small>/${esc(s.max)} HP</small></span>${s.temp ? `<span class="temp">+${esc(s.temp)}</span>` : ''}<span class="chip">AC ${esc(s.ac)}</span>${s.dead ? '<span class="chip" style="color:var(--danger);border-color:var(--danger)">Dead</span>' : s.down ? '<span class="chip" style="color:var(--danger);border-color:var(--danger)">Down</span>' : ''}${(s.cond || []).map(k => `<span class="chip" style="color:var(--danger);border-color:var(--danger)">${esc(k)}</span>`).join('')}${s.conc ? `<span class="chip conc">◉ ${esc(s.conc)}</span>` : ''}</div>
       <div class="hpbar" style="margin-top:6px"><i class="${pct < 25 ? 'low' : pct < 55 ? 'mid' : ''}" style="width:${pct}%"></i></div>
       ${OBRX.me.role === 'GM' && s.charId ? `<div class="inline" style="margin-top:6px"><input class="qm" id="gmhp-${esc(p.id)}" data-qm="gmhp" data-player="${esc(p.id)}" data-char="${esc(s.charId)}" data-name="${esc(s.char)}" style="width:104px" placeholder="−12 or +8" aria-label="Damage or heal ${esc(s.char)}"><button class="btn small" data-act="gmview" data-player="${esc(p.id)}" data-char="${esc(s.charId)}" data-name="${esc(s.char)}" data-owner="${esc(p.name)}">View sheet</button></div>` : ''}</div>`;
@@ -6340,7 +6380,7 @@ function renderGmParty() {
     const s = p.s, pct = s.max ? Math.max(0, Math.min(100, s.hp / s.max * 100)) : 0, d = s.death || { s: 0, f: 0 };
     const state = s.dead ? '<span class="chip bad">Dead</span>' : s.down ? `<span class="chip bad">Down</span><span class="muted mono" title="Death saves">✓${d.s} ✗${d.f}</span>` : s.hp <= s.max / 2 ? '<span class="chip warn">Bloodied</span>' : '';
     return `<section class="pcard ${s.down ? 'down' : ''}" data-pcard="${esc(p.id)}">
-      ${tokImg((OBRX.pcTokens[p.id] || [])[0]) ? `<img class="tokimg sm" src="${esc(tokImg(OBRX.pcTokens[p.id][0]))}" alt="" data-dblfocus="pc|${esc(p.id)}">` : ''}<div class="pc-h"><b ${(OBRX.pcTokens[p.id] || []).length ? `data-dblfocus="pc|${esc(p.id)}" title="Double-click to find their token"` : ''}>${esc(s.char)}${(OBRX.pcTokens[p.id] || []).length ? ' ' + locateBtn('focus', `data-v="pc|${esc(p.id)}"`, 'Find their token on the map') : ''}</b><span class="muted">${esc(p.name)}${s.cls ? ' · ' + esc(s.cls) : ''}${s.level ? ' ' + esc(s.level) : ''}</span></div>
+      ${tokImg((OBRX.pcTokens[p.id] || [])[0]) ? `<img class="tokimg sm" src="${esc(tokImg(OBRX.pcTokens[p.id][0]))}" alt="" data-dblfocus="pc|${esc(p.id)}">` : ''}<div class="pc-h"><b ${(OBRX.pcTokens[p.id] || []).length ? `data-dblfocus="pc|${esc(p.id)}" title="Double-click to find their token"` : ''}>${esc(s.char)}${(OBRX.pcTokens[p.id] || []).length ? ' ' + locateBtn('focus', `data-v="pc|${esc(p.id)}"`, 'Find their token on the map') : ''}</b><span class="muted">${esc(p.name)}${s.cls ? ' · ' + esc(s.cls) : ''}${s.level ? ' ' + esc(s.level) : ''}</span>${s.ex ? '<span class="chip warnchip" title="Their open character is still the example, not their own">example character</span>' : ''}</div>
       <div class="inq" data-inq="pc:${esc(p.id)}" hidden></div>
       <div class="inline"><span class="pool">${esc(s.hp)}<small>/${esc(s.max)}</small></span>${s.temp ? `<span class="temp">+${esc(s.temp)}</span>` : ''}<span class="chip">AC ${esc(s.ac)}</span>${state}</div>
       <div class="hpbar"><i class="${pct < 25 ? 'low' : pct < 55 ? 'mid' : ''}" style="width:${pct}%"></i></div>
@@ -7203,24 +7243,25 @@ function castMenu(el, e, c) {
   opts.push(`<button class="opt" data-act="castat" data-id="${e.id}" data-v="0">Cast without a slot${e.tags.ritual ? ' (ritual)' : ''}</button>`);
   showPop(el, `<b style="font-family:var(--f-display)">Cast ${esc(e.name)}</b><div style="margin-top:4px">${opts.join('')}</div>`);
 }
-function rollAttack(e) {
-  const fu = e.damage.length ? [{ label: 'Damage', act: 'dmg', id: e.id }] : [];
+function rollAttack(e, rep) {
+  const fu = e.damage.length || rep ? [Object.assign({ label: 'Damage', act: 'dmg', id: e.id }, rep ? { rep: 1, lvl: e.castLvl || 0 } : {})] : [];
   const key = 'e:' + e.id, T = targetFor(myTokenIds(), 'atk', key);
   if (T) Object.assign(T, { part: 'atk', key, from: myTokenIds()[0], ri: rangeInfo(e.text, e.spell && e.spell.range), attacker: C().name, what: e.name, dmgF: e.damage.length ? dmgSpec(e) : null }); else ui.lastAtk = null;
   const ri = rangeInfo(e.text, e.spell && e.spell.range);
   const test = { kind: 'atk', self: myConds(), exh: C().exhaustion, target: ui.target ? targetConds(ui.target.id) : [], melee: isMelee(ri) };
-  roll(e.name + ' · to hit', attackComps(e), { critMin: +e.attack.crit || 20, fu, target: T, test, after: en => { if ((en.crit || en.critClose) && e.damage.length) en.fu = [{ label: 'Crit damage', act: 'dmg', id: e.id, crit: 1 }, ...fu]; } });
+  roll(e.name + ' · to hit', attackComps(e), { critMin: +e.attack.crit || 20, fu, target: T, test, after: en => { if ((en.crit || en.critClose) && (e.damage.length || rep)) en.fu = [Object.assign({ label: 'Crit damage', act: 'dmg', id: e.id, crit: 1 }, rep ? { rep: 1, lvl: e.castLvl || 0 } : {}), ...fu]; } });
 }
 // the damage as plain dice and numbers (STR, PROF… worked out), so the GM can roll it for the player
 function dmgSpec(e) {
   try { return damageComps(e).map(c => { const st = E.staticSum([c], CTX), dice = st.dice.join('').replace(/^\+/, ''); return { f: (dice + (st.flat ? (st.flat > 0 && dice ? '+' : '') + st.flat : '')) || '0', suffix: c.suffix || '' }; }).filter(x => x.f !== '0'); } catch (x) { return null; }
 }
-function rollDamage(e, crit, lvl) {
+function rollDamage(e, crit, lvl, rep) {
   const heal = isHealing(e);
   const types = [...new Set(e.damage.map(p => p.type).filter(Boolean))].join(', ');
   const key = 'e:' + e.id, T = targetFor(myTokenIds(), heal ? 'heal' : 'dmg', key, !heal && !e.attack && !e.save);
   if (T) Object.assign(T, { part: heal ? 'heal' : 'dmg', key, attacker: C().name, what: e.name, save: e.save && !e.attack ? { dc: dcValue(e), ability: e.save.ability } : null });
-  roll(e.name + ' · ' + (heal ? 'healing' : 'damage') + (crit ? ' (crit)' : ''), damageComps(e, { lvl }), { crit, kind: heal ? 'heal' : 'dmg', minZero: true, note: types, target: T, fu: heal && !T ? [{ label: 'Heal me', act: 'healme' }] : [] });
+  if (rep) lvl = lvl || e.castLvl || 0;
+  roll(e.name + (rep ? ' · again' : '') + ' · ' + (heal ? 'healing' : 'damage') + (crit ? ' (crit)' : ''), damageComps(e, { lvl, rep }), { crit, kind: heal ? 'heal' : 'dmg', minZero: true, note: types, target: T, fu: heal && !T ? [{ label: 'Heal me', act: 'healme' }] : [] });
 }
 
 /* ---------- rendering ---------- */
@@ -7274,7 +7315,8 @@ function renderBanner() {
   if (!c.example && !ui.backupLater && !gmHasCopy(c) && c.changedAt && (c.lastBackup ? c.changedAt > c.lastBackup && Date.now() - c.lastBackup > 3 * DAY : Date.now() - (c.createdAt || Date.now()) > DAY)) {
     h += `<div class="banner"><span style="flex:1;min-width:200px">${esc(c.name)} ${c.lastBackup ? 'was last backed up ' + Math.floor((Date.now() - c.lastBackup) / DAY) + ' days ago' : 'has never been backed up'}. Characters live in this browser only, so keep a copy in case it gets cleared.</span><button class="btn small" data-act="backupnow">Back up now</button><button class="btn small ghost" data-act="backuplater">Later</button></div>`;
   }
-  if (c.example) h += `<div class="banner"><span style="flex:1;min-width:200px">This is an example character so you can try things out. Tap any number to roll, switch to <b>Edit</b> to change the sheet.</span><button class="btn small" data-act="newchar">Start a blank character</button><button class="btn small ghost" data-act="dismiss-ex">Keep this one</button></div>`;
+  if (c.example && IN_OBR && !ui.viewing) h += `<div class="banner warn"><span style="flex:1;min-width:200px">The party sees <b>${esc(c.name)}</b>, the example character. Made your character on the website or another device? Owlbear keeps its own characters, so bring it here: there, <b>Characters → Export</b>; here, <b>Import</b>.</span><button class="btn small primary" data-act="modal" data-v="import">Import</button><button class="btn small" data-act="modal" data-v="chars">Characters</button><button class="btn small ghost" data-act="dismiss-ex">Keep this one</button></div>`;
+  else if (c.example) h += `<div class="banner"><span style="flex:1;min-width:200px">This is an example character so you can try things out. Tap any number to roll, switch to <b>Edit</b> to change the sheet.</span><button class="btn small" data-act="newchar">Start a blank character</button><button class="btn small ghost" data-act="dismiss-ex">Keep this one</button></div>`;
   $('#banner').innerHTML = h;
 }
 
@@ -7480,6 +7522,7 @@ function entryRow(e, m, compact) {
   if (IN_OBR && !ui.viewing && (e.attack || (e.save && e.damage.length && !isHealing(e)) || areaOfEntry(e))) acts += tgtMini();
   if (e.attack) { const l = staticLabel(attackComps(e)); acts += `<button class="roll hit" data-act="atk" data-id="${e.id}" title="Roll to hit${+e.attack.crit < 20 ? ' · crits on ' + e.attack.crit + '–20' : ''}">${l.text} hit</button>`; }
   if (e.damage.length) { const heal = isHealing(e); acts += `<button class="roll ${heal ? 'heal' : 'dmg'}" data-act="dmg" data-id="${e.id}">${esc(dmgLabel(e))} ${esc(heal ? 'heal' : (e.damage.map(p => p.type).filter(Boolean).join('/') || 'dmg'))}</button>`; }
+  if (e.repeat) { const r = e.repeat, own = r.damage && r.damage.length; acts += `<button class="roll dmg" data-act="rep" data-id="${e.id}" title="On later turns${r.action ? ', as ' + (r.action === 'bonus' ? 'a bonus action' : 'an action') : ''}${r.attack ? ': roll to hit, then damage' : ''}${e.castLvl && r.upcast ? ' (cast at ' + E.ordinal(e.castLvl) + ' level)' : ''}">↻ ${r.attack && e.attack ? 'hit' : esc(dmgLabel(e, { rep: true, lvl: r.upcast ? e.castLvl || 0 : 0 })) + ' ' + esc((own ? r.damage : e.damage).map(p => p.type).filter(Boolean).join('/') || 'dmg')}${r.action === 'bonus' ? ' <small>BA</small>' : ''}</button>`; }
   if (e.save) acts += `<button class="chip dc" data-act="explain" data-v="save" data-id="${e.id}" title="How the DC is worked out">DC ${dcValue(e)} ${esc(e.save.ability)}</button>`;
   if (IN_OBR && !ui.viewing) acts += areaBtn(e);
   if (e.reroll) acts += `<span class="chip rrchip" title="${esc(E.rerollText(e.reroll))}. The button appears on matching rolls.">↻ ${e.reroll.on === 'd20' ? 'd20 reroll' : e.reroll.on === 'damage' ? 'damage reroll' : 'reroll'}</span>`;
@@ -7521,7 +7564,7 @@ function renderTray(isNew, rolling) {
   if (rolling) { $('#tray').innerHTML = `<div class="tot muted" aria-live="polite">…</div><div class="info"><div class="ttl">${esc(r.title)} ${r.mode === 'adv' ? '<span class="badge teal">ADV</span>' : r.mode === 'dis' ? '<span class="badge red">DIS</span>' : ''}</div><div class="brk">Rolling…</div></div>${quick}`; return; }
   $('#tray').innerHTML = `<div class="tot ${isNew ? 'new' : ''} ${r.crit ? 'crit' : ''} ${r.fumble ? 'fum' : ''}">${r.total}</div>
     <div class="info"><div class="ttl">${esc(r.title)} ${badges(r)}</div><div class="brk">${breakdown(r)}</div>${tgtLine(r)}${rrTrayHtml(r)}
-    ${r.fu.length ? `<div class="fu">${r.fu.map(f => `<button class="btn small ${f.crit ? 'primary' : ''}" data-act="${f.act}" data-id="${f.id || ''}" data-crit="${f.crit || ''}" data-lvl="${f.lvl || ''}" data-amt="${r.total}">${esc(f.label)}</button>`).join('')}</div>` : ''}</div>${quick}`;
+    ${r.fu.length ? `<div class="fu">${r.fu.map(f => `<button class="btn small ${f.crit ? 'primary' : ''}" data-act="${f.act}" data-id="${f.id || ''}" data-crit="${f.crit || ''}" data-rep="${f.rep || ''}" data-lvl="${f.lvl || ''}" data-amt="${r.total}">${esc(f.label)}</button>`).join('')}</div>` : ''}</div>${quick}`;
 }
 function badges(r) {
   return (r.why ? `<span class="badge why" title="Conditions">${esc(r.why)}</span>` : '') + (r.mode === 'adv' ? '<span class="badge teal">ADV</span>' : r.mode === 'dis' ? '<span class="badge red">DIS</span>' : '') + (r.crit ? '<span class="badge">NAT 20 · CRIT</span>' : '') + (r.fumble ? '<span class="badge red">NAT 1</span>' : '') + (r.isCrit ? '<span class="badge">CRIT ×2 DICE</span>' : '') + (r.note ? `<span class="muted" style="font-weight:400;font-size:.85rem">${esc(r.note)}</span>` : '');
@@ -7633,7 +7676,7 @@ function charsHtml() {
     <button class="btn small" data-act="modal" data-v="export" data-id="${c.id}">Export</button>
     ${list.length > 1 ? `<button class="btn small ${ui.confirm === 'del-' + c.id ? 'danger' : ''}" data-act="delchar" data-id="${c.id}">${ui.confirm === 'del-' + c.id ? 'Confirm delete' : 'Delete'}</button>` : ''}</div>`).join('')}</div>
     <div class="addrow"><button class="btn primary" data-act="newchar">New blank character</button><button class="btn" data-act="sample">Add example character</button><button class="btn" data-act="modal" data-v="import">Import</button><button class="btn" data-act="pdfopen">Import from PDF</button><button class="btn" data-act="modal" data-v="classes">Classes${myClasses.length ? ' (' + myClasses.length + ')' : ''}</button>${IN_OBR && OBRX.ready && OBRX.me.role !== 'GM' ? '<button class="btn" data-act="modal" data-v="pcbrestore">Restore from GM</button>' : ''}</div>
-    <div class="muted" style="font-size:.85rem">Characters are saved in this browser automatically. Export a character to back it up or move it to another device.</div></div>`;
+    <div class="muted" style="font-size:.85rem">${IN_OBR ? 'Inside Owlbear, Grimsheet keeps its own characters, apart from the website and other devices. To bring one here, open it where you made it, choose <b>Export</b>, then <b>Import</b> it here.' : 'Characters are saved in this browser automatically. Export a character to back it up or move it to another device. In Owlbear, Grimsheet keeps its own characters: import them there too.'}</div></div>`;
 }
 function addModuleHtml() {
   const c = C(); const hidden = c.modules.filter(m => c.hidden.includes(m.id));
@@ -7867,6 +7910,12 @@ function editorHtml(m) {
       ${fld('Type', 'damage.' + i + '.type', p.type, { list: 'dtypes', ph: 'slashing' })}
       <button class="ico" data-act="dpartdel" data-i="${i}" title="Remove this part" style="margin-bottom:22px">${ICON.trash}</button></div>`).join('') + `<div><button class="btn small" data-act="dpartadd">+ Another damage part</button></div>`);
 
+  h += sec('repeat', 'Again on later turns', 'A second button for what it does on later turns (Witch Bolt\'s 1d12, Spiritual Weapon\'s attack). Leave the dice empty to use the damage above.', !!d.repeat, d.repeat ? `<div class="frow">
+      <label class="fld"><span>Takes</span><select id="d-rep-act" data-d="repeat.action">${[['', 'Nothing in particular'], ['bonus', 'A bonus action'], ['action', 'An action']].map(([v, l]) => `<option value="${v}" ${d.repeat.action === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      ${fld('Dice', 'repeat.damage.0.dice', (d.repeat.damage[0] || {}).dice || '', { formula: 'dice', ph: 'same as above' })}
+      ${fld('Type', 'repeat.damage.0.type', (d.repeat.damage[0] || {}).type || '', { list: 'dtypes', ph: 'lightning' })}</div>
+      <div class="checks"><label><input type="checkbox" id="d-rep-atk" data-d="repeat.attack" ${d.repeat.attack ? 'checked' : ''}> Rolls to hit again</label><label><input type="checkbox" id="d-rep-up" data-d="repeat.upcast" ${d.repeat.upcast ? 'checked' : ''}> Grows with the slot it was cast with</label></div>` : '');
+
   h += sec('save', 'Saving throw', 'Shows the DC on the sheet. Use SPELLDC for your spell save DC.', !!d.save, d.save ? `<div class="frow">
       <label class="fld"><span>Save ability</span><select id="d-save-ab" data-d="save.ability">${abilOptions(d.save.ability)}</select></label>
       ${fld('DC', 'save.dc', d.save.dc, { formula: 'num', ph: '8 + PROF + WIS' })}</div>` : '');
@@ -7920,6 +7969,7 @@ function editorHtml(m) {
 const SEC_DEFAULT = {
   attack: () => ({ ability: 'STR', prof: true, bonus: '', crit: 20 }),
   damage: () => [{ dice: '1d6', mod: '', type: '' }],
+  repeat: () => ({ action: 'bonus', attack: false, damage: [{ dice: '', mod: '', type: '' }], upcast: false }),
   save: d => ({ ability: 'DEX', dc: d.spell ? 'SPELLDC' : '8 + PROF + CON' }),
   counter: () => ({ kind: 'boxes', max: '1', used: 0, reset: 'long', recover: 'all' }),
   reroll: () => ({ on: 'd20', dice: 'one', low: 1, keep: 'new', bonus: '' }),
@@ -7991,7 +8041,8 @@ document.addEventListener('click', ev => {
     case 'toggle': if (ui.open.has(id)) ui.open.delete(id); else ui.open.add(id); renderGrid(); break;
     case 'pin': f.e.pinned = !f.e.pinned; rerender(); break;
     case 'atk': rollAttack(f.e); break;
-    case 'dmg': rollDamage(f.e, !!el.dataset.crit, +el.dataset.lvl || 0); break;
+    case 'dmg': rollDamage(f.e, !!el.dataset.crit, +el.dataset.lvl || 0, !!el.dataset.rep); break;
+    case 'rep': if (f.e.repeat && f.e.repeat.attack && f.e.attack) rollAttack(f.e, true); else rollDamage(f.e, false, 0, true); break;
     case 'healme': { const amt = +el.dataset.amt || 0; const before = c.hp.cur; c.hp.cur = Math.min(c.hp.max, c.hp.cur + amt); if (c.hp.cur > 0) c.death = { s: 0, f: 0 }; toast('Healed ' + (c.hp.cur - before) + ' HP.'); el.disabled = true; save(); renderGrid(); break; }
     case 'tdice': roll('Roll ' + v, [{ f: v }]); break;
     case 'ubox': { const ct = f.e.counter; ct.used = i < ct.used ? i : i + 1; rerender(); break; }
@@ -8008,6 +8059,7 @@ document.addEventListener('click', ev => {
     case 'castat': {
       hidePop(); const e = f.e; const lvl = +v; const base = +e.spell.level || 1;
       if (lvl) c.slots[lvl].used++;
+      if (e.repeat) e.castLvl = lvl || base;
       if (e.tags.conc) startConc(e);
       const fu = []; if (e.attack) fu.push({ label: 'Spell attack', act: 'atk', id: e.id });
       if (e.damage.length) fu.push({ label: isHealing(e) ? 'Roll healing' : 'Roll damage', act: 'dmg', id: e.id, lvl: lvl || base });
@@ -8290,6 +8342,7 @@ function saveEditor() {
   if (d.spell) d.spell.level = Math.max(0, Math.min(9, +d.spell.level || 0));
   if (d.creature) { d.creature.hpMax = +d.creature.hpMax || 0; d.creature.hp = Math.min(+d.creature.hp || 0, d.creature.hpMax); }
   d.damage = d.damage.filter(p => p.dice || p.mod);
+  if (d.repeat) d.repeat.damage = (d.repeat.damage || []).filter(p => p.dice);
   if (m.room) return hbSaveDraft(m, d);
   const mod = C().modules.find(x => x.id === m.mid);
   const f = findEntry(d.id);
