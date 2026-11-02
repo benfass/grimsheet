@@ -7,6 +7,14 @@ Setup (once):
 Run (Firefox is the default; Selenium downloads the matching driver by itself):
     python browser_check.py
     python browser_check.py --browser edge        # or chrome
+
+Safari's engine on Windows or Linux (Playwright's WebKit, the same engine Safari is built on):
+    pip install playwright
+    python -m playwright install webkit
+    python browser_check.py --browser webkit      # a desktop Safari-sized window
+    python browser_check.py --browser iphone      # an iPhone 13 screen, touch and user agent
+Real Safari (on a Mac, after "Allow Remote Automation" in Safari's Develop menu):
+    python browser_check.py --browser safari
     python browser_check.py --headless            # without a visible window
     python browser_check.py --url http://localhost:8794/index.html
 
@@ -22,7 +30,7 @@ except ImportError:
     sys.exit('Selenium is missing. Install it with:  pip install selenium')
 
 ap = argparse.ArgumentParser(description='Check Grimsheet in a real browser.')
-ap.add_argument('--browser', default='firefox', choices=['firefox', 'chrome', 'edge', 'webkit'])
+ap.add_argument('--browser', default='firefox', choices=['firefox', 'chrome', 'edge', 'safari', 'webkit', 'iphone', 'webkitgtk', 'pw-chromium'])
 ap.add_argument('--url', default='https://benfass.github.io/grimsheet/index.html')
 ap.add_argument('--headless', action='store_true')
 ap.add_argument('--slow', type=float, default=1.0, help='multiply the waits (2 = twice as slow)')
@@ -33,8 +41,36 @@ os.makedirs(OUT, exist_ok=True)
 results = []
 
 
+class PW:
+    """Playwright behind the few Selenium calls this script uses (for WebKit on Windows and Linux)."""
+    def __init__(self, engine, device=None):
+        from playwright.sync_api import sync_playwright
+        self.pw = sync_playwright().start()
+        self.browser = getattr(self.pw, engine).launch(headless=args.headless)
+        opts = dict(self.pw.devices[device]) if device else {'viewport': {'width': 1200, 'height': 900}}
+        self.ctx = self.browser.new_context(**opts)
+        self.page = self.ctx.new_page()
+        self.device = device
+    def get(self, url): self.page.goto(url)
+    def refresh(self): self.page.reload()
+    def set_window_size(self, w, h):
+        if not self.device: self.page.set_viewport_size({'width': w, 'height': h})
+    def save_screenshot(self, path): self.page.screenshot(path=path)
+    def execute_script(self, script, *a):
+        # Selenium scripts read their values from "arguments" and "return" a result
+        return self.page.evaluate('(a) => (function () {' + script + '}).apply(null, a)', list(a))
+    def quit(self): self.browser.close(); self.pw.stop()
+
+
 def start():
     b = args.browser
+    if b in ('webkit', 'iphone', 'pw-chromium'):
+        try:
+            return PW('chromium' if b == 'pw-chromium' else 'webkit', 'iPhone 13' if b == 'iphone' else None)
+        except ImportError:
+            sys.exit('Playwright is missing. Install it with:  pip install playwright  and then:  python -m playwright install webkit')
+    if b == 'safari':
+        return webdriver.Safari()
     if b == 'firefox':
         o = webdriver.FirefoxOptions()
         if args.headless: o.add_argument('-headless')
@@ -47,7 +83,7 @@ def start():
         o = webdriver.EdgeOptions()
         if args.headless: o.add_argument('--headless=new')
         return webdriver.Edge(options=o)
-    o = webdriver.WebKitGTKOptions()  # Linux only (used to try this script out)
+    o = webdriver.WebKitGTKOptions()  # webkitgtk: Linux only (used to try this script out)
     o.binary_location = '/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/MiniBrowser'
     o.add_argument('--automation')
     return webdriver.WebKitGTK(options=o)
@@ -217,7 +253,8 @@ def _():
 
 @step('Narrow window: nothing sticks out sideways')
 def _():
-    d.set_window_size(420, 860); wait(1)
+    if args.browser != 'iphone': d.set_window_size(420, 860)
+    wait(1)
     w = js("return [document.documentElement.scrollWidth, innerWidth]")
     d.save_screenshot(os.path.join(OUT, 'narrow.png'))
     d.set_window_size(1200, 900); wait(0.5)
