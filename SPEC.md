@@ -493,7 +493,7 @@ Ordered by when it gets built. Priority applies inside a goal.
 
 - **Guided tours**: walk-throughs that dim the screen, light up one thing at a time and explain it in a bubble beside it, with Back, Next and Skip tour, a progress bar, and arrow keys and Esc. The bubble flips above or below to where there's room and stays on screen at phone widths. Steps whose target isn't on this person's screen are skipped (no token link outside Owlbear, no End turn outside combat). The tour finds its target again when the sheet redraws.
 - **Four tours**:
-  - **The sheet**: rolling, advantage, HP, conditions, adding entries, the roll tray, Edit mode, level up and rests, search, Settings (12 steps).
+  - **The sheet**: your character, bringing one in (Import from PDF, Import) and homebrew classes and subclasses (Classes), both shown in the Characters dialog the tour opens, then rolling, advantage, HP, conditions, adding entries, the roll tray, Edit mode, level up and rests, search, Settings (14 steps, 1.37.2).
   - **Playing in Owlbear**: token link, initiative, targets, End turn, the party, room homebrew and GM backups (7).
   - **Running the game** (GM): the views, monsters and their cards, adding the party and asking for initiative, running combat, the Party view, notes, backups (9). It opens the views it talks about.
   - **The simple character**: name, AC and initiative, HP, the full sheet (4).

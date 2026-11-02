@@ -3209,7 +3209,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.37.1';
+const APP_VERSION = '1.37.2';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -7306,7 +7306,9 @@ const TOURS = {
     title: 'The sheet', when: () => !gmMode(), steps: [
       { title: 'Welcome to Grimsheet', text: 'A character sheet that does the maths and rolls the dice. This tour takes a minute; you can leave it any time and replay it from Settings.' },
       { sel: '#top .ident', title: 'Your character', text: 'Name, species, class and level. Open <b>Characters</b> to switch characters, make a new one, import one, or export a copy.' },
-      { sel: () => modEl('abilities'), title: 'Tap any number to roll', text: 'Every bonus with a dotted underline is a button: abilities, saves, skills, attacks, damage. The result appears at the bottom, with the dice shown.' },
+      { sel: '[data-act=pdfopen]', before: () => { if (!ui.modal || ui.modal.type !== 'chars') openModal('chars'); }, title: 'Bring in your character', text: '<b>Import from PDF</b> reads a filled-in character sheet PDF (a D&amp;D Beyond export, or most fillable sheets): abilities, skills, attacks, spells and features, and shows you what it found before adding it. <b>Import</b> takes a Grimsheet file, like one exported on another device.' },
+      { sel: '.dlg [data-act=modal][data-v=classes]', before: () => { if (!ui.modal || ui.modal.type !== 'chars') openModal('chars'); }, title: 'Homebrew classes and subclasses', text: 'Open <b>Classes</b> and give it a PDF or pasted text: a homebrew class, or new subclasses for the basic classes (like Tasha’s). After that, levelling up offers those subclasses and adds each feature with its full text.' },
+      { sel: () => modEl('abilities'), before: () => { if (ui.modal) closeModal(); }, title: 'Tap any number to roll', text: 'Every bonus with a dotted underline is a button: abilities, saves, skills, attacks, damage. The result appears at the bottom, with the dice shown.' },
       { sel: '#top .seg.adv', title: 'Advantage and disadvantage', text: 'Set it before you roll. It goes back to Normal after the roll.' },
       { sel: '#hp-qm', title: 'Hit points', text: 'Type <b>-7</b> for damage, <b>+5</b> to heal, or a number to set it. Temporary HP has its own box, and damage takes it first.', place: 'below' },
       { sel: '.cond', title: 'Conditions', text: 'Tap to turn one on. Grimsheet applies what it does to your rolls (Poisoned gives disadvantage, for example) and can count down how long it lasts.' },
