@@ -511,3 +511,22 @@ Ordered by when it gets built. Priority applies inside a goal.
   - Outside Owlbear, or without a GM running Grimsheet, the banner suggests Export as before.
   - The tour offer isn't shown when storage is blocked, since "No thanks" couldn't be remembered.
   - Tested: a player with storage blocked set name, AC 17 and took 4 damage. The GM held the copy within seconds, and after a reload the player was back as Thorin, AC 17, 6 HP.
+
+
+## Built in app 1.39
+
+- **Create a character** (Characters dialog, the simple character's banner, the sheet tour): a step-by-step wizard following the 2024 rules in the SRD 5.2.
+  - **Class**: the 12 basic classes with hit die, saves and whether they cast; a fighter picks a fighting style. Choose a starting level; above 1, the level-up wizard follows once per level.
+  - **Species**: the 9 SRD species, with size, speed and traits. Choices: dragonborn ancestry (sets the breath weapon and resistance type), elven, gnomish and fiendish lineage, giant ancestry. An elf's Keen Senses skill; a human's Skillful skill and Versatile origin feat.
+  - **Background**: Acolyte, Criminal, Sage or Soldier, or another one you name, with its three abilities, two skills, origin feat and tool. The bonus is +2/+1 (placed on the class's best abilities by default) or +1/+1/+1.
+  - **Abilities**: standard array (assigned in the class's order), point buy (27 points, 8–15, with the running total) or 4d6 drop the lowest. Totals include the background's bonus; the class's key abilities are highlighted.
+  - **Skills**: the class's number from its list; ones the background or species give are shown ticked and not counted.
+  - **Equipment**: the class's starting armor, shield and weapons, changeable within its training, with the AC worked out (Unarmored Defense for barbarians and monks).
+  - **Spells** (casters): cantrips and 1st-level spells from the class list, capped at what level 1 allows.
+  - **Finish**: a summary, then the sheet. It has scores and saves, skills, HP (the hit die's maximum + CON, +1 for a dwarf), AC, speed, slots, weapons as attacks, armor and shield, class features (level-1 features the rules pack lacks get a short text), species traits and the origin feat. Notes cover training, size and languages. Spells are hidden for non-casters, and an untouched placeholder character is replaced.
+- **Prepare spells** (a button in the Spells module, for bard, cleric, druid, paladin, ranger, sorcerer, warlock and wizard):
+  - It shows the class's SRD 5.2 spell list up to the highest spell level its slots reach, with a running count against the 2024 prepared-spells and cantrips-known tables for its level.
+  - Ticking adds the spell with its full SRD entry; unticking takes it off (undo puts it back).
+  - Spells from elsewhere (subclass, feats) are listed separately and not counted. Multiclass casters switch between classes. Going over the limit is allowed, with a warning, for features that grant extra spells.
+- **After a level-up**: the level-up dialog shows the new prepared and cantrip counts (with the increase). Prepare spells opens by itself when the count, cantrips or highest spell level went up, and after the last level of a higher starting level.
+- **Fix**: adding a spell from the built-in rules failed in 1.35–1.38 (an error when reading its repeat damage); fixed.
