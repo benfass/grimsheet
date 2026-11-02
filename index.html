@@ -468,9 +468,9 @@ select.ed-inline{width:auto}
 .mdet{font-size:.86rem;display:flex;flex-direction:column;gap:4px;border-top:1px solid var(--line);padding-top:6px}
 .medit{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;font-size:.85rem;background:var(--sunk);border-radius:8px;padding:6px 8px}
 .medit input.ed-inline{width:58px}
-.setrow{display:flex;align-items:center;gap:12px;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line)}
+.setrow{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line)}
 .setrow:last-child{border-bottom:0}
-.setrow .grow{flex:1;min-width:0}
+.setrow .grow{flex:1 1 220px;min-width:0}
 .setrow .muted{font-size:.85rem}
 @media (max-width:560px){.tray .quick{display:none}.tray .tot{font-size:1.6rem;min-width:48px}}
 
@@ -3209,7 +3209,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.37.0';
+const APP_VERSION = '1.37.1';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -7400,7 +7400,6 @@ function tourGo(i, dir) {
   if (i >= steps.length) { tourFinish(); return; }
   TOUR.i = i;
   const st = steps[i], el = tourTarget(st);
-  if (el) el.scrollIntoView({ block: 'center', inline: 'nearest' });
   const shown = steps.filter((s, k) => k <= i).length;
   TOUR.el.querySelector('.tour-f').innerHTML = '<span class="tour-n"></span><button class="btn small ghost" data-tour="skip">Skip tour</button><span class="sp"></span><button class="btn small" data-tour="back">Back</button><button class="btn small primary" data-tour="next">Next</button>';
   TOUR.el.querySelector('.tour-t').innerHTML = st.title;
@@ -7410,6 +7409,7 @@ function tourGo(i, dir) {
   TOUR.el.querySelector('[data-tour=back]').disabled = i === 0;
   const nx = TOUR.el.querySelector('[data-tour=next]'); nx.textContent = steps.slice(i + 1).some(s => !s.sel || tourTarget(s) || s.before) ? 'Next' : 'Done';
   tourPlace();
+  if (el) { tourScroll(el); tourPlace(); }
   setTimeout(() => { const b = TOUR.el.querySelector('[data-tour=next]'); if (b) b.focus({ preventScroll: true }); }, 0);
 }
 // the end of a tour: offer the next one that fits (the Owlbear tour after the sheet tour)
@@ -7426,6 +7426,16 @@ function tourEnd() {
   if (TOUR.key && TOUR.i >= 0) { SETTINGS.toursDone = Object.assign({}, SETTINGS.toursDone, { [TOUR.key]: true }); saveSettings(); }
   TOUR.key = null; if (!TOUR.el) return;
   TOUR.el.remove(); TOUR.el = null; if (TOUR.obs) TOUR.obs.disconnect(); TOUR.obs = null;
+}
+// scroll so the target and its bubble both fit on screen; a target taller than the screen shows its top part
+// with the bubble below (small screens, the Owlbear panel on a phone)
+function tourScroll(el) {
+  el.scrollIntoView({ block: 'nearest', inline: 'nearest' }); // inside any scrolling box first
+  const H = window.innerHeight, bh = TOUR.el.querySelector('.tour-bub').offsetHeight, r = el.getBoundingClientRect();
+  const need = r.height + bh + 28;
+  const want = need <= H ? Math.max(8, (H - need) / 2) : 8; // where the target's top should land
+  const dy = r.top - want;
+  if (Math.abs(dy) > 2) window.scrollTo({ top: Math.max(0, window.scrollY + dy), behavior: 'auto' });
 }
 // place the spotlight on the target and the bubble beside it, where there's room
 function tourPlace() {
@@ -7446,7 +7456,7 @@ function tourPlace() {
   if (side === 'below' && below < bh + gap + 8 && above >= bh + gap + 8) side = 'above';
   if (side === 'above' && above < bh + gap + 8 && below >= bh + gap + 8) side = 'below';
   let top = side === 'below' ? y + h + gap : y - bh - gap;
-  top = Math.max(8, Math.min(H - bh - 8, top));
+  const clamped = Math.max(8, Math.min(H - bh - 8, top)); if (clamped !== top) side = 'none'; top = clamped;
   const left = Math.max(12, Math.min(W - bw - 12, r.left + r.width / 2 - bw / 2));
   bub.style.left = Math.round(left) + 'px'; bub.style.top = Math.round(top) + 'px'; bub.dataset.side = side;
   bub.style.setProperty('--arrow', Math.round(Math.max(16, Math.min(bw - 16, r.left + r.width / 2 - left))) + 'px');
@@ -7459,8 +7469,8 @@ function tourOfferHtml() {
 }
 function tourSettingsHtml() {
   const ks = toursFor();
-  return `<div class="setrow"><div class="grow"><b>Tours</b><div class="muted">Short walk-throughs with bubbles that point at each part of the screen.</div></div>
-    <div class="inline">${Object.keys(TOURS).map(k => `<button class="btn small" data-act="tour" data-v="${k}" ${ks.includes(k) ? '' : `disabled title="${k === 'owlbear' ? 'In an Owlbear room, as a player' : k === 'gm' ? 'In an Owlbear room, as the GM' : k === 'simple' ? 'With a simple character open' : 'On your character sheet'}"`}>${esc(TOURS[k].title)}${(SETTINGS.toursDone || {})[k] ? ' ✓' : ''}</button>`).join('')}</div></div>`;
+  return `<div class="setrow"><div class="grow"><b>Tours</b><div class="muted">Short walk-throughs with bubbles that point at each part of the screen.</div>
+    <div class="inline" style="margin-top:6px;flex-wrap:wrap;gap:6px">${Object.keys(TOURS).map(k => `<button class="btn small" data-act="tour" data-v="${k}" ${ks.includes(k) ? '' : `disabled title="${k === 'owlbear' ? 'In an Owlbear room, as a player' : k === 'gm' ? 'In an Owlbear room, as the GM' : k === 'simple' ? 'With a simple character open' : 'On your character sheet'}"`}>${esc(TOURS[k].title)}${(SETTINGS.toursDone || {})[k] ? ' ✓' : ''}</button>`).join('')}</div></div></div>`;
 }
 
 function renderGrid() { renderGridInner(); try { paintInline(); } catch (e) { } }
