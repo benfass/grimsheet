@@ -499,3 +499,15 @@ Ordered by when it gets built. Priority applies inside a goal.
   - **The simple character**: name, AC and initiative, HP, the full sheet (4).
 - **Small screens** (1.37.1): each step scrolls the page so the lit-up part and its bubble fit together; a part taller than the screen shows its top with the bubble at the bottom. Checked at 360×480, 400×620 and 1200×500, and in a 400×560 Owlbear panel. Settings rows now wrap on narrow screens (controls drop below their description; the Tours buttons sit under their text).
 - **When**: a banner offers the tour that fits once (the GM tour in GM mode, the simple one for a simple character, otherwise the sheet tour); "No thanks" hides it for good. At the end of a tour, the next one that fits is offered (after the sheet or simple tour in Owlbear, the Owlbear tour). Settings has a Tours row to replay any of them, with ✓ for finished ones; tours that don't apply here are greyed out with the reason.
+
+
+## Built in app 1.38
+
+- **When the browser blocks storage** (cookies and site data turned off): Grimsheet works fully for the session but can't keep anything. As a player in an Owlbear room, the GM's Grimsheet becomes the place your character is kept:
+  - changes go to the GM within about 3 seconds (instead of a minute), and again when the page is hidden or closed;
+  - what was sent is remembered in memory;
+  - on reopening, the newest character the GM holds is restored by itself, with no button to press.
+  - The banner says storage is blocked, that the character is kept with the GM and comes back when you reopen, whether the GM has the latest changes, and that Characters → Export makes a copy of your own.
+  - Outside Owlbear, or without a GM running Grimsheet, the banner suggests Export as before.
+  - The tour offer isn't shown when storage is blocked, since "No thanks" couldn't be remembered.
+  - Tested: a player with storage blocked set name, AC 17 and took 4 damage. The GM held the copy within seconds, and after a reload the player was back as Thorin, AC 17, 6 HP.

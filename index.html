@@ -3209,7 +3209,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.37.2';
+const APP_VERSION = '1.38.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -5852,19 +5852,25 @@ async function bkSendParts(base, data) {
 }
 
 /* ---- players: send changed characters to the GM ---- */
-let pcbT = null;
-function pcbSoon(ms) { clearTimeout(pcbT); pcbT = setTimeout(pcbPush, ms || 60e3); }
+let pcbT = null, pcbSentMem = {};
+// when this browser can't save (cookies and site data blocked), the GM's copy is the only one: send changes within
+// seconds instead of a minute, and remember what was sent in memory
+const pcbSentGet = () => storageOK ? (readJSON(PCBSENT) || {}) : pcbSentMem;
+const pcbSentPut = v => { if (storageOK) writeJSON(PCBSENT, v); else pcbSentMem = v; };
+function pcbSoon(ms) { clearTimeout(pcbT); pcbT = setTimeout(pcbPush, ms || (storageOK ? 60e3 : 3000)); }
 async function pcbPush() {
   if (!IN_OBR || !OBRX.ready || ui.viewing || OBRX.me.role === 'GM') return;
-  const sent = readJSON(PCBSENT) || {};
+  const sent = pcbSentGet();
   for (const c of Object.values(store.chars)) {
     if (isPlaceholder(c) || !c.changedAt || (sent[c.id] && sent[c.id].changedAt >= c.changedAt)) continue;
     const data = await packJSON(c);
-    sent[c.id] = { changedAt: c.changedAt, at: Date.now(), acked: false }; writeJSON(PCBSENT, sent);
+    sent[c.id] = { changedAt: c.changedAt, at: Date.now(), acked: false }; pcbSentPut(sent);
     await bkSendParts({ type: 'pcb', id: uid(), from: OBRX.me.id, owner: OBRX.me.name, charId: c.id, name: c.name, cls: [c.species, c.cls].filter(Boolean).join(' '), level: c.level, changedAt: c.changedAt }, data);
   }
 }
 const hasRealChars = () => Object.values(store.chars).some(c => !isPlaceholder(c));
+window.addEventListener('pagehide', () => { if (!storageOK) pcbPush(); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && !storageOK) pcbPush(); });
 function pcbAsk() { if (IN_OBR && OBRX.ready && OBRX.me.role !== 'GM') { ui.pcbReq = uid(); ui.pcbList = null; bkSend({ type: 'pcbList', id: ui.pcbReq, from: OBRX.me.id }); } }
 async function pcbRestore(charId) {
   ui.pcbGet = { id: uid(), charId }; bkSend({ type: 'pcbGet', id: ui.pcbGet.id, from: OBRX.me.id, charId });
@@ -5877,7 +5883,7 @@ async function pcbReceived(d) {
   if (mine && (mine.changedAt || 0) > (ch.changedAt || 0) && !ui.pcbForce) { ui.pcbForce = ch.id; toast(`Your copy of ${mine.name} here is newer than the GM's. Tap Restore again to replace it anyway.`); renderModal(); return; }
   ui.pcbForce = null; normalize(ch); store.chars[ch.id] = ch; store.active = ch.id;
   Object.keys(store.chars).forEach(k => { if (isPlaceholder(store.chars[k]) && k !== ch.id) delete store.chars[k]; });
-  const sent = readJSON(PCBSENT) || {}; sent[ch.id] = { changedAt: ch.changedAt, at: Date.now(), acked: true }; writeJSON(PCBSENT, sent);
+  const sent = pcbSentGet(); sent[ch.id] = { changedAt: ch.changedAt, at: Date.now(), acked: true }; pcbSentPut(sent);
   ui.open.clear(); save(); closeModal(); render(); if (IN_OBR) publishStatus();
   toast(`${ch.name} restored from the GM's backup.`);
 }
@@ -5900,9 +5906,10 @@ async function bkReceive(d) {
     if (d.type === 'pcbGet') { const x = pcbFor(d.from).chars[d.charId]; if (x) await bkSendParts({ type: 'pcbData', id: d.id, to: d.from, charId: d.charId }, x.data); return; }
   }
   if (gm || d.to !== OBRX.me.id) return;
-  if (d.type === 'pcbAck') { const sent = readJSON(PCBSENT) || {}; if (sent[d.charId] && sent[d.charId].changedAt === d.changedAt) { sent[d.charId].acked = true; sent[d.charId].at = Date.now(); writeJSON(PCBSENT, sent); renderBanner(); } return; }
+  if (d.type === 'pcbAck') { const sent = pcbSentGet(); if (sent[d.charId] && sent[d.charId].changedAt === d.changedAt) { sent[d.charId].acked = true; sent[d.charId].at = Date.now(); pcbSentPut(sent); renderBanner(); } return; }
   if (d.type === 'pcbIndex' && d.re === ui.pcbReq) {
     ui.pcbList = d.list || [];
+    if (!storageOK && !hasRealChars() && ui.pcbList.length && !ui.pcbAuto) { ui.pcbAuto = true; const x = ui.pcbList.slice().sort((a, b) => (b.changedAt || 0) - (a.changedAt || 0))[0]; pcbRestore(x.charId); return; }
     if (ui.modal && ui.modal.type === 'pcbrestore') renderModal();
     else if (!hasRealChars() && ui.pcbList.length) renderBanner();
     return;
@@ -5910,7 +5917,7 @@ async function bkReceive(d) {
   if (d.type === 'pcbData' && ui.pcbGet && d.id === ui.pcbGet.id) return pcbReceived(d);
 }
 // is this character safe with the GM? (used to quiet the "never backed up" reminder)
-function gmHasCopy(c) { const s = (readJSON(PCBSENT) || {})[c.id]; return !!(s && s.acked && Date.now() - s.at < 7 * 864e5); }
+function gmHasCopy(c) { const s = pcbSentGet()[c.id]; return !!(s && s.acked && Date.now() - s.at < 7 * 864e5); }
 
 /* ---- GM: save to / load from the Owlbear library ---- */
 const GSB = 'GSB1:';
@@ -7275,7 +7282,9 @@ function renderBanner() {
   }
   h += bkBannerHtml();
   h += levelUndoBanner(c);
-  if (!storageOK) h += `<div class="banner warn">This browser view isn't saving changes. Use <b>Characters → Export</b> to keep a copy of your character.</div>`;
+  if (!storageOK) h += IN_OBR && !isGM()
+    ? `<div class="banner warn"><span style="flex:1;min-width:200px">This browser blocks Grimsheet from saving (cookies or site data are turned off). Your character is backed up to your GM's Grimsheet as you play and comes back by itself when you reopen Grimsheet in this room${gmHasCopy(c) ? ' (the GM has your latest changes)' : ''}. For a copy of your own, use <b>Characters → Export</b>.</span></div>`
+    : `<div class="banner warn">This browser view isn't saving changes (cookies or site data are turned off). Use <b>Characters → Export</b> to keep a copy of your character.</div>`;
   const DAY = 864e5;
   if (!isPlaceholder(c) && !c.simple && !ui.backupLater && !gmHasCopy(c) && c.changedAt && (c.lastBackup ? c.changedAt > c.lastBackup && Date.now() - c.lastBackup > 3 * DAY : Date.now() - (c.createdAt || Date.now()) > DAY)) {
     h += `<div class="banner"><span style="flex:1;min-width:200px">${esc(c.name)} ${c.lastBackup ? 'was last backed up ' + Math.floor((Date.now() - c.lastBackup) / DAY) + ' days ago' : 'has never been backed up'}. Characters live in this browser only, so keep a copy in case it gets cleared.</span><button class="btn small" data-act="backupnow">Back up now</button><button class="btn small ghost" data-act="backuplater">Later</button></div>`;
@@ -7465,7 +7474,7 @@ function tourPlace() {
 }
 // the offer, once, in the banner area (it doesn't cover anything)
 function tourOfferHtml() {
-  if (SETTINGS.tourOffer === false || ui.viewing || TOUR.key) return '';
+  if (SETTINGS.tourOffer === false || ui.viewing || TOUR.key || !storageOK) return ''; // can't remember "No thanks" without storage
   const k = firstTour(); if (!TOURS[k] || !toursFor().includes(k)) return '';
   return `<div class="banner" style="background:var(--accent-soft)"><span style="flex:1;min-width:200px">New to Grimsheet? A short tour shows you the ropes: <b>${esc(TOURS[k].title)}</b>.</span><button class="btn small primary" data-act="tour" data-v="${k}">Show me around</button><button class="btn small ghost" data-act="touroff">No thanks</button></div>`;
 }
