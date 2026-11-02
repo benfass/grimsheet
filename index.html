@@ -77,6 +77,7 @@ button{cursor:pointer}
 
 .banner{max-width:1500px;margin:12px auto 0;display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;padding:8px 12px;border-radius:8px;background:var(--gold-soft);color:var(--ink);font-size:.9rem}
 .banner.warn{background:var(--danger-soft)}
+.simple-h{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px}
 .chip.warnchip{background:var(--danger-soft);color:var(--danger);border-color:transparent}
 
 /* grid */
@@ -3196,7 +3197,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.35.0';
+const APP_VERSION = '1.36.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -3268,74 +3269,16 @@ function blankChar(name = 'New Character') {
     hidden: [],
   };
 }
-function sampleChar() {
-  const c = blankChar('Brann Ashvale');
-  Object.assign(c, { cls: 'Paladin (Oath of Devotion)', level: 5, species: 'Human', background: 'Acolyte', example: true, hitDie: 'd10', hdUsed: 1,
-    hp: { cur: 37, max: 44, temp: 0 }, acFormula: '17', speed: '30 ft', spellAbility: 'CHA',
-    currency: { cp: 12, sp: 30, ep: 0, gp: 85, pp: 0 },
-    notes: 'Sworn to protect the shrine at Millbrook.\nOwes Captain Vell a favor.\nThe hooded stranger knew my mother\'s name.' });
-  const sc = { STR: 17, DEX: 10, CON: 14, INT: 8, WIS: 12, CHA: 16 };
-  c.abilities.forEach(a => { a.score = sc[a.key]; a.save = a.key === 'WIS' || a.key === 'CHA'; });
-  c.skills.forEach(s => { if (['Athletics', 'Insight', 'Religion', 'Persuasion'].includes(s.name)) s.prof = 1; if (s.name === 'Religion') s.prof = 2; });
-  c.slots[1] = { max: 4, used: 1 }; c.slots[2] = { max: 2, used: 0 };
-  c.conditions = [];
-  const M = t => c.modules.find(m => m.type === t);
-  M('attacks').entries = [
-    newEntry({ name: 'Longsword +1', short: 'Versatile (1d10 two-handed). Sap mastery.', text: 'Martial melee weapon. Versatile: 1d10 when used with two hands.\nMastery (Sap): on a hit, the target has disadvantage on its next attack roll before your next turn.',
-      tags: { action: 'action', conc: false, ritual: false }, pinned: true, attack: { ability: 'STR', prof: true, bonus: '1', crit: 20 }, damage: [{ dice: '1d8', mod: 'STR + 1', type: 'slashing' }] }),
-    newEntry({ name: 'Javelin', short: 'Thrown, range 30/120 ft.', text: 'Simple melee weapon. Thrown (range 30/120). Mastery (Slow): on a hit, the target\'s speed drops by 10 ft until the start of your next turn.',
-      tags: { action: 'action', conc: false, ritual: false }, attack: { ability: 'STR', prof: true, bonus: '', crit: 20 }, damage: [{ dice: '1d6', mod: 'STR', type: 'piercing' }] }),
-  ];
-  M('spells').entries = [
-    newEntry({ name: 'Bless', short: 'Up to 3 creatures add 1d4 to attack rolls and saving throws.', tags: { action: 'action', conc: true, ritual: false },
-      text: 'Level 1 Enchantment\nCasting Time: Action\nRange: 30 feet\nDuration: Concentration, up to 1 minute\n\nYou bless up to three creatures within range. Whenever a target makes an attack roll or a saving throw before the spell ends, the target adds 1d4 to the attack roll or save.\n\nUsing a Higher-Level Spell Slot: you can target one additional creature for each spell slot level above 1.',
-      spell: { level: 1, school: 'Enchantment', castTime: 'Action', range: '30 feet', duration: 'Concentration, up to 1 minute', components: 'V, S, M', upcast: '', cantrip: false },
-      effect: { active: false, attack: '1d4', damage: '', save: '1d4', ac: '', check: '', only: '' } }),
-    newEntry({ name: 'Cure Wounds', short: 'Touch: heal 2d8 + CHA.', tags: { action: 'action', conc: false, ritual: false },
-      text: 'Level 1 Abjuration\nCasting Time: Action\nRange: Touch\nDuration: Instantaneous\n\nA creature you touch regains a number of Hit Points equal to 2d8 plus your spellcasting ability modifier.\n\nUsing a Higher-Level Spell Slot: the healing increases by 2d8 for each spell slot level above 1.',
-      spell: { level: 1, school: 'Abjuration', castTime: 'Action', range: 'Touch', duration: 'Instantaneous', components: 'V, S', upcast: '2d8', cantrip: false },
-      damage: [{ dice: '2d8', mod: 'SPELL', type: 'healing' }] }),
-    newEntry({ name: 'Divine Smite', short: 'After a melee hit: +2d8 radiant (+1d8 vs fiends/undead).', tags: { action: 'bonus', conc: false, ritual: false }, pinned: true,
-      text: 'Level 1 Evocation\nCasting Time: Bonus action, taken right after hitting a target with a melee weapon\nRange: Self\nDuration: Instantaneous\n\nThe target takes an extra 2d8 radiant damage from the attack. The damage increases by 1d8 if the target is a Fiend or an Undead.\n\nUsing a Higher-Level Spell Slot: the damage increases by 1d8 for each spell slot level above 1.',
-      spell: { level: 1, school: 'Evocation', castTime: 'Bonus action', range: 'Self', duration: 'Instantaneous', components: 'V', upcast: '1d8', cantrip: false },
-      damage: [{ dice: '2d8', mod: '', type: 'radiant' }] }),
-    newEntry({ name: 'Shield of Faith', short: '+2 AC to one creature for 10 minutes.', tags: { action: 'bonus', conc: true, ritual: false },
-      text: 'Level 1 Abjuration\nCasting Time: Bonus action\nRange: 60 feet\nDuration: Concentration, up to 10 minutes\n\nA shimmering field surrounds a creature of your choice within range, granting it a +2 bonus to AC for the duration.',
-      spell: { level: 1, school: 'Abjuration', castTime: 'Bonus action', range: '60 feet', duration: 'Concentration, up to 10 minutes', components: 'V, S, M', upcast: '', cantrip: false },
-      effect: { active: false, attack: '', damage: '', save: '', ac: '2', check: '', only: '' } }),
-    newEntry({ name: 'Find Steed', short: 'Summon an otherworldly steed to ride.', tags: { action: 'action', conc: false, ritual: false },
-      text: 'Level 2 Conjuration\nCasting Time: Action\nRange: 30 feet\nDuration: Instantaneous\n\nYou summon an otherworldly being that appears as a loyal steed in an unoccupied space of your choice within range.',
-      spell: { level: 2, school: 'Conjuration', castTime: 'Action', range: '30 feet', duration: 'Instantaneous', components: 'V, S', upcast: '', cantrip: false } }),
-  ];
-  M('features').entries = [
-    newEntry({ name: 'Lay on Hands', short: 'Touch to restore HP from a pool of 5 × paladin level.', tags: { action: 'bonus', conc: false, ritual: false },
-      text: 'You have a pool of healing power that replenishes when you finish a Long Rest. With that pool, you can restore a total number of Hit Points equal to five times your Paladin level. As a Bonus Action, you can touch a creature and draw power from the pool to restore Hit Points to it.',
-      counter: { kind: 'pool', max: 'LEVEL*5', used: 5, reset: 'long', recover: 'all' } }),
-    newEntry({ name: 'Channel Divinity', short: '2 uses. Regain one on a short rest, all on a long rest.', tags: { action: 'action', conc: false, ritual: false },
-      text: 'You can channel divine energy directly from the Outer Planes. You can use this feature twice. You regain one expended use when you finish a Short Rest, and you regain all expended uses when you finish a Long Rest.',
-      counter: { kind: 'boxes', max: '2', used: 1, reset: 'short', recover: '1' } }),
-    newEntry({ name: 'Sacred Weapon', short: 'Channel Divinity: add CHA to attack rolls for 10 minutes.', tags: { action: 'action', conc: false, ritual: false },
-      text: 'When you take the Attack action, you can expend one use of your Channel Divinity to imbue one melee weapon that you are holding with positive energy. For 10 minutes, you add your Charisma modifier to attack rolls you make with that weapon, and it emits bright light in a 20-foot radius.',
-      effect: { active: false, attack: 'CHA', damage: '', save: '', ac: '', check: '', only: 'WEAPON' } }),
-    newEntry({ name: 'Emberblood (homebrew)', short: 'Bonus action: 10 ft burst, DEX save or 2d6 fire.', tags: { action: 'bonus', conc: false, ritual: false }, pinned: true,
-      text: 'Your blood carries the ember of an old fire god. As a bonus action, you ignite it. Each creature of your choice within 10 feet of you must make a Dexterity saving throw (DC equals 8 + your proficiency bonus + your Constitution modifier) or take 2d6 fire damage, or half as much on a success. You can use this a number of times equal to your proficiency bonus, and you regain all expended uses when you finish a long rest.',
-      save: { ability: 'DEX', dc: '8 + PROF + CON' }, damage: [{ dice: '2d6', mod: '', type: 'fire' }], counter: { kind: 'boxes', max: 'PROF', used: 0, reset: 'long', recover: 'all' } }),
-    newEntry({ name: 'Divine Health', short: 'Immune to disease.', text: 'The divine magic flowing through you makes you immune to disease.' }),
-  ];
-  M('inventory').entries = [
-    newEntry({ name: 'Splint Armor', short: 'Heavy armor, AC 17. Disadvantage on Stealth.', item: { qty: 1, weight: 60, equipped: true } }),
-    newEntry({ name: 'Shield', short: '+2 AC while equipped.', item: { qty: 1, weight: 6, equipped: true }, effect: { active: true, attack: '', damage: '', save: '', ac: '2', check: '', only: '' } }),
-    newEntry({ name: 'Potion of Healing', short: 'Drink to regain 2d4 + 2 HP.', tags: { action: 'bonus', conc: false, ritual: false }, item: { qty: 2, weight: 0.5, equipped: false }, damage: [{ dice: '2d4', mod: '2', type: 'healing' }] }),
-    newEntry({ name: 'Holy Symbol (amulet)', short: 'Spellcasting focus.', item: { qty: 1, weight: 1, equipped: true } }),
-    newEntry({ name: 'Rope, hempen (50 ft)', item: { qty: 1, weight: 10, equipped: false } }),
-  ];
-  M('companions').entries = [
-    newEntry({ name: 'Ashfoot (warhorse)', short: 'Steed from Find Steed. Acts on your initiative.', creature: { ac: '11', hpMax: 19, hp: 19, speed: '60 ft' },
-      text: 'Large celestial. Hooves: Melee Weapon Attack: +6 to hit, reach 5 ft. Hit: 11 (2d6 + 4) bludgeoning damage.',
-      attack: { ability: 'none', prof: false, bonus: '6', crit: 20 }, damage: [{ dice: '2d6', mod: '4', type: 'bludgeoning' }] }),
-  ];
+// a simple character: name, AC, HP, initiative and conditions only, for players whose sheet lives elsewhere.
+// It starts untouched ("fresh"); the first change to it makes it theirs.
+function simpleChar(name = 'Adventurer') {
+  const c = blankChar(name);
+  Object.assign(c, { simple: true, fresh: true, acFormula: '10', initBonus: '' });
+  c.hidden = c.modules.filter(m => m.type !== 'combat').map(m => m.id);
   return c;
 }
+// not a real character yet: the old example, or an untouched simple character
+const isPlaceholder = c => !!(c && (c.example || (c.simple && c.fresh)));
 /* ---------- layout: rows, each split into columns, each a stack of modules ---------- */
 const MAXCOLS = 4;
 function defaultLayout(c) {
@@ -3418,9 +3361,19 @@ function normalize(c) {
 /* ---------- storage ---------- */
 let storageOK = true;
 function load() {
-  try { const raw = localStorage.getItem(KEY); if (raw) { const s = JSON.parse(raw); if (s && s.chars && s.active && s.chars[s.active]) { Object.values(s.chars).forEach(normalize); return s; } } }
+  try { const raw = localStorage.getItem(KEY); if (raw) { const s = JSON.parse(raw); if (s && s.chars && s.active && s.chars[s.active]) { Object.values(s.chars).forEach(normalize); return dropExamples(s); } } }
   catch (e) { storageOK = false; }
-  const c = sampleChar(); return { chars: { [c.id]: c }, active: c.id };
+  const c = simpleChar(); return { chars: { [c.id]: c }, active: c.id };
+}
+// the example character (Brann Ashvale) is gone: remove it wherever it's still flagged as the example
+function dropExamples(s) {
+  const ex = Object.keys(s.chars).filter(k => s.chars[k].example);
+  if (!ex.length) return s;
+  ex.forEach(k => { delete s.chars[k]; });
+  if (!Object.keys(s.chars).length) { const c = simpleChar(); s.chars[c.id] = c; }
+  if (!s.chars[s.active]) s.active = Object.keys(s.chars)[0];
+  try { localStorage.setItem(KEY, JSON.stringify(s)); } catch (e) { }
+  return s;
 }
 let saveT = null;
 function save() { if (ui.viewing) return; if (IN_OBR && OBRX.ready && OBRX.me.role !== 'GM') pcbSoon(); const ch = store.chars[store.active]; if (ch) { ch.changedAt = Date.now(); if (downSync(ch)) setTimeout(() => { if (!ui.modal || ui.modal.type !== 'editor') render(); }, 0); } try { histRecord(); } catch (e) { } clearTimeout(saveT); saveT = setTimeout(() => { if (IN_OBR) publishStatus(); try { localStorage.setItem(KEY, JSON.stringify(store)); storageOK = true; } catch (e) { if (storageOK) { storageOK = false; renderBanner(); } } }, 250); }
@@ -3533,7 +3486,7 @@ window.addEventListener('storage', ev => {
   if (ev.key !== KEY || !ev.newValue) return;
   try {
     const s = JSON.parse(ev.newValue); if (!s || !s.chars) return;
-    Object.values(s.chars).forEach(normalize); clearTimeout(saveT); store = s;
+    Object.values(s.chars).forEach(normalize); clearTimeout(saveT); store = dropExamples(s);
     if (store.chars[store.active] && downSync(store.chars[store.active])) setTimeout(save, 0);
     if (!store.chars[store.active]) store.active = Object.keys(store.chars)[0];
     if (ui.modal && ui.modal.type === 'editor') { renderTop(); renderGrid(); } else render();
@@ -3592,7 +3545,7 @@ async function startOwlbear() {
 }
 function statusOf(c) {
   const ac = (() => { try { return E.staticSum(acComps(), CTX).flat; } catch (e) { return '?'; } })();
-  return { charId: c.id, char: c.name, ex: !!c.example, cls: [c.species, c.cls].filter(Boolean).join(' '), level: c.level, hp: c.hp.cur, max: c.hp.max, temp: c.hp.temp, ac, cond: c.conditions.concat(c.exhaustion ? ['Exhaustion ' + c.exhaustion] : []), dead: c.death.f >= 3, down: c.hp.cur <= 0, conc: c.conc ? c.conc.name : '', death: c.death, def: charDefenses(c), insp: !!c.inspiration };
+  return { charId: c.id, char: c.name, ex: isPlaceholder(c), cls: [c.species, c.cls].filter(Boolean).join(' '), level: c.level, hp: c.hp.cur, max: c.hp.max, temp: c.hp.temp, ac, cond: c.conditions.concat(c.exhaustion ? ['Exhaustion ' + c.exhaustion] : []), dead: c.death.f >= 3, down: c.hp.cur <= 0, conc: c.conc ? c.conc.name : '', death: c.death, def: charDefenses(c), insp: !!c.inspiration };
 }
 let statusT = null;
 function publishStatus() {
@@ -3802,7 +3755,7 @@ function partyMembers() {
   return others.map(p => {
     const s = p.s, pct = s.max ? Math.max(0, Math.min(100, s.hp / s.max * 100)) : 0;
     const ptok = (OBRX.pcTokens[p.id] || []).length;
-    return `<div class="entry" data-pm="${esc(p.id)}"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${tokImg((OBRX.pcTokens[p.id] || [])[0]) ? `<img class="tokimg sm" src="${esc(tokImg(OBRX.pcTokens[p.id][0]))}" alt="">` : ''}<b ${ptok ? `data-dblfocus="pc|${esc(p.id)}" title="Double-click to find their token"` : ''}>${esc(s.char)}</b>${ptok ? locateBtn('focus', `data-v="pc|${esc(p.id)}"`, 'Find their token on the map') : ''}<span class="muted" style="font-size:.85rem">${esc(p.name)}${p.role === 'GM' ? ' · GM' : ''}${s.cls ? ' · ' + esc(s.cls) : ''}${s.level ? ' ' + esc(s.level) : ''}</span>${s.ex ? '<span class="chip warnchip" title="Their open character is still the example, not their own">example character</span>' : ''}</div>
+    return `<div class="entry" data-pm="${esc(p.id)}"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${tokImg((OBRX.pcTokens[p.id] || [])[0]) ? `<img class="tokimg sm" src="${esc(tokImg(OBRX.pcTokens[p.id][0]))}" alt="">` : ''}<b ${ptok ? `data-dblfocus="pc|${esc(p.id)}" title="Double-click to find their token"` : ''}>${esc(s.char)}</b>${ptok ? locateBtn('focus', `data-v="pc|${esc(p.id)}"`, 'Find their token on the map') : ''}<span class="muted" style="font-size:.85rem">${esc(p.name)}${p.role === 'GM' ? ' · GM' : ''}${s.cls ? ' · ' + esc(s.cls) : ''}${s.level ? ' ' + esc(s.level) : ''}</span>${s.ex ? '<span class="chip warnchip" title="Their open character is not set up yet: a new simple character, or the old example">not set up</span>' : ''}</div>
       <div class="inline" style="margin-top:4px"><span class="pool">${esc(s.hp)}<small>/${esc(s.max)} HP</small></span>${s.temp ? `<span class="temp">+${esc(s.temp)}</span>` : ''}<span class="chip">AC ${esc(s.ac)}</span>${s.dead ? '<span class="chip" style="color:var(--danger);border-color:var(--danger)">Dead</span>' : s.down ? '<span class="chip" style="color:var(--danger);border-color:var(--danger)">Down</span>' : ''}${(s.cond || []).map(k => `<span class="chip" style="color:var(--danger);border-color:var(--danger)">${esc(k)}</span>`).join('')}${s.conc ? `<span class="chip conc">◉ ${esc(s.conc)}</span>` : ''}</div>
       <div class="hpbar" style="margin-top:6px"><i class="${pct < 25 ? 'low' : pct < 55 ? 'mid' : ''}" style="width:${pct}%"></i></div>
       ${OBRX.me.role === 'GM' && s.charId ? `<div class="inline" style="margin-top:6px"><input class="qm" id="gmhp-${esc(p.id)}" data-qm="gmhp" data-player="${esc(p.id)}" data-char="${esc(s.charId)}" data-name="${esc(s.char)}" style="width:104px" placeholder="−12 or +8" aria-label="Damage or heal ${esc(s.char)}"><button class="btn small" data-act="gmview" data-player="${esc(p.id)}" data-char="${esc(s.charId)}" data-name="${esc(s.char)}" data-owner="${esc(p.name)}">View sheet</button></div>` : ''}</div>`;
@@ -5893,13 +5846,13 @@ async function pcbPush() {
   if (!IN_OBR || !OBRX.ready || ui.viewing || OBRX.me.role === 'GM') return;
   const sent = readJSON(PCBSENT) || {};
   for (const c of Object.values(store.chars)) {
-    if (c.example || !c.changedAt || (sent[c.id] && sent[c.id].changedAt >= c.changedAt)) continue;
+    if (isPlaceholder(c) || !c.changedAt || (sent[c.id] && sent[c.id].changedAt >= c.changedAt)) continue;
     const data = await packJSON(c);
     sent[c.id] = { changedAt: c.changedAt, at: Date.now(), acked: false }; writeJSON(PCBSENT, sent);
     await bkSendParts({ type: 'pcb', id: uid(), from: OBRX.me.id, owner: OBRX.me.name, charId: c.id, name: c.name, cls: [c.species, c.cls].filter(Boolean).join(' '), level: c.level, changedAt: c.changedAt }, data);
   }
 }
-const hasRealChars = () => Object.values(store.chars).some(c => !c.example);
+const hasRealChars = () => Object.values(store.chars).some(c => !isPlaceholder(c));
 function pcbAsk() { if (IN_OBR && OBRX.ready && OBRX.me.role !== 'GM') { ui.pcbReq = uid(); ui.pcbList = null; bkSend({ type: 'pcbList', id: ui.pcbReq, from: OBRX.me.id }); } }
 async function pcbRestore(charId) {
   ui.pcbGet = { id: uid(), charId }; bkSend({ type: 'pcbGet', id: ui.pcbGet.id, from: OBRX.me.id, charId });
@@ -5911,7 +5864,7 @@ async function pcbReceived(d) {
   const mine = store.chars[ch.id];
   if (mine && (mine.changedAt || 0) > (ch.changedAt || 0) && !ui.pcbForce) { ui.pcbForce = ch.id; toast(`Your copy of ${mine.name} here is newer than the GM's. Tap Restore again to replace it anyway.`); renderModal(); return; }
   ui.pcbForce = null; normalize(ch); store.chars[ch.id] = ch; store.active = ch.id;
-  Object.keys(store.chars).forEach(k => { if (store.chars[k].example && k !== ch.id) delete store.chars[k]; });
+  Object.keys(store.chars).forEach(k => { if (isPlaceholder(store.chars[k]) && k !== ch.id) delete store.chars[k]; });
   const sent = readJSON(PCBSENT) || {}; sent[ch.id] = { changedAt: ch.changedAt, at: Date.now(), acked: true }; writeJSON(PCBSENT, sent);
   ui.open.clear(); save(); closeModal(); render(); if (IN_OBR) publishStatus();
   toast(`${ch.name} restored from the GM's backup.`);
@@ -6353,7 +6306,7 @@ function addSharedClass(d) {
 // In Owlbear, a GM without a character of their own gets GM tools instead of a sheet: Encounter, Party
 // and Notes, no example character, and nothing published to the party. "I'm also playing a character"
 // in Settings brings the sheet back.
-function gmPlays() { return SETTINGS.gmPlays != null ? !!SETTINGS.gmPlays : Object.values(store.chars).some(c => !c.example); }
+function gmPlays() { return SETTINGS.gmPlays != null ? !!SETTINGS.gmPlays : Object.values(store.chars).some(c => !isPlaceholder(c)); }
 function gmMode() { return IN_OBR && OBRX.ready && OBRX.me.role === 'GM' && !gmPlays() && !ui.viewing; }
 function gmView() { const v = SETTINGS.view; return v === 'party' || v === 'campaign' ? v : 'encounter'; }
 function clearMyStatus() { if (OBRX.ready) OBRX.api.player.setMetadata({ [META]: undefined }).catch(() => { }); }
@@ -6380,7 +6333,7 @@ function renderGmParty() {
     const s = p.s, pct = s.max ? Math.max(0, Math.min(100, s.hp / s.max * 100)) : 0, d = s.death || { s: 0, f: 0 };
     const state = s.dead ? '<span class="chip bad">Dead</span>' : s.down ? `<span class="chip bad">Down</span><span class="muted mono" title="Death saves">✓${d.s} ✗${d.f}</span>` : s.hp <= s.max / 2 ? '<span class="chip warn">Bloodied</span>' : '';
     return `<section class="pcard ${s.down ? 'down' : ''}" data-pcard="${esc(p.id)}">
-      ${tokImg((OBRX.pcTokens[p.id] || [])[0]) ? `<img class="tokimg sm" src="${esc(tokImg(OBRX.pcTokens[p.id][0]))}" alt="" data-dblfocus="pc|${esc(p.id)}">` : ''}<div class="pc-h"><b ${(OBRX.pcTokens[p.id] || []).length ? `data-dblfocus="pc|${esc(p.id)}" title="Double-click to find their token"` : ''}>${esc(s.char)}${(OBRX.pcTokens[p.id] || []).length ? ' ' + locateBtn('focus', `data-v="pc|${esc(p.id)}"`, 'Find their token on the map') : ''}</b><span class="muted">${esc(p.name)}${s.cls ? ' · ' + esc(s.cls) : ''}${s.level ? ' ' + esc(s.level) : ''}</span>${s.ex ? '<span class="chip warnchip" title="Their open character is still the example, not their own">example character</span>' : ''}</div>
+      ${tokImg((OBRX.pcTokens[p.id] || [])[0]) ? `<img class="tokimg sm" src="${esc(tokImg(OBRX.pcTokens[p.id][0]))}" alt="" data-dblfocus="pc|${esc(p.id)}">` : ''}<div class="pc-h"><b ${(OBRX.pcTokens[p.id] || []).length ? `data-dblfocus="pc|${esc(p.id)}" title="Double-click to find their token"` : ''}>${esc(s.char)}${(OBRX.pcTokens[p.id] || []).length ? ' ' + locateBtn('focus', `data-v="pc|${esc(p.id)}"`, 'Find their token on the map') : ''}</b><span class="muted">${esc(p.name)}${s.cls ? ' · ' + esc(s.cls) : ''}${s.level ? ' ' + esc(s.level) : ''}</span>${s.ex ? '<span class="chip warnchip" title="Their open character is not set up yet: a new simple character, or the old example">not set up</span>' : ''}</div>
       <div class="inq" data-inq="pc:${esc(p.id)}" hidden></div>
       <div class="inline"><span class="pool">${esc(s.hp)}<small>/${esc(s.max)}</small></span>${s.temp ? `<span class="temp">+${esc(s.temp)}</span>` : ''}<span class="chip">AC ${esc(s.ac)}</span>${state}</div>
       <div class="hpbar"><i class="${pct < 25 ? 'low' : pct < 55 ? 'mid' : ''}" style="width:${pct}%"></i></div>
@@ -7312,11 +7265,10 @@ function renderBanner() {
   h += levelUndoBanner(c);
   if (!storageOK) h += `<div class="banner warn">This browser view isn't saving changes. Use <b>Characters → Export</b> to keep a copy of your character.</div>`;
   const DAY = 864e5;
-  if (!c.example && !ui.backupLater && !gmHasCopy(c) && c.changedAt && (c.lastBackup ? c.changedAt > c.lastBackup && Date.now() - c.lastBackup > 3 * DAY : Date.now() - (c.createdAt || Date.now()) > DAY)) {
+  if (!isPlaceholder(c) && !c.simple && !ui.backupLater && !gmHasCopy(c) && c.changedAt && (c.lastBackup ? c.changedAt > c.lastBackup && Date.now() - c.lastBackup > 3 * DAY : Date.now() - (c.createdAt || Date.now()) > DAY)) {
     h += `<div class="banner"><span style="flex:1;min-width:200px">${esc(c.name)} ${c.lastBackup ? 'was last backed up ' + Math.floor((Date.now() - c.lastBackup) / DAY) + ' days ago' : 'has never been backed up'}. Characters live in this browser only, so keep a copy in case it gets cleared.</span><button class="btn small" data-act="backupnow">Back up now</button><button class="btn small ghost" data-act="backuplater">Later</button></div>`;
   }
-  if (c.example && IN_OBR && !ui.viewing) h += `<div class="banner warn"><span style="flex:1;min-width:200px">The party sees <b>${esc(c.name)}</b>, the example character. Made your character on the website or another device? Owlbear keeps its own characters, so bring it here: there, <b>Characters → Export</b>; here, <b>Import</b>.</span><button class="btn small primary" data-act="modal" data-v="import">Import</button><button class="btn small" data-act="modal" data-v="chars">Characters</button><button class="btn small ghost" data-act="dismiss-ex">Keep this one</button></div>`;
-  else if (c.example) h += `<div class="banner"><span style="flex:1;min-width:200px">This is an example character so you can try things out. Tap any number to roll, switch to <b>Edit</b> to change the sheet.</span><button class="btn small" data-act="newchar">Start a blank character</button><button class="btn small ghost" data-act="dismiss-ex">Keep this one</button></div>`;
+  if (isPlaceholder(c) && !ui.viewing) h += `<div class="banner"><span style="flex:1;min-width:200px"><b>A simple character</b>: set its name, AC, HP and initiative bonus in Combat, and it's ready for the table${IN_OBR ? ' (initiative, HP on your token, conditions)' : ''}. Have a full character elsewhere? Owlbear and the website keep their own characters: export it there and import it here.</span><button class="btn small" data-act="modal" data-v="import">Import a character</button><button class="btn small" data-act="newchar">Start a full sheet</button></div>`;
   $('#banner').innerHTML = h;
 }
 
@@ -7395,16 +7347,17 @@ function renderSkills() {
 }
 
 function renderCombat() {
-  const c = C(), ed = ui.mode === 'edit';
+  const c = C(), ed = ui.mode === 'edit' || (c.simple && !ui.viewing);
   const ac = E.staticSum(acComps(), CTX).flat;
   const ini = staticLabel(initComps()).text;
   const pct = c.hp.max ? Math.max(0, Math.min(100, c.hp.cur / c.hp.max * 100)) : 0;
   const hdMax = +c.level || 1;
-  return `${IN_OBR ? `<div data-link style="font-size:.85rem;margin-bottom:8px;display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center">${linkHtml()}</div>` : ''}<div class="vitals">
+  const simpleHead = c.simple && !ui.viewing ? `<div class="simple-h"><label class="fld" style="flex:1;min-width:150px"><span>Name</span><input id="f-sname" data-bind="name" value="${esc(c.name)}" aria-label="Character name"></label><button class="btn small ghost" data-act="fullsheet" title="Show abilities, skills, attacks, spells and the rest">Use the full sheet</button></div>` : '';
+  return `${simpleHead}${IN_OBR ? `<div data-link style="font-size:.85rem;margin-bottom:8px;display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center">${linkHtml()}</div>` : ''}<div class="vitals">
       <div class="vt"><span class="k">AC</span>${ed ? `<input id="f-ac" data-bind="acFormula" value="${esc(c.acFormula)}" title="Base AC formula, e.g. 10 + DEX or 17" aria-label="AC formula">` : ''}<button class="v vt-b" data-act="explain" data-v="ac" title="Where does this come from?">${ac}</button></div>
       <div class="vt"><span class="k">INIT</span>${ed ? `<input id="f-ini" data-bind="initBonus" value="${esc(c.initBonus)}" placeholder="bonus" aria-label="Initiative bonus">` : ''}<button class="v vt-b" data-act="init" title="Roll initiative">${ini}</button></div>
       <div class="vt"><span class="k">SPEED</span>${ed ? `<input id="f-speed" data-bind="speed" value="${esc(c.speed)}" aria-label="Speed">` : `<span class="v" style="font-size:1.05rem;padding-top:3px">${esc(c.speed)}</span>`}</div>
-      <div class="vt"><span class="k">PROF</span><span class="v">${signed(profBonus(c))}</span></div>
+      ${c.simple ? '' : `<div class="vt"><span class="k">PROF</span><span class="v">${signed(profBonus(c))}</span></div>`}
     </div>
     <button class="insp react ${c.reactUsed ? 'used' : ''}" data-act="react" aria-pressed="${!!c.reactUsed}" title="${c.reactUsed ? 'Reaction used this round. It comes back at the start of your turn.' : 'Reaction available. Tap when you use it.'}">${c.reactUsed ? '⟲ Reaction used' : '⟲ Reaction ready'}</button>
     <button class="insp ${c.inspiration ? 'on' : ''}" data-act="insp" aria-pressed="${!!c.inspiration}" title="${c.inspiration ? 'You have Heroic Inspiration: spend it to reroll any die (the button appears after a roll). Tap to clear.' : 'No Heroic Inspiration. Tap if your GM gives you one.'}">${c.inspiration ? '★' : '☆'} Heroic Inspiration</button>
@@ -7416,11 +7369,12 @@ function renderCombat() {
       <input class="qm" id="hp-tmp" data-qm="temp" placeholder="Temp HP" style="width:78px" aria-label="Temporary HP">
       <div class="hpbar"><i class="${pct < 25 ? 'low' : pct < 55 ? 'mid' : ''}" style="width:${pct}%"></i></div>
     </div>
-    <div class="sub-h">Hit dice &amp; death saves</div>
+    <div class="sub-h">${c.simple ? 'Death saves' : 'Hit dice &amp; death saves'}</div>
     <div class="inline">
-      <span><b class="mono">${hdMax - c.hdUsed}</b><span class="muted">/${hdMax} ${ed ? `<input class="ed-inline" id="f-hd" data-bind="hitDie" value="${esc(c.hitDie)}" style="width:48px" aria-label="Hit die">` : esc(c.hitDie)}</span></span>
+      ${c.simple ? '' : `<span><b class="mono">${hdMax - c.hdUsed}</b><span class="muted">/${hdMax} ${ed ? `<input class="ed-inline" id="f-hd" data-bind="hitDie" value="${esc(c.hitDie)}" style="width:48px" aria-label="Hit die">` : esc(c.hitDie)}</span></span>
       <button class="btn small" data-act="hd" ${c.hdUsed >= hdMax ? 'disabled' : ''}>Spend hit die</button>
       ${ed ? `<label class="muted" style="font-size:.85rem">Long rest regains <select class="ed-inline" id="f-hdr" data-bind="hdRecover"><option value="all" ${c.hdRecover === 'all' ? 'selected' : ''}>all (2024)</option><option value="half" ${c.hdRecover === 'half' ? 'selected' : ''}>half (2014)</option></select></label>` : ''}
+      `}
       <span style="flex:1"></span>
       <span class="boxes" title="Death saves">✓ ${[0, 1, 2].map(i => `<button class="box s ${i < c.death.s ? 'used' : ''}" data-act="death" data-v="s" data-i="${i}" aria-label="Death save success ${i + 1}"></button>`).join('')}
       &nbsp;✗ ${[0, 1, 2].map(i => `<button class="box f ${i < c.death.f ? 'used' : ''}" data-act="death" data-v="f" data-i="${i}" aria-label="Death save failure ${i + 1}"></button>`).join('')}</span>
@@ -7675,7 +7629,7 @@ function charsHtml() {
     <button class="btn small" data-act="dupchar" data-id="${c.id}">Duplicate</button>
     <button class="btn small" data-act="modal" data-v="export" data-id="${c.id}">Export</button>
     ${list.length > 1 ? `<button class="btn small ${ui.confirm === 'del-' + c.id ? 'danger' : ''}" data-act="delchar" data-id="${c.id}">${ui.confirm === 'del-' + c.id ? 'Confirm delete' : 'Delete'}</button>` : ''}</div>`).join('')}</div>
-    <div class="addrow"><button class="btn primary" data-act="newchar">New blank character</button><button class="btn" data-act="sample">Add example character</button><button class="btn" data-act="modal" data-v="import">Import</button><button class="btn" data-act="pdfopen">Import from PDF</button><button class="btn" data-act="modal" data-v="classes">Classes${myClasses.length ? ' (' + myClasses.length + ')' : ''}</button>${IN_OBR && OBRX.ready && OBRX.me.role !== 'GM' ? '<button class="btn" data-act="modal" data-v="pcbrestore">Restore from GM</button>' : ''}</div>
+    <div class="addrow"><button class="btn primary" data-act="newchar">New blank character</button><button class="btn" data-act="simplechar" title="Name, AC, HP, initiative and conditions only">Simple character</button><button class="btn" data-act="modal" data-v="import">Import</button><button class="btn" data-act="pdfopen">Import from PDF</button><button class="btn" data-act="modal" data-v="classes">Classes${myClasses.length ? ' (' + myClasses.length + ')' : ''}</button>${IN_OBR && OBRX.ready && OBRX.me.role !== 'GM' ? '<button class="btn" data-act="modal" data-v="pcbrestore">Restore from GM</button>' : ''}</div>
     <div class="muted" style="font-size:.85rem">${IN_OBR ? 'Inside Owlbear, Grimsheet keeps its own characters, apart from the website and other devices. To bring one here, open it where you made it, choose <b>Export</b>, then <b>Import</b> it here.' : 'Characters are saved in this browser automatically. Export a character to back it up or move it to another device. In Owlbear, Grimsheet keeps its own characters: import them there too.'}</div></div>`;
 }
 function addModuleHtml() {
@@ -8112,8 +8066,8 @@ document.addEventListener('click', ev => {
     case 'close': ui.confirm = null; closeModal(); break;
     case 'switch': store.active = id; ui.open.clear(); save(); closeModal(); render(); if (IN_OBR) { refreshLinks(); publishStatus(); } break;
     case 'newchar': { const n = blankChar(); store.chars[n.id] = n; store.active = n.id; ui.mode = 'edit'; save(); closeModal(); render(); toast('Blank character created. You are in Edit mode.'); break; }
-    case 'sample': { const n = sampleChar(); store.chars[n.id] = n; store.active = n.id; save(); closeModal(); render(); break; }
-    case 'dismiss-ex': c.example = false; rerender(); break;
+    case 'simplechar': { const n = simpleChar(); n.fresh = false; store.chars[n.id] = n; store.active = n.id; save(); closeModal(); render(); if (IN_OBR) publishStatus(); break; }
+    case 'fullsheet': c.simple = false; c.fresh = false; c.hidden = []; rerender(); toast('Every module is back. Hide the ones you don\'t need from their menus.'); break;
     case 'dupchar': { const n = clone(store.chars[id]); n.id = uid(); n.name += ' (copy)'; n.example = false; store.chars[n.id] = n; save(); renderModal(); toast('Duplicated.'); break; }
     case 'delchar': { if (ui.confirm !== 'del-' + id) { ui.confirm = 'del-' + id; renderModal(); break; } delete store.chars[id]; if (store.active === id) store.active = Object.keys(store.chars)[0]; ui.confirm = null; save(); render(); renderModal(); break; }
     case 'copyexp': { const t = $('#exp-text'); markBackup(); const done = () => toast('Copied.'); try { navigator.clipboard.writeText(t.value).then(done, () => { t.select(); toast('Selected. Press Ctrl+C / Cmd+C to copy.'); }); } catch (x) { t.select(); toast('Selected. Press Ctrl+C / Cmd+C to copy.'); } break; }
@@ -8432,13 +8386,14 @@ document.addEventListener('change', ev => {
   if (t.dataset.bind) {
     let v = t.value; if ('num' in t.dataset) v = v === '' ? 0 : +v || 0;
     setPath(C(), t.dataset.bind, v);
+    if (C().fresh) { C().fresh = false; renderBanner(); }
     if (t.dataset.bind === 'hp.max') C().hp.cur = Math.min(C().hp.cur, C().hp.max);
     if (/^abilities\.\d+\.name$/.test(t.dataset.bind)) { /* keep key */ }
     save(); render(); return;
   }
   if (t.dataset.mtitle) { const m = C().modules.find(x => x.id === t.dataset.mtitle); m.title = t.value || MODTYPES[m.type]; save(); return; }
   if (t.dataset.mnotes) { const m = C().modules.find(x => x.id === t.dataset.mnotes); if (m.id === notesHome()) C().notes = t.value; else m.text = t.value; save(); return; }
-  if (t.dataset.qm) applyQuick(t);
+  if (t.dataset.qm) { if (['hp', 'temp'].includes(t.dataset.qm) && C().fresh) C().fresh = false; applyQuick(t); }
   if (t.dataset.setpanel) { const k = t.dataset.setpanel, lim = k === 'panelW' ? [320, 1600] : [300, 1400]; SETTINGS[k] = Math.max(lim[0], Math.min(lim[1], Math.round(+t.value || 0))); saveSettings(); applyPanelSize(); renderModal(); }
   if (t.dataset.d && ui.modal && ui.modal.draft) {
     const d = ui.modal.draft; let v = t.type === 'checkbox' ? t.checked : t.value;
