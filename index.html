@@ -77,6 +77,18 @@ button{cursor:pointer}
 
 .banner{max-width:1500px;margin:12px auto 0;display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;padding:8px 12px;border-radius:8px;background:var(--gold-soft);color:var(--ink);font-size:.9rem}
 .banner.warn{background:var(--danger-soft)}
+#tour{position:fixed;inset:0;z-index:9999}
+#tour .tour-hole{position:fixed;border-radius:10px;box-shadow:0 0 0 9999px rgba(10,12,16,.66);outline:2px solid var(--accent);transition:left .2s,top .2s,width .2s,height .2s;pointer-events:none}
+#tour .tour-bub{position:fixed;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:12px;padding:12px 14px;box-shadow:0 10px 30px rgba(0,0,0,.35);transition:left .2s,top .2s;max-width:calc(100vw - 24px)}
+#tour .tour-bub::before{content:'';position:absolute;left:var(--arrow,50%);width:12px;height:12px;background:var(--surface);border:1px solid var(--line);transform:translateX(-50%) rotate(45deg)}
+#tour .tour-bub[data-side=below]::before{top:-7px;border-right:0;border-bottom:0}
+#tour .tour-bub[data-side=above]::before{bottom:-7px;border-left:0;border-top:0}
+#tour .tour-bub[data-side=none]::before{display:none}
+#tour .tour-t{font-family:var(--f-display);font-weight:700;font-size:1.05rem;margin-bottom:4px}
+#tour .tour-x{font-size:.92rem;line-height:1.45}
+#tour .tour-f{display:flex;align-items:center;gap:6px;margin-top:10px;flex-wrap:wrap}
+#tour .tour-n{display:inline-block;width:56px;height:5px;border-radius:3px;background:var(--sunk);overflow:hidden}#tour .tour-n i{display:block;height:100%;background:var(--accent);transition:width .2s}
+#tour .sp{flex:1}
 .simple-h{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px}
 .chip.warnchip{background:var(--danger-soft);color:var(--danger);border-color:transparent}
 
@@ -3197,7 +3209,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.36.0';
+const APP_VERSION = '1.37.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -7253,8 +7265,8 @@ function renderTop() {
 }
 
 function renderBanner() {
-  if (gmMode()) { $('#banner').innerHTML = (storageOK ? '' : '<div class="banner warn">This browser view isn\'t saving changes.</div>') + bkBannerHtml(); return; }
-  const c = C(); let h = '';
+  if (gmMode()) { $('#banner').innerHTML = tourOfferHtml() + (storageOK ? '' : '<div class="banner warn">This browser view isn\'t saving changes.</div>') + bkBannerHtml(); return; }
+  const c = C(); let h = tourOfferHtml();
   if (IN_OBR && OBRX.ready && OBRX.me.role !== 'GM' && OBRX.init && OBRX.init.active && !ui.viewing) h += `<div class="banner" style="background:var(--accent-soft)"><span style="flex:1">⚔ ${initStrip()}</span>${endTurnBtn()}</div>`;
   if (ui.viewing) {
     const t = new Date(ui.viewing.at); const hhmm = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
@@ -7281,6 +7293,174 @@ function modHeader(m) {
       <button class="ico" data-act="mhide" data-id="${m.id}" title="Hide module">${ICON.hide}</button>` : ''}
     <button class="ico" data-act="mcollapse" data-id="${m.id}" title="${m.collapsed ? 'Expand' : 'Collapse'}">${m.collapsed ? ICON.chevR : ICON.chev}</button>
   </div>`;
+}
+
+/* ---------- TOURS: walk-throughs with bubbles that point at the screen ---------- */
+// Each step points at something on the screen (a selector, or a function returning an element). A step can do
+// something first (open the Encounter view…), and is skipped when its target isn't there for this person
+// (a player who isn't in Owlbear has no token link). Steps without a target show in the middle.
+const modEl = type => { const m = C().modules.find(x => x.type === type); return m && !C().hidden.includes(m.id) ? document.querySelector(`[data-mod="${m.id}"]`) : null; };
+const clickAct = sel => { const b = document.querySelector(sel); if (b) b.click(); };
+const TOURS = {
+  player: {
+    title: 'The sheet', when: () => !gmMode(), steps: [
+      { title: 'Welcome to Grimsheet', text: 'A character sheet that does the maths and rolls the dice. This tour takes a minute; you can leave it any time and replay it from Settings.' },
+      { sel: '#top .ident', title: 'Your character', text: 'Name, species, class and level. Open <b>Characters</b> to switch characters, make a new one, import one, or export a copy.' },
+      { sel: () => modEl('abilities'), title: 'Tap any number to roll', text: 'Every bonus with a dotted underline is a button: abilities, saves, skills, attacks, damage. The result appears at the bottom, with the dice shown.' },
+      { sel: '#top .seg.adv', title: 'Advantage and disadvantage', text: 'Set it before you roll. It goes back to Normal after the roll.' },
+      { sel: '#hp-qm', title: 'Hit points', text: 'Type <b>-7</b> for damage, <b>+5</b> to heal, or a number to set it. Temporary HP has its own box, and damage takes it first.', place: 'below' },
+      { sel: '.cond', title: 'Conditions', text: 'Tap to turn one on. Grimsheet applies what it does to your rolls (Poisoned gives disadvantage, for example) and can count down how long it lasts.' },
+      { sel: '[data-act=newentry]', title: 'Add attacks, spells and features', text: 'Pick from the built-in rules, or paste any text (a homebrew feature, a spell from a book): Grimsheet finds the dice, saves and uses in it.' },
+      { sel: '#tray', title: 'Your rolls', text: 'Every roll lands here with how it was worked out. Follow-up buttons appear when there is a next step, like the damage after a hit.', place: 'above' },
+      { sel: '[data-act=mode][data-v=edit]', title: 'Edit mode', text: 'Change scores, AC, proficiencies, move and hide modules. Switch back to Play to use the sheet.' },
+      { sel: '[data-act=levelup]', title: 'Levelling up and resting', text: 'Level up walks you through hit points, new features and ability scores. The rest buttons recover what each rest gives back.' },
+      { sel: '[data-act=gsearch]', title: 'Find anything', text: 'Search rules, spells, your features and more. Press <b>/</b> or Ctrl+K from anywhere.' },
+      { sel: '[data-act=modal][data-v=settings]', title: 'That’s the sheet', text: 'Dice animation, panel size and these tours live in Settings.' },
+    ],
+  },
+  owlbear: {
+    title: 'Playing in Owlbear', when: () => IN_OBR && !gmMode(), steps: [
+      { title: 'Grimsheet in Owlbear', text: 'In a room your sheet talks to the map and to your GM. A few things to know.' },
+      { sel: '[data-link]', title: 'Link your token', text: 'Right-click your token on the map and choose <b>Link to my Grimsheet character</b>. Its HP, AC and conditions then follow your sheet.' },
+      { sel: '[data-act=init]', title: 'Roll initiative', text: 'When the GM asks, roll here: the result goes straight into the GM’s initiative tracker.' },
+      { sel: '[data-act=tgtpick]', title: 'Pick a target', text: 'Choose who you’re attacking on the map. Attacks and saves then go to the GM with the target, ready to apply.' },
+      { sel: '[data-act=endturn]', title: 'End your turn', text: 'When it’s your turn, this tells the GM you’re done and the next turn starts.' },
+      { sel: () => modEl('party'), title: 'Your party', text: 'Everyone’s HP, AC and conditions, kept up to date.' },
+      { title: 'Shared by the GM', text: 'Homebrew the GM shares turns up in <b>+ Add → Room homebrew</b>. The GM also keeps a backup of your character: on a new device, Grimsheet offers to restore it.' },
+    ],
+  },
+  gm: {
+    title: 'Running the game', when: () => IN_OBR && isGM(), steps: [
+      { title: 'GM mode', text: 'As GM you get the Encounter, Party and Notes views. If you also play a character, Settings switches between your sheet and GM mode.' },
+      { sel: '#top .seg[aria-label=View]', title: 'Your views', text: 'Encounter for fights, Party for your players, Notes for the campaign.', before: () => clickAct('[data-act=setview][data-v=encounter]') },
+      { sel: '[data-act=addmon]', title: 'Monsters', text: 'Add monsters from the built-in bestiary, or paste a stat block from anywhere. Each gets a card for rolling its attacks and tracking its HP; right-click a monster token and choose <b>Grimsheet</b> to link it.' },
+      { sel: '[data-act=addparty]', title: 'Add the party', text: 'Adds every player’s character to the initiative order. <b>Ask for initiative</b> has them roll it from their sheets.' },
+      { sel: '.mcard', title: 'Monster cards', text: 'Roll attacks and damage, apply damage, track conditions and legendary uses.' },
+      { sel: '[data-act=startcombat], [data-act=nextturn]', title: 'Running combat', text: 'Start combat to sort the order. Next turn moves it on, and players can end their own turns.' },
+      { sel: '[data-act=groupsave]', title: 'The party', text: 'See everyone at a glance, deal damage or healing, ask the whole party for a save or a check, and open any player’s sheet read-only.', before: () => clickAct('[data-act=setview][data-v=party]') },
+      { sel: '[data-act=setview][data-v=campaign]', title: 'Campaign notes', text: 'Notes for places, people and quests. Share a note with the party or keep it to yourself.' },
+      { sel: '[data-act=modal][data-v=settings]', title: 'Backups and room homebrew', text: 'Settings saves everything (encounters, notes, monsters, your players’ backups) to your Owlbear library. Homebrew you share goes to the whole room.', before: () => clickAct('[data-act=setview][data-v=encounter]') },
+    ],
+  },
+  simple: {
+    title: 'The simple character', when: () => !gmMode() && C().simple, steps: [
+      { sel: '#f-sname', title: 'A simple character', text: 'Only what the table needs. Start with a name.' },
+      { sel: '.vitals', title: 'AC and initiative', text: 'Type your AC and your initiative bonus right here. Tap the initiative number to roll it.' },
+      { sel: '#hp-qm', title: 'Hit points', text: 'Set your maximum next to your HP, then type <b>-7</b> or <b>+5</b> as the fight goes. Conditions are just below.', place: 'below' },
+      { sel: '[data-act=fullsheet]', title: 'Want everything?', text: 'Use the full sheet brings back abilities, skills, attacks, spells and the rest.' },
+    ],
+  },
+};
+// which tours this person can take, in the order they're offered
+const toursFor = () => Object.keys(TOURS).filter(k => { try { return TOURS[k].when(); } catch (e) { return false; } });
+const firstTour = () => gmMode() ? 'gm' : C().simple ? 'simple' : 'player';
+
+const TOUR = { key: null, i: 0, el: null, obs: null };
+function tourStart(key) {
+  if (!TOURS[key]) return;
+  closeModal(); hidePop && hidePop();
+  TOUR.key = key; TOUR.i = 0;
+  SETTINGS.tourOffer = false; saveSettings(); renderBanner();
+  if (!TOUR.el) {
+    TOUR.el = document.createElement('div'); TOUR.el.id = 'tour';
+    TOUR.el.innerHTML = `<div class="tour-hole"></div><div class="tour-bub" role="dialog" aria-live="polite"><div class="tour-t"></div><div class="tour-x"></div>
+      <div class="tour-f"></div></div>`;
+    document.body.appendChild(TOUR.el);
+    TOUR.el.addEventListener('click', ev => {
+      ev.stopPropagation();
+      const b = ev.target.closest('[data-tour]'); if (!b) return;
+      const a = b.dataset.tour;
+      if (a === 'skip' || a === 'done') tourEnd(); else if (a === 'next') tourGo(TOUR.i + 1, 1); else if (a === 'back') tourGo(TOUR.i - 1, -1); else if (a.startsWith('go:')) tourStart(a.slice(3));
+    });
+    window.addEventListener('resize', tourPlace); window.addEventListener('scroll', tourPlace, true);
+    document.addEventListener('keydown', ev => { if (!TOUR.key) return; if (ev.key === 'Escape') tourEnd(); else if (ev.key === 'ArrowRight') tourGo(TOUR.i + 1, 1); else if (ev.key === 'ArrowLeft') tourGo(TOUR.i - 1, -1); });
+    // the sheet redraws itself often: find the target again afterwards
+    let raf = 0; TOUR.obs = new MutationObserver(() => { if (!TOUR.key || raf) return; raf = requestAnimationFrame(() => { raf = 0; tourPlace(); }); });
+    TOUR.obs.observe(document.body, { childList: true, subtree: true });
+  }
+  TOUR.el.hidden = false;
+  tourGo(0, 1);
+}
+function tourTarget(st) {
+  if (!st.sel) return null;
+  let el = null; try { el = typeof st.sel === 'function' ? st.sel() : document.querySelector(st.sel); } catch (e) { }
+  if (!el || TOUR.el.contains(el)) return null;
+  const r = el.getBoundingClientRect(); return r.width || r.height ? el : null;
+}
+// go to step i, skipping steps whose target isn't on this screen (dir: the way we're moving)
+function tourGo(i, dir) {
+  const steps = TOURS[TOUR.key].steps;
+  while (i >= 0 && i < steps.length) {
+    const st = steps[i];
+    if (st.before) { try { st.before(); } catch (e) { } }
+    if (!st.sel || tourTarget(st)) break;
+    i += dir || 1;
+  }
+  if (i < 0) i = 0;
+  if (i >= steps.length) { tourFinish(); return; }
+  TOUR.i = i;
+  const st = steps[i], el = tourTarget(st);
+  if (el) el.scrollIntoView({ block: 'center', inline: 'nearest' });
+  const shown = steps.filter((s, k) => k <= i).length;
+  TOUR.el.querySelector('.tour-f').innerHTML = '<span class="tour-n"></span><button class="btn small ghost" data-tour="skip">Skip tour</button><span class="sp"></span><button class="btn small" data-tour="back">Back</button><button class="btn small primary" data-tour="next">Next</button>';
+  TOUR.el.querySelector('.tour-t').innerHTML = st.title;
+  TOUR.el.querySelector('.tour-x').innerHTML = st.text;
+  // a progress bar rather than "5 of 9": steps that don't apply here are skipped
+  TOUR.el.querySelector('.tour-n').innerHTML = `<i style="width:${Math.round((i + 1) / steps.length * 100)}%"></i>`; TOUR.el.querySelector('.tour-n').title = 'Step ' + shown;
+  TOUR.el.querySelector('[data-tour=back]').disabled = i === 0;
+  const nx = TOUR.el.querySelector('[data-tour=next]'); nx.textContent = steps.slice(i + 1).some(s => !s.sel || tourTarget(s) || s.before) ? 'Next' : 'Done';
+  tourPlace();
+  setTimeout(() => { const b = TOUR.el.querySelector('[data-tour=next]'); if (b) b.focus({ preventScroll: true }); }, 0);
+}
+// the end of a tour: offer the next one that fits (the Owlbear tour after the sheet tour)
+function tourFinish() {
+  const done = TOUR.key; SETTINGS.toursDone = Object.assign({}, SETTINGS.toursDone, { [done]: true }); saveSettings();
+  const next = toursFor().find(k => k !== done && !(SETTINGS.toursDone || {})[k] && !(done === 'simple' && k === 'player'));
+  TOUR.i = -1;
+  TOUR.el.querySelector('.tour-t').innerHTML = 'All done';
+  TOUR.el.querySelector('.tour-x').innerHTML = next ? `Next up: <b>${TOURS[next].title}</b>.` : 'Replay any tour from Settings.';
+  TOUR.el.querySelector('.tour-f').innerHTML = `<span class="sp"></span>${next ? `<button class="btn small" data-tour="done">Later</button><button class="btn small primary" data-tour="go:${next}">Show me</button>` : '<button class="btn small primary" data-tour="done">Done</button>'}`;
+  tourPlace();
+}
+function tourEnd() {
+  if (TOUR.key && TOUR.i >= 0) { SETTINGS.toursDone = Object.assign({}, SETTINGS.toursDone, { [TOUR.key]: true }); saveSettings(); }
+  TOUR.key = null; if (!TOUR.el) return;
+  TOUR.el.remove(); TOUR.el = null; if (TOUR.obs) TOUR.obs.disconnect(); TOUR.obs = null;
+}
+// place the spotlight on the target and the bubble beside it, where there's room
+function tourPlace() {
+  if (!TOUR.key || !TOUR.el) return;
+  const st = TOUR.i >= 0 ? TOURS[TOUR.key].steps[TOUR.i] : null, el = st ? tourTarget(st) : null;
+  const hole = TOUR.el.querySelector('.tour-hole'), bub = TOUR.el.querySelector('.tour-bub');
+  const W = window.innerWidth, H = window.innerHeight, pad = 6, gap = 10;
+  const bw = Math.min(340, W - 24); bub.style.width = bw + 'px';
+  if (!el) {
+    Object.assign(hole.style, { left: W / 2 + 'px', top: H / 2 + 'px', width: '0px', height: '0px' });
+    bub.style.left = Math.round((W - bw) / 2) + 'px'; bub.style.top = Math.round(Math.max(12, (H - bub.offsetHeight) / 2)) + 'px'; bub.dataset.side = 'none'; return;
+  }
+  const r = el.getBoundingClientRect();
+  const x = Math.max(4, r.left - pad), y = Math.max(4, r.top - pad), w = Math.min(W - 8, r.width + pad * 2), h = Math.min(H - 8, r.height + pad * 2);
+  Object.assign(hole.style, { left: x + 'px', top: y + 'px', width: w + 'px', height: h + 'px' });
+  const bh = bub.offsetHeight, below = H - (y + h), above = y;
+  let side = st.place || (below >= bh + gap + 8 ? 'below' : above >= bh + gap + 8 ? 'above' : 'below');
+  if (side === 'below' && below < bh + gap + 8 && above >= bh + gap + 8) side = 'above';
+  if (side === 'above' && above < bh + gap + 8 && below >= bh + gap + 8) side = 'below';
+  let top = side === 'below' ? y + h + gap : y - bh - gap;
+  top = Math.max(8, Math.min(H - bh - 8, top));
+  const left = Math.max(12, Math.min(W - bw - 12, r.left + r.width / 2 - bw / 2));
+  bub.style.left = Math.round(left) + 'px'; bub.style.top = Math.round(top) + 'px'; bub.dataset.side = side;
+  bub.style.setProperty('--arrow', Math.round(Math.max(16, Math.min(bw - 16, r.left + r.width / 2 - left))) + 'px');
+}
+// the offer, once, in the banner area (it doesn't cover anything)
+function tourOfferHtml() {
+  if (SETTINGS.tourOffer === false || ui.viewing || TOUR.key) return '';
+  const k = firstTour(); if (!TOURS[k] || !toursFor().includes(k)) return '';
+  return `<div class="banner" style="background:var(--accent-soft)"><span style="flex:1;min-width:200px">New to Grimsheet? A short tour shows you the ropes: <b>${esc(TOURS[k].title)}</b>.</span><button class="btn small primary" data-act="tour" data-v="${k}">Show me around</button><button class="btn small ghost" data-act="touroff">No thanks</button></div>`;
+}
+function tourSettingsHtml() {
+  const ks = toursFor();
+  return `<div class="setrow"><div class="grow"><b>Tours</b><div class="muted">Short walk-throughs with bubbles that point at each part of the screen.</div></div>
+    <div class="inline">${Object.keys(TOURS).map(k => `<button class="btn small" data-act="tour" data-v="${k}" ${ks.includes(k) ? '' : `disabled title="${k === 'owlbear' ? 'In an Owlbear room, as a player' : k === 'gm' ? 'In an Owlbear room, as the GM' : k === 'simple' ? 'With a simple character open' : 'On your character sheet'}"`}>${esc(TOURS[k].title)}${(SETTINGS.toursDone || {})[k] ? ' ✓' : ''}</button>`).join('')}</div></div>`;
 }
 
 function renderGrid() { renderGridInner(); try { paintInline(); } catch (e) { } }
@@ -7772,6 +7952,7 @@ function pdfHtml(m) {
 function settingsHtml() {
   const sp = SETTINGS.diceSpeed;
   return dlgHead('Settings') + `<div class="dlg-b" style="gap:0">
+    ${tourSettingsHtml()}
     <div class="setrow"><div class="grow"><b>Dice animation</b><div class="muted">Show the dice tumbling and landing on each roll. The total appears when they land.${REDUCED ? ' Your device asks for reduced motion, so this starts off.' : ''}</div></div>
       <button class="switch ${SETTINGS.diceAnim ? 'on' : ''}" data-act="setanim" aria-pressed="${SETTINGS.diceAnim}"><i></i>${SETTINGS.diceAnim ? 'On' : 'Off'}</button></div>
     <div class="setrow" ${SETTINGS.diceAnim ? '' : 'style="opacity:.5"'}><div class="grow"><b>Animation speed</b><div class="muted">How long the dice take to land.</div></div>
@@ -8077,6 +8258,8 @@ document.addEventListener('click', ev => {
     case 'setanim': SETTINGS.diceAnim = !SETTINGS.diceAnim; saveSettings(); if (!SETTINGS.diceAnim) { stopDice(); const b = $('#dicefx'); b.hidden = true; renderTray(); } renderModal(); break;
     case 'setspeed': SETTINGS.diceSpeed = v; saveSettings(); renderModal(); break;
     case 'setshare': SETTINGS.share = v; saveSettings(); renderModal(); break;
+    case 'tour': tourStart(v); break;
+    case 'touroff': SETTINGS.tourOffer = false; saveSettings(); renderBanner(); toast('Tours are in Settings whenever you want them.'); break;
     case 'setview': SETTINGS.view = v; saveSettings(); render(); window.scrollTo(0, 0); break;
     case 'setmonhp': SETTINGS.monHp = v; saveSettings(); syncMonTokens(); publishInit(); renderModal(); break;
     case 'area': { const e = f && f.e; if (!e) break; if (e.spell && +e.spell.level > 0 && !el.dataset.lvl && !ui.viewing) { ui.areaAfterCast = e.id; castMenu(el, e, c); } else placeEntryArea(e, +el.dataset.lvl || 0); break; }
