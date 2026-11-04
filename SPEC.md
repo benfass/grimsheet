@@ -551,3 +551,12 @@ Ordered by when it gets built. Priority applies inside a goal.
   - Level-ups add their amount, as before.
   - When one is on the sheet but its bonus for the levels already gained hasn't been counted (a feat taken, a character imported from a PDF), a banner asks: "Tough raises your maximum HP by 2 for every level: +10 at level 5. Is it in your maximum yet?" It offers **Add +10** and **Already counted**, and each choice is remembered per feature.
   - The character wizard counts Dwarven Toughness itself.
+
+
+## Store preparation (app 1.41.1)
+
+- **No third-party requests from the site**: the GitHub Pages build serves the fonts (Alegreya SC, Alegreya Sans, IBM Plex Mono, OFL, from Fontsource) from `fonts/` and pdf.js 3.11.174 from `vendor/pdfjs/`, instead of Google Fonts and cdnjs. Checked: loading the app and importing a PDF make no requests outside the site. The claude.ai copy keeps the Google Fonts link and cdnjs (the build swaps them).
+- The wizard's AC sum no longer uses `Function` (plain addition of the numbers).
+- Manifest author **Ben Fassler**, with a new description.
+- README rewritten at the top: install without the old `?v=` step, a **Privacy** section (what stays in the browser, what's shared in a room and with whom, PDFs read locally, clipboard only on Copy, the claude.ai-only "Read with Claude"), the new features, and licences for pdf.js and the fonts.
+- Store page `store/grimsheet.md` (frontmatter for Owlbear's store) with `store/hero.png` (1200×630), `store/icon.png` (256×256) and screenshots (sheet, wizard, prepare spells, encounter, tour).

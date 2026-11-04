@@ -1,26 +1,44 @@
 # Grimsheet
 
-A modular D&D 5e / 5.5e character sheet that works as well with homebrew as with official content. Paste any feature, spell or house rule, attach dice, saves and limited uses, arrange the sheet the way you like, and tap to roll.
+A 5e character sheet that handles homebrew as well as the rules. Create a character step by step or import one from a PDF, paste any feature, spell or house rule and get its dice, saves and uses, import homebrew classes from a book, and tap any number to roll.
 
-It runs in any browser, and as an **Owlbear Rodeo extension**: rolls are shared with the room, and a Party panel shows everyone's HP, AC and conditions live.
+It runs in any browser, and as an **Owlbear Rodeo extension**: rolls are shared with the room, the GM runs monsters and initiative, and everyone's HP, AC and conditions stay in sync with their tokens.
+
+By Ben Fassler. Questions, bugs and ideas: [GitHub Issues](https://github.com/benfass/grimsheet/issues).
 
 ## Use it
 
 - **In a browser:** https://benfass.github.io/grimsheet/
-- **In Owlbear Rodeo:** open your profile → **Add Extension**, paste
-  `https://benfass.github.io/grimsheet/manifest.json`, then enable Grimsheet in your room. After an update, if Owlbear still shows the old version, remove the extension and add it again with `?v=<new version>` on the end of the link (for example `manifest.json?v=1.3.0`). A d20 button appears in the toolbar.
+- **In Owlbear Rodeo:** open your profile → **Extensions** → **Add Custom Extension**, paste `https://benfass.github.io/grimsheet/manifest.json`, then enable Grimsheet in your room. A book icon appears in the toolbar. Updates arrive by themselves.
+- New to it? A short tour starts from the banner, and **Settings → Tours** replays any of them.
 
-## Where characters are saved
+## Privacy
 
-Characters are saved in each player's own browser. Nothing is uploaded and this repository stores no player data. To move a character to another computer or browser, or to keep a backup, use **Characters → Export**, then **Import** on the other side. Grimsheet reminds you when a character hasn't been backed up for a while.
+Grimsheet has no accounts, no analytics, no ads, no cookies and no server of its own. Every file it uses, fonts and the PDF reader included, comes from this site (GitHub Pages); it makes no requests to anyone else.
+
+- **Your characters are saved in your own browser** (local storage). Nothing is uploaded. **Characters → Export** gives you a file to keep or move to another device.
+- **PDFs are read on your device.** Character sheets and class books you import never leave it.
+- **In an Owlbear room**, Grimsheet uses Owlbear's own connection to share what the game needs, with the people in that room only:
+  - your character's status (name, class, level, HP, AC, conditions), shown in the Party view and on your linked token;
+  - your rolls, if roll sharing is on (Settings: everyone, the GM only, or off);
+  - a backup of your characters for the GM's Grimsheet, so you can restore them on another device (it travels over the room's connection; only the GM's Grimsheet keeps it);
+  - notes and homebrew you choose to share.
+  - The GM can save their own data (encounters, notes, monsters, backups) to their own Owlbear library.
+- The clipboard is only used when you press **Copy**.
+- In the claude.ai version of Grimsheet only, **Read with Claude** (for PDFs that aren't a standard sheet) sends the sheet's text to Claude, and only when you press it.
 
 ## Features
 
+- **Create a character** step by step (2024 rules from the SRD 5.2): class, species, background, ability scores (standard array, point buy or rolled), skills, starting gear and spells, from level 1 or higher. Homebrew classes and species work too.
+- **Prepare spells** from your class's list, with the limits for your level, offered after each level-up.
+- **Simple character**: just name, AC, HP, initiative and conditions, for players whose sheet lives elsewhere.
 - Modules you arrange in rows and columns: Combat, Abilities, Skills, Quick Actions, Attacks, Spells, Features, Inventory, Companions, Notes, Party.
 - Formulas linked to your scores (`STR + PROF`, `8 + PROF + WIS`, `table(LEVEL, …)`), with a breakdown of every roll.
 - Paste text and get suggested dice, saves, uses and spell details.
 - SRD 5.2 content: 309 spells, all weapons and armor, magic items, gear, class and subclass features, plus familiars, beasts and mounts.
-- Import from the official fillable 5e character sheet PDF.
+- Import a character from a PDF (the official fillable sheet and most fillable sheets).
+- Spells that do something again on later turns (Witch Bolt, Spiritual Weapon) get a second roll button.
+- Features that raise your maximum HP each level (Tough, Dwarven Toughness) are counted at every level-up.
 - Optional dice animation, short and long rests, counters, toggled buffs, a personal homebrew library.
 
 ## Owlbear Rodeo features
@@ -32,7 +50,8 @@ Characters are saved in each player's own browser. Nothing is uploaded and this 
 - **Room homebrew:** the GM shares homebrew items, spells and features with the room (or keeps them hidden) and can give any of them straight to a player's sheet; players add shared entries from Browse → Room homebrew and get the GM's later fixes with one tap.
 - **GM conveniences:** attack cards name the weapon or spell and add up extra damage like Divine Smite; roll a player's damage from the card; optional automatic damage after a confirmed hit; ask players for skill checks; edit a monster's stat block; paste a stat block straight from a token's right-click menu.
 - **Backups across devices:** the GM's Grimsheet keeps a copy of every player's characters for the room, so a player on a new device restores them in one tap; the GM saves everything (encounters, notes, homebrew, monsters) to their own Owlbear library as a prop and loads it on another device.
-- **Class importer:** import homebrew classes and subclasses from a PDF or pasted text (a whole book at once); levelling up then adds each feature with its full text and mechanics, subclass features, ASIs and spell slots. GMs can share imported classes with the room.
+- **Class importer:** import homebrew classes and subclasses from a PDF or pasted text (a whole book at once), including books of new subclasses and optional features for the basic classes, and variant subclasses that replace features. Levelling up then adds each feature with its full text and mechanics, subclass features, ability score improvements and spell slots. GMs can share imported classes with the room.
+- **Tours:** short walk-throughs with bubbles for the sheet, playing in Owlbear, running the game and the simple character.
 - **Undo:** the Undo button (or Ctrl+Z) takes back the last change: HP, a spent slot or use, a condition, an edit, a whole level-up. ▾ shows recent changes in plain words; tap one to go back to before it. Redo is there too.
 - **Campaign notes** (Notes in the toolbar): a party journal for the room. NPCs, places, quests, items and notes with tags, statuses (open/done quests, friendly/hostile NPCs), search and `[[links]]` between notes. Party notes are shared with everyone in the room and anyone can edit them; "only me" notes stay private (the GM's are hidden from players until revealed). Players who missed a session catch up when they open Grimsheet. Export as Markdown or back up and import.
 - **Share rolls** with everyone, with the GM only, or not at all (Settings). Notifications arrive even while your Grimsheet panel is closed.
@@ -69,4 +88,6 @@ This work includes material from the System Reference Document 5.2 ("SRD 5.2") b
 
 Creature stat blocks include material taken from the System Reference Document 5.1 ("SRD 5.1") by Wizards of the Coast LLC and available at https://dnd.wizards.com/resources/systems-reference-document. The SRD 5.1 is licensed under the Creative Commons Attribution 4.0 International License available at https://creativecommons.org/licenses/by/4.0/legalcode.
 
-`vendor/owlbear-sdk-3.1.0.js` is the Owlbear Rodeo SDK (MIT License, see `vendor/owlbear-sdk-LICENSE.txt`). The PDF reader (pdf.js, Apache 2.0) is loaded from cdnjs when you import a PDF.
+`vendor/owlbear-sdk-3.1.0.js` is the Owlbear Rodeo SDK (MIT License, see `vendor/owlbear-sdk-LICENSE.txt`). `vendor/pdfjs/` is Mozilla's pdf.js 3.11.174 (Apache License 2.0, see `vendor/pdfjs/LICENSE`). `fonts/` holds Alegreya SC, Alegreya Sans and IBM Plex Mono (SIL Open Font License 1.1, see `fonts/OFL-*.txt`), from Fontsource.
+
+The class importer reads books you own on your own device; Grimsheet doesn't ship or share their contents.
