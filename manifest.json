@@ -1,9 +1,9 @@
 {
   "name": "Grimsheet",
-  "version": "1.42.0",
+  "version": "1.42.1",
   "manifest_version": 1,
   "author": "Ben Fassler",
-  "description": "A 5e character sheet that handles homebrew as well as the rules: tap to roll, create characters step by step, import PDFs and homebrew classes, and run monsters and initiative with your party's HP and conditions in sync.",
+  "description": "5e character sheet for rules and homebrew: tap to roll, build characters, import PDFs, run monsters and initiative in sync.",
   "homepage_url": "https://benfass.github.io/grimsheet/",
   "icon": "https://benfass.github.io/grimsheet/icon.svg",
   "action": {
