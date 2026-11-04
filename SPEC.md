@@ -560,3 +560,10 @@ Ordered by when it gets built. Priority applies inside a goal.
 - Manifest author **Ben Fassler**, with a new description.
 - README rewritten at the top: install without the old `?v=` step, a **Privacy** section (what stays in the browser, what's shared in a room and with whom, PDFs read locally, clipboard only on Copy, the claude.ai-only "Read with Claude"), the new features, and licences for pdf.js and the fonts.
 - Store page `store/grimsheet.md` (frontmatter for Owlbear's store) with `store/hero.png` (1200×630), `store/icon.png` (256×256) and screenshots (sheet, wizard, prepare spells, encounter, tour).
+
+## HP bars on tokens (app 1.42.0)
+
+- The background page draws an **HP bar and AC** on every CHARACTER/MOUNT token that carries the HP/AC metadata Grimsheet writes (the Stat Bubbles format, `com.owlbear-rodeo-bubbles-extension/metadata`), so no other extension is needed (Owlbear verification: "requires no other extensions").
+- Drawn as **local items** (`OBR.scene.local`), attached to the token, on each person's own screen: the GM sees all; players see tokens whose `hide` is off. Monsters with `hide` on show players **Healthy / Bloodied / Down** when the GM's "Monster HP for players" is *Healthy / Bloodied* (the GM's panel writes `hpShow` into the monster link), and nothing when it's *Hidden*.
+- Bar: dark track, fill green over 50%, amber to 25%, red below, grey at 0; "hp/max +temp" text; a thin blue strip for temp HP; AC in a circle at the bar's left end. Only tokens whose values, size or visibility changed are redrawn.
+- **Settings → HP bars on tokens** (each person, in Owlbear) turns them off. If Stat Bubbles is drawing in the room (its local items `<id>-health-background` / `<id>-ac-background`), Grimsheet removes its own bars and leaves it to Stat Bubbles.

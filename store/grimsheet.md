@@ -45,7 +45,7 @@ A 5e character sheet that handles homebrew as well as the rules. Tap any number 
 
 ## Getting started
 
-Open Grimsheet from the toolbar. A short tour shows the ropes, and **Settings → Tours** replays it any time. Grimsheet works with [Stat Bubbles for D&D](https://github.com/SeamusFinlayson/Bubbles-for-Owlbear-Rodeo) and Owlbear's initiative tracker if you use them, and doesn't need either.
+Open Grimsheet from the toolbar. A short tour shows the ropes, and **Settings → Tours** replays it any time. Linked tokens get an HP bar and AC drawn by Grimsheet, so no other extension is needed. If your room uses [Stat Bubbles for D&D](https://github.com/SeamusFinlayson/Bubbles-for-Owlbear-Rodeo) or Owlbear's initiative tracker, Grimsheet keeps them up to date too.
 
 ![A tour step](https://benfass.github.io/grimsheet/store/tour.png)
 

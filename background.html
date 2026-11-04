@@ -25,6 +25,87 @@
     const beat = () => S.write(S.BG, { at: Date.now(), room, v: S.VERSION });
     beat(); setInterval(beat, 15000);
 
+    /* ---- HP bars and AC on tokens, drawn by Grimsheet itself (no other extension needed) ----
+       Reads the HP and AC that Grimsheet writes on tokens (the same data Stat Bubbles reads) and draws
+       them as local drawings on this player's screen only, so each person sees what their role allows.
+       If Stat Bubbles is already drawing in this room, Grimsheet steps aside and draws nothing. */
+    (function tokenBars() {
+      const B = window.OwlbearBuild; if (!B || !OBR.scene || !OBR.scene.local) return;
+      const MINE = 'com.grimsheet/bar', MONLINK = 'com.grimsheet/monster';
+      const drawn = {};            // token id -> signature of what we drew
+      let busy = false, again = false, timer = null, dpi = 150;
+      const enabled = () => { const st = S.read('grimsheet.settings.v1') || {}; return st.tokenBars !== false; };
+      const num = v => (typeof v === 'number' && isFinite(v) ? v : 0);
+      const colour = f => f <= 0 ? '#6b6b6b' : f <= 0.25 ? '#c0392b' : f <= 0.5 ? '#d68910' : '#2e9e5b';
+      function wanted(it) {
+        const b = it.metadata && it.metadata[S.BUBBLES]; if (!b) return null;
+        const hp = num(b.health), max = num(b['max health']), temp = num(b['temporary health']), ac = num(b['armor class']);
+        if (me.role === 'GM' || !b.hide) return max > 0 || ac > 0 ? { hp, max, temp, ac, text: max > 0 ? hp + '/' + max + (temp > 0 ? ' +' + temp : '') : '' } : null;
+        // hidden from players: only what the GM's "Monster HP for players" setting allows
+        if (!it.visible) return null;
+        const ml = it.metadata[MONLINK] || {};
+        if (ml.hpShow === 'status' && max > 0) { const t = hp <= 0 ? 'Down' : hp <= max / 2 ? 'Bloodied' : 'Healthy'; return { hp: hp <= 0 ? 0 : hp <= max / 2 ? 1 : 3, max: hp <= 0 ? 1 : hp <= max / 2 ? 4 : 3, temp: 0, ac: 0, text: t }; }
+        return null;
+      }
+      function build(it, w, bd) {
+        const out = [], width = Math.max(bd.width * 0.9, dpi * 0.7), h = Math.round(dpi * 0.17), left = bd.center.x - width / 2, top = bd.max.y - h - dpi * 0.04;
+        const common = x => x.attachedTo(it.id).locked(true).disableHit(true).visible(it.visible).disableAttachmentBehavior(['ROTATION', 'SCALE', 'LOCKED', 'COPY']).metadata({ [MINE]: { for: it.id } });
+        let z = Date.now();
+        if (w.text) {
+          const f = w.max > 0 ? Math.max(0, Math.min(1, w.hp / w.max)) : 0;
+          out.push(common(B.buildShape().shapeType('RECTANGLE').width(width).height(h).position({ x: left, y: top }).fillColor('#111111').fillOpacity(0.8).strokeColor('#000000').strokeWidth(1).strokeOpacity(0.6)).layer('ATTACHMENT').zIndex(z++).name('HP bar').build());
+          if (f > 0) out.push(common(B.buildShape().shapeType('RECTANGLE').width(Math.max(2, width * f)).height(h).position({ x: left, y: top }).fillColor(colour(f)).fillOpacity(0.95).strokeWidth(0).strokeOpacity(0)).layer('ATTACHMENT').zIndex(z++).name('HP bar').build());
+          if (w.temp > 0) out.push(common(B.buildShape().shapeType('RECTANGLE').width(width).height(Math.max(2, h * 0.22)).position({ x: left, y: top - Math.max(2, h * 0.22) }).fillColor('#4aa3df').fillOpacity(0.95).strokeWidth(0).strokeOpacity(0)).layer('ATTACHMENT').zIndex(z++).name('Temp HP').build());
+          out.push(common(B.buildText().textType('PLAIN').plainText(w.text).width(width).height(h).position({ x: left, y: top }).textAlign('CENTER').textAlignVertical('MIDDLE').fontSize(Math.round(h * 0.8)).fontWeight(700).fontFamily('sans-serif').fillColor('#ffffff').strokeColor('#000000').strokeWidth(Math.max(1, h * 0.12)).padding(0).lineHeight(1)).layer('TEXT').zIndex(z++).name('HP').build());
+        }
+        if (w.ac > 0) {
+          const d = Math.round(dpi * 0.3), cx = w.text ? left - d * 0.25 : bd.center.x, cy = w.text ? top + h / 2 : bd.max.y - d / 2;
+          out.push(common(B.buildShape().shapeType('CIRCLE').width(d).height(d).position({ x: cx, y: cy }).fillColor('#3b4a54').fillOpacity(0.95).strokeColor('#d9d9d9').strokeWidth(2).strokeOpacity(0.9)).layer('ATTACHMENT').zIndex(z++).name('AC').build());
+          out.push(common(B.buildText().textType('PLAIN').plainText(String(w.ac)).width(d).height(d).position({ x: cx - d / 2, y: cy - d / 2 }).textAlign('CENTER').textAlignVertical('MIDDLE').fontSize(Math.round(d * 0.5)).fontWeight(700).fontFamily('sans-serif').fillColor('#ffffff').strokeWidth(0).padding(0).lineHeight(1)).layer('TEXT').zIndex(z++).name('AC').build());
+        }
+        return out;
+      }
+      async function clearAll() {
+        try { const ours = await OBR.scene.local.getItems(i => !!(i.metadata && i.metadata[MINE])); if (ours.length) await OBR.scene.local.deleteItems(ours.map(i => i.id)); } catch (e) { }
+        for (const k in drawn) delete drawn[k];
+      }
+      async function sync() {
+        if (busy) { again = true; return; }
+        busy = true;
+        try {
+          if (!(await OBR.scene.isReady())) { for (const k in drawn) delete drawn[k]; return; }
+          const local = await OBR.scene.local.getItems();
+          const bubbles = local.some(i => /-(health-background|ac-background)$/.test(i.id || '') && !(i.metadata && i.metadata[MINE]));
+          if (!enabled() || bubbles) { if (local.some(i => i.metadata && i.metadata[MINE])) await clearAll(); return; }
+          try { dpi = await OBR.scene.grid.getDpi(); } catch (e) { }
+          const toks = await OBR.scene.items.getItems(it => (it.layer === 'CHARACTER' || it.layer === 'MOUNT') && !!(it.metadata && it.metadata[S.BUBBLES]));
+          const want = {};
+          for (const it of toks) { const w = wanted(it); if (w) want[it.id] = { it, w, sig: JSON.stringify([w, it.visible, it.scale, it.image && it.image.width, it.grid && it.grid.dpi, dpi, me.role]) }; }
+          const mine = local.filter(i => i.metadata && i.metadata[MINE]), byTok = {};
+          for (const i of mine) (byTok[i.metadata[MINE].for] = byTok[i.metadata[MINE].for] || []).push(i.id);
+          const del = [], redo = [];
+          for (const tok of Object.keys(byTok)) if (!want[tok] || drawn[tok] !== want[tok].sig) { del.push(...byTok[tok]); delete drawn[tok]; }
+          for (const tok of Object.keys(want)) if (!byTok[tok] || drawn[tok] !== want[tok].sig) redo.push(tok);
+          for (const tok of Object.keys(drawn)) if (!want[tok]) delete drawn[tok];
+          if (del.length) await OBR.scene.local.deleteItems(del);
+          if (!redo.length) return;
+          const bounds = {};
+          for (const tok of redo) { try { bounds[tok] = await OBR.scene.items.getItemBounds([tok]); } catch (e) { } }
+          const add = [];
+          for (const tok of redo) { if (!bounds[tok]) continue; add.push(...build(want[tok].it, want[tok].w, bounds[tok])); drawn[tok] = want[tok].sig; }
+          if (add.length) await OBR.scene.local.addItems(add);
+        } catch (e) { }
+        finally { busy = false; if (again) { again = false; schedule(); } }
+      }
+      const schedule = () => { clearTimeout(timer); timer = setTimeout(sync, 150); };
+      OBR.scene.onReadyChange(ready => { for (const k in drawn) delete drawn[k]; if (ready) schedule(); });
+      OBR.scene.items.onChange(schedule);
+      OBR.scene.local.onChange(items => { if (items.some(i => /-(health-background|ac-background)$/.test(i.id || '') && !(i.metadata && i.metadata[MINE]))) schedule(); });
+      OBR.player.onChange(() => schedule());
+      window.addEventListener('storage', ev => { if (ev.key === 'grimsheet.settings.v1') schedule(); });
+      schedule();
+    })();
+
     /* ---- rolls from other players ---- */
     OBR.broadcast.onMessage(S.CH_ROLL, ev => {
       const d = ev.data;

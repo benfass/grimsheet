@@ -58,7 +58,7 @@ Grimsheet has no accounts, no analytics, no ads, no cookies and no server of its
 - **Table** tab in roll history with everyone's shared rolls.
 - **Rerolls:** features like Lucky, Heroic Inspiration, Halfling Luck or Savage Attacker get a reroll tag (found automatically in pasted text, or set in the editor). After a matching roll, a reroll button appears on the dice and in the roll bar; it spends a use and recomputes the total. Rerolls are always announced, to the table or at least to the GM, and show up on the GM's attack cards.
 - **Party** module with live HP, AC and conditions of everyone using Grimsheet in the room.
-- **Link your token:** right-click your character token → **Link to my Grimsheet character**. The token's [Stat Bubbles for D&D](https://github.com/SeamusFinlayson/Bubbles-for-Owlbear-Rodeo) HP and AC follow your sheet, and rolling Initiative puts your total into Owlbear's initiative tracker. Right-click → **Unlink from Grimsheet** to undo.
+- **Link your token:** right-click your character token → **Link to my Grimsheet character**. The token shows an HP bar and AC that follow your sheet, and rolling Initiative puts your total into Owlbear's initiative tracker. Right-click → **Unlink from Grimsheet** to undo.
 - **Panel size** (Small, Medium, Large or custom) and a **Compact** mode.
 
 ### For the GM
@@ -78,7 +78,7 @@ Grimsheet has no accounts, no analytics, no ads, no cookies and no server of its
 - **GM settings:** monster HP for players (hidden, Healthy / Bloodied, or exact), sharing monster rolls, and updating Owlbear's tracker.
 - Follows Owlbear's light or dark theme.
 
-Stat Bubbles and the initiative tracker are separate extensions; add them to your room to see the HP rings and the turn order. Grimsheet writes their data even if they aren't installed, so turning them on later shows the current values.
+Grimsheet draws HP bars and AC on linked tokens itself; no other extension is needed. Each person's bars are drawn on their own screen, so players only see monster HP as the GM allows (**Settings → Monster HP for players**), and **Settings → HP bars on tokens** turns them off. If your room already uses [Stat Bubbles for D&D](https://github.com/SeamusFinlayson/Bubbles-for-Owlbear-Rodeo), Grimsheet writes the HP and AC in its format and leaves the drawing to it. Grimsheet also writes initiative for Owlbear's initiative tracker, for tables that use it.
 
 ## Legal
 
