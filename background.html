@@ -47,10 +47,8 @@
         if (ml.hpShow === 'status' && max > 0) { const t = hp <= 0 ? 'Down' : hp <= max / 2 ? 'Bloodied' : 'Healthy'; return { hp: hp <= 0 ? 0 : hp <= max / 2 ? 1 : 3, max: hp <= 0 ? 1 : hp <= max / 2 ? 4 : 3, temp: 0, ac: 0, text: t }; }
         return null;
       }
-      // keep clear of the token's name: Owlbear writes it at the bottom unless the text says otherwise
-      const barAtTop = it => { const t = it.text || {}; return !!(t.plainText || '').trim() && ((t.style || {}).textAlignVertical || 'BOTTOM') === 'BOTTOM'; };
       function build(it, w, bd) {
-        const out = [], width = Math.max(bd.width * 0.9, dpi * 0.7), h = Math.round(dpi * 0.17), left = bd.center.x - width / 2, top = barAtTop(it) ? bd.min.y + dpi * 0.04 : bd.max.y - h - dpi * 0.04;
+        const out = [], width = Math.max(bd.width * 0.9, dpi * 0.7), h = Math.round(dpi * 0.17), left = bd.center.x - width / 2, top = bd.max.y - h - dpi * 0.04;
         const common = x => x.attachedTo(it.id).locked(true).disableHit(true).visible(it.visible).disableAttachmentBehavior(['ROTATION', 'SCALE', 'LOCKED', 'COPY']).metadata({ [MINE]: { for: it.id } });
         let z = Date.now();
         if (w.text) {
@@ -61,11 +59,23 @@
           out.push(common(B.buildText().textType('PLAIN').plainText(w.text).width(width).height(h).position({ x: left, y: top }).textAlign('CENTER').textAlignVertical('MIDDLE').fontSize(Math.round(h * 0.8)).fontWeight(700).fontFamily('sans-serif').fillColor('#ffffff').strokeColor('#000000').strokeWidth(Math.max(1, h * 0.12)).padding(0).lineHeight(1)).layer('TEXT').zIndex(z++).name('HP').build());
         }
         if (w.ac > 0) {
-          const d = Math.round(dpi * 0.3), cx = w.text ? left - d * 0.25 : bd.center.x, cy = w.text ? top + h / 2 : barAtTop(it) ? bd.min.y + d / 2 : bd.max.y - d / 2;
+          const d = Math.round(dpi * 0.3), cx = w.text ? left - d * 0.25 : bd.center.x, cy = w.text ? top + h / 2 : bd.max.y - d / 2;
           out.push(common(B.buildShape().shapeType('CIRCLE').width(d).height(d).position({ x: cx, y: cy }).fillColor('#3b4a54').fillOpacity(0.95).strokeColor('#d9d9d9').strokeWidth(2).strokeOpacity(0.9)).layer('ATTACHMENT').zIndex(z++).name('AC').build());
           out.push(common(B.buildText().textType('PLAIN').plainText(String(w.ac)).width(d).height(d).position({ x: cx - d / 2, y: cy - d / 2 }).textAlign('CENTER').textAlignVertical('MIDDLE').fontSize(Math.round(d * 0.5)).fontWeight(700).fontFamily('sans-serif').fillColor('#ffffff').strokeWidth(0).padding(0).lineHeight(1)).layer('TEXT').zIndex(z++).name('AC').build());
         }
         return out;
+      }
+      const NAME = 'com.grimsheet/nametext';
+      function nameOf(it) { const n = it.metadata && it.metadata[NAME]; return n && n.text ? { text: String(n.text), color: n.color || '#ffffff', pos: n.pos === 'TOP' ? 'TOP' : 'BOTTOM' } : null; }
+      function buildName(it, n, bd) {
+        const up = n.pos === 'TOP', f = Math.round(dpi * 0.13), pad = Math.max(2, Math.round(dpi * 0.02));
+        const at = { x: bd.center.x, y: up ? bd.min.y - dpi * 0.03 : bd.max.y + dpi * 0.02 };
+        return B.buildLabel().plainText(n.text).position(at).attachedTo(it.id).layer('TEXT').locked(true).disableHit(true).visible(it.visible)
+          .disableAttachmentBehavior(['ROTATION', 'SCALE', 'LOCKED', 'COPY'])
+          .fontSize(f).fontWeight(700).fontFamily('sans-serif').fillColor(n.color).strokeColor('#000000').strokeWidth(Math.max(1, Math.round(f * 0.1)))
+          .backgroundColor('#000000').backgroundOpacity(0.55).cornerRadius(Math.round(f * 0.4)).padding(pad)
+          .pointerDirection(up ? 'DOWN' : 'UP').pointerWidth(0).pointerHeight(0)
+          .zIndex(Date.now()).name('Name').metadata({ [MINE]: { for: it.id, name: true } }).build();
       }
       async function clearAll() {
         try { const ours = await OBR.scene.local.getItems(i => !!(i.metadata && i.metadata[MINE])); if (ours.length) await OBR.scene.local.deleteItems(ours.map(i => i.id)); } catch (e) { }
@@ -78,11 +88,14 @@
           if (!(await OBR.scene.isReady())) { for (const k in drawn) delete drawn[k]; return; }
           const local = await OBR.scene.local.getItems();
           const bubbles = local.some(i => /-(health-background|ac-background)$/.test(i.id || '') && !(i.metadata && i.metadata[MINE]));
-          if (!enabled() || bubbles) { if (local.some(i => i.metadata && i.metadata[MINE])) await clearAll(); return; }
+          const bars = enabled() && !bubbles;
           try { dpi = await OBR.scene.grid.getDpi(); } catch (e) { }
-          const toks = await OBR.scene.items.getItems(it => (it.layer === 'CHARACTER' || it.layer === 'MOUNT') && !!(it.metadata && it.metadata[S.BUBBLES]));
+          const toks = await OBR.scene.items.getItems(it => (it.layer === 'CHARACTER' || it.layer === 'MOUNT') && !!(it.metadata && (it.metadata[S.BUBBLES] || it.metadata[NAME])));
           const want = {};
-          for (const it of toks) { const w = wanted(it); if (w) want[it.id] = { it, w, sig: JSON.stringify([w, barAtTop(it), it.visible, it.scale, it.image && it.image.width, it.grid && it.grid.dpi, dpi, me.role]) }; }
+          for (const it of toks) {
+            const w = bars ? wanted(it) : null, n = (me.role === 'GM' || it.visible) ? nameOf(it) : null;
+            if (w || n) want[it.id] = { it, w, n, sig: JSON.stringify([w, n, it.visible, it.scale, it.image && it.image.width, it.grid && it.grid.dpi, dpi, me.role]) };
+          }
           const mine = local.filter(i => i.metadata && i.metadata[MINE]), byTok = {};
           for (const i of mine) (byTok[i.metadata[MINE].for] = byTok[i.metadata[MINE].for] || []).push(i.id);
           const del = [], redo = [];
@@ -94,7 +107,7 @@
           const bounds = {};
           for (const tok of redo) { try { bounds[tok] = await OBR.scene.items.getItemBounds([tok]); } catch (e) { } }
           const add = [];
-          for (const tok of redo) { if (!bounds[tok]) continue; add.push(...build(want[tok].it, want[tok].w, bounds[tok])); drawn[tok] = want[tok].sig; }
+          for (const tok of redo) { if (!bounds[tok]) continue; const x = want[tok]; if (x.w) add.push(...build(x.it, x.w, bounds[tok])); if (x.n) add.push(buildName(x.it, x.n, bounds[tok])); drawn[tok] = x.sig; }
           if (add.length) await OBR.scene.local.addItems(add);
         } catch (e) { }
         finally { busy = false; if (again) { again = false; schedule(); } }

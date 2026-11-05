@@ -3221,7 +3221,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.43.0';
+const APP_VERSION = '1.44.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -3647,15 +3647,15 @@ function wantedCondLabels() {
   }
   return want;
 }
-function mkCondLabel(tokId, text, at, visible) {
-  const B = window.OwlbearBuild, meta = { [CONDLABEL]: { for: tokId } };
+function mkCondLabel(tokId, text, at, visible, under) {
+  const B = window.OwlbearBuild, meta = { [CONDLABEL]: { for: tokId, under: under || 'token' } };
   if (B && B.buildLabel) return B.buildLabel().plainText(text).position(at).attachedTo(tokId).layer('ATTACHMENT').locked(true).disableHit(true).visible(visible !== false)
     .fontSize(20).fontWeight(600).fillColor('#ffffff').backgroundColor('#7a1f1f').backgroundOpacity(0.85).cornerRadius(8).padding(6).pointerDirection('UP').pointerWidth(10).pointerHeight(6).name('Conditions').metadata(meta).build();
   return { id: uid() + uid(), type: 'LABEL', name: 'Conditions', layer: 'ATTACHMENT', attachedTo: tokId, position: at, rotation: 0, scale: { x: 1, y: 1 }, visible: visible !== false, locked: true, disableHit: true, zIndex: Date.now(), text: { plainText: text, type: 'PLAIN' }, metadata: meta };
 }
 /* ---- names as token text: monsters and characters, in their own colours ---- */
 const NAMETEXT = 'com.grimsheet/nametext';
-const namePos = () => ['TOP', 'MIDDLE', 'BOTTOM'].includes(SETTINGS.namePos) ? SETTINGS.namePos : 'BOTTOM';
+const namePos = () => SETTINGS.namePos === 'TOP' ? 'TOP' : 'BOTTOM';
 const nameColors = () => ({ mon: SETTINGS.nameColorMon || '#E8692C', pc: SETTINGS.nameColorPc || '#1F9E8F' });
 function wantedNames() {
   const want = {}, col = nameColors();
@@ -3668,20 +3668,23 @@ function wantedNames() {
   return want;
 }
 async function syncNameTexts() {
-  const want = wantedNames();
+  // the name is drawn by each person's Grimsheet as a label beside the token (above it or under it), so it
+  // never covers the HP bar; the token's own text is cleared while that's on and put back when it's off
+  const want = wantedNames(), pos = namePos();
   const ours = await OBRX.api.scene.items.getItems(it => !!(it.metadata && it.metadata[NAMETEXT]) || !!want[it.id]);
   const ids = [];
   for (const it of ours) {
-    const w = want[it.id], tx = it.text || {}, st = tx.style || {};
-    if (w ? tx.plainText !== w.text || st.fillColor !== w.color || (st.textAlignVertical || 'BOTTOM') !== namePos() || !it.metadata[NAMETEXT] : !!it.metadata[NAMETEXT]) ids.push(it.id);
+    const w = want[it.id], m = it.metadata[NAMETEXT], tx = it.text || {};
+    if (w ? !m || m.text !== w.text || m.color !== w.color || m.pos !== pos || (tx.plainText || '') !== '' : !!m) ids.push(it.id);
   }
   if (!ids.length) return;
   await OBRX.api.scene.items.updateItems(ids, ds => {
     for (const d of ds) {
       const w = want[d.id]; d.text = d.text || { type: 'PLAIN', plainText: '', style: {} }; d.text.style = d.text.style || {};
       if (w) {
-        if (!d.metadata[NAMETEXT]) d.metadata[NAMETEXT] = { orig: { plainText: d.text.plainText || '', fillColor: d.text.style.fillColor || null, strokeColor: d.text.style.strokeColor || null, strokeWidth: d.text.style.strokeWidth ?? null, align: d.text.style.textAlignVertical || null } };
-        d.text.plainText = w.text; d.text.type = d.text.type || 'PLAIN'; d.text.style.fillColor = w.color; d.text.style.strokeColor = '#000000'; d.text.style.strokeWidth = Math.max(+d.text.style.strokeWidth || 0, 2); d.text.style.textAlignVertical = namePos();
+        const orig = (d.metadata[NAMETEXT] || {}).orig || { plainText: d.text.plainText || '', fillColor: d.text.style.fillColor || null, strokeColor: d.text.style.strokeColor || null, strokeWidth: d.text.style.strokeWidth ?? null, align: d.text.style.textAlignVertical || null };
+        d.metadata[NAMETEXT] = { orig, text: w.text, color: w.color, pos };
+        d.text.plainText = '';
       } else {
         // switched off or unlinked: put back what the token had before
         const o = (d.metadata[NAMETEXT] || {}).orig || {};
@@ -3699,10 +3702,12 @@ async function doSyncCondLabels() {
   try {
     const want = SETTINGS.condLabels === false ? {} : wantedCondLabels();
     const have = await OBRX.api.scene.items.getItems(it => !!(it.metadata && it.metadata[CONDLABEL]));
+    const under = SETTINGS.nameText !== false && namePos() === 'BOTTOM' ? 'name' : 'token'; let dpi = 150; try { dpi = await OBRX.api.scene.grid.getDpi(); } catch (e) { } const wn = wantedNames();
     const del = [], upd = {}, seen = new Set();
     for (const it of have) {
       const tok = it.attachedTo || (it.metadata[CONDLABEL] || {}).for;
-      if (!want[tok] || seen.has(tok)) { del.push(it.id); continue; }
+      const lay = under === 'name' && wn[tok] ? 'name' : 'token';
+      if (!want[tok] || seen.has(tok) || ((it.metadata[CONDLABEL] || {}).under || 'token') !== lay) { del.push(it.id); continue; }
       seen.add(tok); if ((it.text && it.text.plainText) !== want[tok]) upd[it.id] = want[tok];
     }
     if (del.length) await OBRX.api.scene.items.deleteItems(del);
@@ -3710,9 +3715,10 @@ async function doSyncCondLabels() {
     const add = [];
     for (const [tok, text] of Object.entries(want)) {
       if (seen.has(tok)) continue;
-      let at; try { const b = await OBRX.api.scene.items.getItemBounds([tok]); at = { x: b.center.x, y: b.max.y + 6 }; } catch (e) { continue; }
       const it = OBRX.tokCache[tok] || Object.values(OBRX.monTokens).flat().concat(Object.values(OBRX.pcTokens).flat()).find(x => x.id === tok);
-      add.push(mkCondLabel(tok, text, at, it ? it.visible : true));
+      const lay = under === 'name' && wn[tok] ? 'name' : 'token';
+      let at; try { const b = await OBRX.api.scene.items.getItemBounds([tok]); at = { x: b.center.x, y: b.max.y + 6 + (lay === 'name' ? Math.round(dpi * 0.26) : 0) }; } catch (e) { continue; }
+      add.push(mkCondLabel(tok, text, at, it ? it.visible : true, lay));
     }
     if (add.length) await OBRX.api.scene.items.addItems(add);
   } catch (e) { }
@@ -8432,10 +8438,9 @@ function settingsHtml() {
       <button class="switch ${SETTINGS.autoDmg ? 'on' : ''}" data-act="setautodmg" aria-pressed="${!!SETTINGS.autoDmg}"><i></i>${SETTINGS.autoDmg ? 'On' : 'Off'}</button></div>
     <div class="setrow"><div class="grow"><b>Show conditions under tokens</b><div class="muted">A small label under each linked token (monsters and players) lists its conditions, e.g. "Prone · Poisoned (2)". Everyone at the table sees it; it follows the token's visibility. Kept up to date while your Grimsheet panel is open.</div></div>
       <button class="switch ${SETTINGS.condLabels !== false ? 'on' : ''}" data-act="setcondlabels" aria-pressed="${SETTINGS.condLabels !== false}"><i></i>${SETTINGS.condLabels !== false ? 'On' : 'Off'}</button></div>
-    <div class="setrow"><div class="grow"><b>Names on tokens</b><div class="muted">Writes each linked token's monster or character name as its token text, in these colours. Turning it off puts back the text the token had.</div>
+    <div class="setrow"><div class="grow"><b>Names on tokens</b><div class="muted">Shows each linked token's monster or character name in a tag under or above the token, in these colours, clear of the HP bar. While it's on, the token's own text is hidden; turning it off puts it back.</div>
         <div class="inline" style="margin-top:6px"><label class="muted">Monsters <input type="color" id="nc-mon" data-namecolor="mon" value="${esc(nameColors().mon)}" aria-label="Monster name colour"></label><label class="muted">Characters <input type="color" id="nc-pc" data-namecolor="pc" value="${esc(nameColors().pc)}" aria-label="Character name colour"></label><button class="btn small ghost" data-act="namecolreset">Default colours</button></div>
-        <div class="inline" style="margin-top:6px"><span class="muted">Name position</span><div class="seg" role="group" aria-label="Name position on tokens">${[['TOP', 'Top'], ['MIDDLE', 'Middle'], ['BOTTOM', 'Bottom']].map(([v, l]) => `<button data-act="setnamepos" data-v="${v}" class="${namePos() === v ? 'on' : ''}">${l}</button>`).join('')}</div></div>
-        <div class="muted" style="margin-top:4px">HP bars move out of the name's way: to the top of the token when names are at the bottom, otherwise to the bottom.</div></div>
+        <div class="inline" style="margin-top:6px"><label class="muted">Name <select class="ed-inline" data-namepos="1" id="set-namepos" aria-label="Name position on tokens">${[['BOTTOM', 'under the token'], ['TOP', 'above the token']].map(([v, l]) => `<option value="${v}" ${namePos() === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div></div>
       <button class="switch ${SETTINGS.nameText !== false ? 'on' : ''}" data-act="setnametext" aria-pressed="${SETTINGS.nameText !== false}"><i></i>${SETTINGS.nameText !== false ? 'On' : 'Off'}</button></div>
     <div class="setrow"><div class="grow"><b>Also update Owlbear's initiative tracker</b><div class="muted">Writes initiative and the current turn onto tokens, for tables that use that tracker.</div></div>
       <button class="switch ${SETTINGS.obrTracker !== false ? 'on' : ''}" data-act="setobrtracker" aria-pressed="${SETTINGS.obrTracker !== false}"><i></i>${SETTINGS.obrTracker !== false ? 'On' : 'Off'}</button></div>` : ''}
@@ -8805,7 +8810,6 @@ document.addEventListener('click', ev => {
     case 'setnametext': SETTINGS.nameText = SETTINGS.nameText === false; saveSettings(); syncCondLabels(); renderModal(); break;
     case 'namecolreset': delete SETTINGS.nameColorMon; delete SETTINGS.nameColorPc; saveSettings(); syncCondLabels(); renderModal(); break;
     case 'settokenbars': SETTINGS.tokenBars = SETTINGS.tokenBars === false; saveSettings(); renderModal(); break;
-    case 'setnamepos': SETTINGS.namePos = v; saveSettings(); syncCondLabels(); renderModal(); break;
     case 'setcondlabels': SETTINGS.condLabels = SETTINGS.condLabels === false; saveSettings(); syncCondLabels(); renderModal(); break;
     case 'setobrtracker': SETTINGS.obrTracker = SETTINGS.obrTracker === false; saveSettings(); publishInit(); renderModal(); break;
     case 'addmon': openModal('addmon', { tab: 'list', q: '' }); break;
@@ -8968,6 +8972,7 @@ function doImport(lib) {
 document.addEventListener('change', ev => {
   const t = ev.target;
   if (t.dataset.cw != null && cwInput(t)) return;
+  if (t.dataset.namepos) { SETTINGS.namePos = t.value === 'TOP' ? 'TOP' : 'BOTTOM'; saveSettings(); syncCondLabels(); return; }
   if (t.dataset.prep != null && prepInput(t)) return;
   if (t.dataset.encname) { const x = encs().list[t.dataset.encname]; if (x) { x.name = t.value.trim() || x.name; saveEnc({ quiet: true }); } ui.encRen = null; setTimeout(renderGrid, 0); return; }
   if (t.dataset.campname) { const cc = camp(); cc.name = t.value.trim(); cc.nameAt = Date.now(); saveCamp(cc); ui.campName = false; sendNotes({ type: 'name', name: cc.name, at: cc.nameAt }); setTimeout(renderGrid, 0); return; }

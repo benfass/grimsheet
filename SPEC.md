@@ -570,7 +570,9 @@ Ordered by when it gets built. Priority applies inside a goal.
 
 - 1.42.1: manifest description shortened to fit Owlbear's 128-character limit (the longer one in 1.41.1 stopped the extension loading).
 
-## Names and HP bars (app 1.43.0)
+## Names and HP bars (app 1.44.0, replaces 1.43.0)
 
-- **Settings → Names on tokens → Name position**: Top / Middle / Bottom (default Bottom, Owlbear's usual). Sets the token text's `textAlignVertical` on names Grimsheet writes; turning names off restores the token's original alignment.
-- HP bars keep clear of names: on a token whose text is non-empty and aligned to the bottom (Owlbear's default), the bar and AC go along the **top** of the token; otherwise along the bottom. Works for any token name, not only Grimsheet's.
+- HP bar and AC always sit along the **bottom** of the token.
+- **Names on tokens** (GM): the GM's panel writes `com.grimsheet/nametext` = `{ orig, text, color, pos }` on each linked token and **clears the token's own text** (kept in `orig`, put back when names are turned off or the token is unlinked).
+- Each person's background page draws the name as a **local label** attached to the token: **under the token** (default) or **above it**, chosen by the GM in Settings → Names on tokens → *Name* dropdown. Names are drawn even when HP bars are off or Stat Bubbles draws the bars; players don't get names of hidden tokens.
+- Conditions labels move down below the name when names are under tokens (`under: 'name'` on the label; relaid when the setting changes).
