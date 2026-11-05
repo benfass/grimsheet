@@ -25,6 +25,35 @@
     const beat = () => S.write(S.BG, { at: Date.now(), room, v: S.VERSION });
     beat(); setInterval(beat, 15000);
 
+    // main extension: pause while Grimsheet TEST runs in this room (no drawings, menus or messages)
+    let paused = S.testRunning(room);
+    const listen = (ch, fn) => OBR.broadcast.onMessage(ch, ev => { if (!paused) return fn(ev); });
+    const onPause = [];
+    setInterval(() => {
+      const now = S.testRunning(room); if (now === paused) return;
+      paused = now; onPause.forEach(f => { try { f(paused); } catch (e) { } });
+      if (paused) OBR.notification.show('Grimsheet TEST is running in this room, so Grimsheet is paused here until it\'s turned off.', 'INFO').catch(() => { });
+    }, 5000);
+
+    // test extension, GM: take over the tokens the main Grimsheet linked (copies its data onto the test names)
+    if (window.GRIMSHEET_TEST) {
+      const MAIN = 'com.grimsheet' + '/', TEST = 'com.grimsheet-test/';
+      const takeOver = async () => {
+        if (me.role !== 'GM') return;
+        try {
+          if (!(await OBR.scene.isReady())) return;
+          const its = await OBR.scene.items.getItems(it => Object.keys(it.metadata || {}).some(k => k.startsWith(MAIN) && !((TEST + k.slice(MAIN.length)) in it.metadata)));
+          if (its.length) {
+            await OBR.scene.items.updateItems(its.map(i => i.id), ds => { for (const d of ds) for (const k of Object.keys(d.metadata)) if (k.startsWith(MAIN) && !((TEST + k.slice(MAIN.length)) in d.metadata)) d.metadata[TEST + k.slice(MAIN.length)] = JSON.parse(JSON.stringify(d.metadata[k])); });
+            OBR.notification.show(`Grimsheet TEST took over ${its.length} token${its.length === 1 ? '' : 's'} from Grimsheet.`, 'INFO').catch(() => { });
+          }
+          const md = await OBR.room.getMetadata();
+          if (md[MAIN + 'initiative'] && !md[TEST + 'initiative']) await OBR.room.setMetadata({ [TEST + 'initiative']: md[MAIN + 'initiative'] });
+        } catch (e) { }
+      };
+      takeOver(); OBR.scene.onReadyChange(ready => { if (ready) takeOver(); });
+    }
+
     /* ---- HP bars and AC on tokens, drawn by Grimsheet itself (no other extension needed) ----
        Reads the HP and AC that Grimsheet writes on tokens (the same data Stat Bubbles reads) and draws
        them as local drawings on this player's screen only, so each person sees what their role allows.
@@ -104,6 +133,7 @@
         if (busy) { again = true; return; }
         busy = true;
         try {
+          if (paused) { await clearAll(); return; }
           if (!(await OBR.scene.isReady())) { for (const k in drawn) delete drawn[k]; return; }
           const local = await OBR.scene.local.getItems();
           const bubbles = local.some(i => /-(health-background|ac-background)$/.test(i.id || '') && !(i.metadata && i.metadata[MINE]));
@@ -137,11 +167,12 @@
       OBR.scene.local.onChange(items => { if (items.some(i => /-(health-background|ac-background)$/.test(i.id || '') && !(i.metadata && i.metadata[MINE]))) schedule(); });
       OBR.player.onChange(() => schedule());
       window.addEventListener('storage', ev => { if (ev.key === 'grimsheet.settings.v1') schedule(); });
+      onPause.push(() => schedule());
       schedule();
     })();
 
     /* ---- rolls from other players ---- */
-    OBR.broadcast.onMessage(S.CH_ROLL, ev => {
+    listen(S.CH_ROLL, ev => {
       const d = ev.data;
       if (!d || d.v !== 1) return;
       if (d.gmOnly && me.role !== 'GM') return;
@@ -153,7 +184,7 @@
 
     /* ---- GM requests aimed at this player ---- */
     const done = new Set();
-    OBR.broadcast.onMessage(S.CH_GM, async ev => {
+    listen(S.CH_GM, async ev => {
       const d = ev.data;
       if (!d || d.to !== me.id || done.has(d.id)) return;
       done.add(d.id);
@@ -217,7 +248,7 @@
     const hbHello = () => { hbAt = Date.now(); hbSend({ type: 'hello', from: me.id, have: S.hbRoom(hbAll(), room).items.map(x => [x.id, x.updated]) }); };
     let hbAsk = null;
     const hbParts = {};
-    OBR.broadcast.onMessage(S.CH_HB, async ev => {
+    listen(S.CH_HB, async ev => {
       const d = ev.data; if (!d) return;
       if (me.role === 'GM') {
         if (d.type !== 'hello') return;
@@ -250,7 +281,7 @@
     /* ---- backups: the GM keeps players' characters and hands them back on request ---- */
     const bkSend = x => OBR.broadcast.sendMessage(S.CH_BK, x, { destination: 'REMOTE' }).catch(() => { });
     const bkParts = {};
-    OBR.broadcast.onMessage(S.CH_BK, async ev => {
+    listen(S.CH_BK, async ev => {
       const d = ev.data; if (!d || me.role !== 'GM') return;
       if (d.type === 'pcb') {
         const b = bkParts[d.id] = bkParts[d.id] || { parts: [], n: d.parts, t: Date.now() }; b.parts[d.part] = d.data;
@@ -274,7 +305,7 @@
     const campGet = () => { const a = S.read(S.CAMP) || {}, c = a[room] || { name: '', notes: [], gone: {} }; c.notes = c.notes || []; c.gone = c.gone || {}; return c; };
     const campPut = c => { const a = S.read(S.CAMP) || {}; a[room] = c; S.write(S.CAMP, a); };
     const replies = {};
-    OBR.broadcast.onMessage(S.CH_NOTES, ev => {
+    listen(S.CH_NOTES, ev => {
       const d = ev.data; if (!d) return;
       if (d.type === 'up' || d.type === 'del') {
         Object.values(replies).forEach(r => r.skip.add(d.type === 'up' ? d.note.id : d.id));
@@ -303,7 +334,7 @@
 
     const endSeen = new Set();
     /* ---- initiative: the GM asks for rolls; tell this player when it's their turn ---- */
-    OBR.broadcast.onMessage(S.CH_GM, ev => {
+    listen(S.CH_GM, ev => {
       const d = ev.data;
       if (d && d.type === 'atk' && d.v === 1 && me.role === 'GM') {
         const key = 'grimsheet.attacks.' + room;
@@ -349,6 +380,7 @@
     });
     let lastTurn = null;
     const onInit = md => {
+      if (paused) return;
       const I = md && md['com.grimsheet/initiative'];
       if (!I || !I.active || !I.rows) { lastTurn = null; return; }
       const key = I.round + '|' + I.turn; if (key === lastTurn) return; lastTurn = key;
@@ -374,8 +406,9 @@
     };
     try { onInit(await OBR.room.getMetadata()); OBR.room.onMetadataChange(onInit); } catch (e) { }
 
-    /* ---- token right-click menus ---- */
-    await OBR.contextMenu.create({
+    /* ---- token right-click menus (taken away while paused) ---- */
+    const MENUS = [];
+    MENUS.push({
       id: 'com.grimsheet/menu-link',
       icons: [{
         icon: ICON, label: 'Link to my Grimsheet character',
@@ -395,7 +428,7 @@
         OBR.notification.show(`${ch.name} is linked to this token. HP, AC and initiative now follow your sheet.`, 'SUCCESS');
       },
     });
-    await OBR.contextMenu.create({
+    MENUS.push({
       id: 'com.grimsheet/menu-unlink',
       icons: [{ icon: ICON, label: 'Unlink from Grimsheet', filter: { min: 1, max: 1, roles: ['PLAYER'], every: [{ key: ['metadata', S.LINK, 'player'], value: me.id }] } }],
       onClick: async ctx => {
@@ -404,11 +437,14 @@
       },
     });
     // the GM's menu opens a small panel inside the right-click menu
-    await OBR.contextMenu.create({
+    MENUS.push({
       id: 'com.grimsheet/menu-gm',
       icons: [{ icon: ICON, label: 'Grimsheet', filter: { min: 1, roles: ['GM'], some: [{ key: 'layer', value: 'CHARACTER', coordinator: '||' }, { key: 'layer', value: 'MOUNT' }] } }],
       embed: { url: GM_URL, height: 260 },
     });
+    const menus = on => Promise.all(MENUS.map(m => (on ? OBR.contextMenu.create(m) : OBR.contextMenu.remove(m.id)).catch(() => { })));
+    if (!paused) await menus(true);
+    onPause.push(p => menus(!p));
   })).catch(() => { });
 })();
 </script>
