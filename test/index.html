@@ -3242,7 +3242,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.46.0';
+const APP_VERSION = '1.47.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -3541,12 +3541,24 @@ window.addEventListener('storage', ev => {
   } catch (e) { }
 });
 window.addEventListener('storage', ev => { if (ev.key && ev.key.startsWith('grimsheet.feed.') && ui.modal && ui.modal.type === 'log' && ui.logTab === 'table') renderModal(); });
+function showPausedForTest(OBR) {
+  try { OBR.theme.getTheme().then(t => { if (t && t.mode) document.documentElement.setAttribute('data-theme', t.mode === 'DARK' ? 'dark' : 'light'); }).catch(() => { }); } catch (e) { }
+  const d = document.createElement('div'); d.id = 'test-paused';
+  d.setAttribute('style', 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;padding:24px;background:var(--bg,#fff);color:var(--ink,#222)');
+  d.innerHTML = '<div style="max-width:420px;text-align:center;line-height:1.5"><div style="font-size:1.3rem;font-weight:700;margin-bottom:8px">Grimsheet is paused in this room</div><div class="muted">Grimsheet TEST is running here, so the main Grimsheet steps aside to keep the two from overlapping. Use Grimsheet TEST from the toolbar. When Grimsheet TEST is turned off for this room, this panel comes back by itself.</div></div>';
+  document.body.appendChild(d);
+}
 async function startOwlbear() {
   try {
     let OBR = window.GrimsheetOBR; // a test double can be provided here
     if (!OBR) { await loadScript('vendor/owlbear-sdk-3.1.0.js'); OBR = window.OwlbearSDK; }
     OBR.onReady(async () => {
       OBRX.api = OBR;
+      // main extension: while Grimsheet TEST runs in this room on this computer, this panel steps aside
+      const testHere = () => { if (window.GRIMSHEET_TEST) return false; try { const v = JSON.parse(localStorage.getItem('test:grimsheet.bg.v1') || 'null'); return !!(v && Date.now() - v.at < 40000 && v.room === (OBR.room && OBR.room.id)); } catch (e) { return false; } };
+      const wasPaused = testHere();
+      setInterval(() => { if (testHere() !== wasPaused) location.reload(); }, 5000);
+      if (wasPaused) { showPausedForTest(OBR); return; }
       const refreshMe = async () => { OBRX.me = { id: OBR.player.id || await OBR.player.getId(), name: await OBR.player.getName(), role: await OBR.player.getRole() }; };
       await refreshMe(); OBRX.ready = true;
       OBR.player.onChange(p => { OBRX.me.name = p.name; OBRX.me.role = p.role; });

@@ -1,7 +1,7 @@
 /* Grimsheet helpers shared by background.html and gm.html (the panel keeps its own copy). */
 window.GS = (function () {
   const GS = {
-    VERSION: '1.46.0',
+    VERSION: '1.47.0',
     CH_ROLL: 'com.grimsheet-test/roll',
     CH_GM: 'com.grimsheet-test/gm',        // GM ↔ player: hp changes, sheet requests and replies
     CH_LOCAL: 'com.grimsheet-test/local',  // same browser: GM menu → GM panel
@@ -12,6 +12,9 @@ window.GS = (function () {
   };
   GS.read = k => { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } };
   GS.write = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } };
+  // the main extension steps aside while Grimsheet TEST runs in the same room on this computer (its background
+  // page's heartbeat is saved under "test:" in the same browser storage)
+  GS.testRunning = room => { if (window.GRIMSHEET_TEST) return false; try { const v = JSON.parse(localStorage.getItem('test:grimsheet.bg.v1') || 'null'); return !!(v && Date.now() - v.at < 40000 && (!room || v.room === room)); } catch (e) { return false; } };
   GS.uid = () => Math.random().toString(36).slice(2, 10);
   GS.esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
