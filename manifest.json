@@ -1,6 +1,6 @@
 {
   "name": "Grimsheet",
-  "version": "1.44.1",
+  "version": "1.45.0",
   "manifest_version": 1,
   "author": "Ben Fassler",
   "description": "5e character sheet for rules and homebrew: tap to roll, build characters, import PDFs, run monsters and initiative in sync.",

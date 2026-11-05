@@ -65,27 +65,36 @@
         }
         return out;
       }
-      const NAME = 'com.grimsheet/nametext';
+      const NAME = 'com.grimsheet/nametext', COND = 'com.grimsheet/cond';
       function nameOf(it) { const n = it.metadata && it.metadata[NAME]; return n && n.text ? { text: String(n.text), color: n.color || '#ffffff', pos: n.pos === 'TOP' ? 'TOP' : 'BOTTOM' } : null; }
       // the name tag lives in map units, so it zooms with the map like the token does, and it's sized to fit
       // within 90% of the token's width (long names get smaller text, never wider than the token)
       const measure = (() => { const c = document.createElement('canvas').getContext('2d'); return (t, f) => { c.font = '700 ' + f + 'px sans-serif'; return c.measureText(t).width; }; })();
-      function buildName(it, n, bd) {
+      // a tag (dark box + text) in map units, never wider than 90% of the token; long text shrinks or goes onto
+      // two lines, split at the separator nearest the middle. `at(h)` gives the tag's top from its height.
+      function tag(it, text, o, bd, at) {
         const maxW = bd.width * 0.9, padX = Math.max(2, bd.width * 0.03);
-        const base = Math.max(6, Math.min(dpi * 0.14, bd.width * 0.15)), fit = lines => Math.min(base, ...lines.map(l => base * (maxW - 2 * padX) / Math.max(1, measure(l, base))));
-        // a long name goes onto two lines (split at the space nearest the middle) when that keeps it bigger
-        let lines = [n.text], f = fit(lines);
-        const sp = [...n.text.matchAll(/ /g)].map(m => m.index);
-        if (f < base * 0.75 && sp.length) { const mid = n.text.length / 2, at = sp.reduce((a, b) => Math.abs(b - mid) < Math.abs(a - mid) ? b : a), two = [n.text.slice(0, at), n.text.slice(at + 1)], f2 = Math.min(fit(two), base * 0.85); if (f2 > f * 1.15) { lines = two; f = f2; } }
+        const base = Math.max(5, Math.min(dpi * 0.14, bd.width * 0.15) * (o.scale || 1)), fit = lines => Math.min(base, ...lines.map(l => base * (maxW - 2 * padX) / Math.max(1, measure(l, base))));
+        let lines = [text], f = fit(lines);
+        const sep = o.sep || ' ', sp = []; for (let i = text.indexOf(sep); i >= 0; i = text.indexOf(sep, i + 1)) sp.push(i);
+        if (f < base * 0.75 && sp.length) { const mid = text.length / 2, cut = sp.reduce((a, b) => Math.abs(b - mid) < Math.abs(a - mid) ? b : a), two = [text.slice(0, cut).trim(), text.slice(cut + sep.length).trim()], f2 = Math.min(fit(two), base * 0.85); if (f2 > f * 1.15) { lines = two; f = f2; } }
         f = Math.max(4, f);
-        const w = Math.min(maxW, Math.max(...lines.map(l => measure(l, f))) + 2 * padX), h = Math.round(f * (lines.length * 1.15 + 0.25)), gap = Math.max(2, bd.height * 0.02);
-        const left = bd.center.x - w / 2, top = n.pos === 'TOP' ? bd.min.y - gap - h : bd.max.y + gap;
-        const common = x => x.attachedTo(it.id).locked(true).disableHit(true).visible(it.visible).disableAttachmentBehavior(['ROTATION', 'SCALE', 'LOCKED', 'COPY']).metadata({ [MINE]: { for: it.id, name: true } });
+        const w = Math.min(maxW, Math.max(...lines.map(l => measure(l, f))) + 2 * padX), h = Math.round(f * (lines.length * 1.15 + 0.25)), left = bd.center.x - w / 2, top = at(h);
+        const common = x => x.attachedTo(it.id).locked(true).disableHit(true).visible(it.visible).disableAttachmentBehavior(['ROTATION', 'SCALE', 'LOCKED', 'COPY']).metadata({ [MINE]: { for: it.id, name: true, kind: o.kind } });
         let z = Date.now();
-        return [
-          common(B.buildShape().shapeType('RECTANGLE').width(w).height(h).position({ x: left, y: top }).fillColor('#000000').fillOpacity(0.55).strokeWidth(0).strokeOpacity(0)).layer('ATTACHMENT').zIndex(z++).name('Name').build(),
-          common(B.buildText().textType('PLAIN').plainText(lines.join('\n')).width(w).height(h).position({ x: left, y: top }).textAlign('CENTER').textAlignVertical('MIDDLE').fontSize(f).fontWeight(700).fontFamily('sans-serif').fillColor(n.color).strokeColor('#000000').strokeWidth(Math.max(0.5, f * 0.08)).padding(0).lineHeight(1.15)).layer('TEXT').zIndex(z++).name('Name').build(),
-        ];
+        return { bottom: top + h, items: [
+          common(B.buildShape().shapeType('RECTANGLE').width(w).height(h).position({ x: left, y: top }).fillColor(o.bg).fillOpacity(o.bgOpacity).strokeWidth(0).strokeOpacity(0)).layer('ATTACHMENT').zIndex(z++).name(o.label).build(),
+          common(B.buildText().textType('PLAIN').plainText(lines.join('\n')).width(w).height(h).position({ x: left, y: top }).textAlign('CENTER').textAlignVertical('MIDDLE').fontSize(f).fontWeight(700).fontFamily('sans-serif').fillColor(o.color).strokeColor('#000000').strokeWidth(o.stroke ? Math.max(0.5, f * 0.08) : 0).padding(0).lineHeight(1.15)).layer('TEXT').zIndex(z++).name(o.label).build(),
+        ] };
+      }
+      function buildName(it, n, bd) {
+        const gap = Math.max(2, bd.height * 0.02);
+        return tag(it, n.text, { kind: 'name', label: 'Name', color: n.color, bg: '#000000', bgOpacity: 0.55, stroke: true }, bd, h => n.pos === 'TOP' ? bd.min.y - gap - h : bd.max.y + gap);
+      }
+      // conditions sit under the token, or under the name when the name is under the token
+      function buildCond(it, text, bd, below) {
+        const gap = Math.max(2, bd.height * 0.02);
+        return tag(it, text, { kind: 'cond', label: 'Conditions', color: '#ffffff', bg: '#7a1f1f', bgOpacity: 0.85, scale: 0.85, sep: ' · ' }, bd, () => (below != null ? below : bd.max.y) + gap);
       }
       async function clearAll() {
         try { const ours = await OBR.scene.local.getItems(i => !!(i.metadata && i.metadata[MINE])); if (ours.length) await OBR.scene.local.deleteItems(ours.map(i => i.id)); } catch (e) { }
@@ -100,11 +109,11 @@
           const bubbles = local.some(i => /-(health-background|ac-background)$/.test(i.id || '') && !(i.metadata && i.metadata[MINE]));
           const bars = enabled() && !bubbles;
           try { dpi = await OBR.scene.grid.getDpi(); } catch (e) { }
-          const toks = await OBR.scene.items.getItems(it => (it.layer === 'CHARACTER' || it.layer === 'MOUNT') && !!(it.metadata && (it.metadata[S.BUBBLES] || it.metadata[NAME])));
+          const toks = await OBR.scene.items.getItems(it => (it.layer === 'CHARACTER' || it.layer === 'MOUNT') && !!(it.metadata && (it.metadata[S.BUBBLES] || it.metadata[NAME] || it.metadata[COND])));
           const want = {};
           for (const it of toks) {
-            const w = bars ? wanted(it) : null, n = (me.role === 'GM' || it.visible) ? nameOf(it) : null;
-            if (w || n) want[it.id] = { it, w, n, sig: JSON.stringify([w, n, it.visible, it.scale, it.image && it.image.width, it.grid && it.grid.dpi, dpi, me.role]) };
+            const seen = me.role === 'GM' || it.visible, w = bars ? wanted(it) : null, n = seen ? nameOf(it) : null, c = seen && it.metadata[COND] && it.metadata[COND].text ? String(it.metadata[COND].text) : null;
+            if (w || n || c) want[it.id] = { it, w, n, c, sig: JSON.stringify([w, n, c, it.visible, it.scale, it.image && it.image.width, it.grid && it.grid.dpi, dpi, me.role]) };
           }
           const mine = local.filter(i => i.metadata && i.metadata[MINE]), byTok = {};
           for (const i of mine) (byTok[i.metadata[MINE].for] = byTok[i.metadata[MINE].for] || []).push(i.id);
@@ -117,7 +126,7 @@
           const bounds = {};
           for (const tok of redo) { try { bounds[tok] = await OBR.scene.items.getItemBounds([tok]); } catch (e) { } }
           const add = [];
-          for (const tok of redo) { if (!bounds[tok]) continue; const x = want[tok]; if (x.w) add.push(...build(x.it, x.w, bounds[tok])); if (x.n) add.push(...buildName(x.it, x.n, bounds[tok])); drawn[tok] = x.sig; }
+          for (const tok of redo) { if (!bounds[tok]) continue; const x = want[tok]; if (x.w) add.push(...build(x.it, x.w, bounds[tok])); let below = null; if (x.n) { const t = buildName(x.it, x.n, bounds[tok]); add.push(...t.items); if (x.n.pos !== 'TOP') below = t.bottom; } if (x.c) add.push(...buildCond(x.it, x.c, bounds[tok], below).items); drawn[tok] = x.sig; }
           if (add.length) await OBR.scene.local.addItems(add);
         } catch (e) { }
         finally { busy = false; if (again) { again = false; schedule(); } }

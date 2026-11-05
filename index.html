@@ -3221,7 +3221,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.44.1';
+const APP_VERSION = '1.45.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -3629,7 +3629,7 @@ function syncPcTokens() {
   OBRX.api.scene.items.updateItems(ids, drafts => { for (const d of drafts) d.metadata[BUBBLES] = Object.assign({}, d.metadata[BUBBLES] || {}, want[d.id]); }).catch(() => { });
 }
 /* ---- conditions under tokens: a small label attached to each linked token, kept by the GM's panel ---- */
-const CONDLABEL = 'com.grimsheet/condlabel';
+const CONDLABEL = 'com.grimsheet/condlabel', CONDMETA = 'com.grimsheet/cond';
 function condText(list, dur) {
   const xs = (list || []).map(k => k + (dur && dur[k] ? ' (' + dur[k] + ')' : ''));
   return xs.length > 3 ? xs.slice(0, 3).join(' · ') + ' +' + (xs.length - 3) : xs.join(' · ');
@@ -3646,12 +3646,6 @@ function wantedCondLabels() {
     for (const it of OBRX.pcTokens[p.id] || []) { const l = it.metadata[LINK] || {}; if (!l.char || !s.charId || l.char === s.charId) want[it.id] = t; }
   }
   return want;
-}
-function mkCondLabel(tokId, text, at, visible, under) {
-  const B = window.OwlbearBuild, meta = { [CONDLABEL]: { for: tokId, under: under || 'token' } };
-  if (B && B.buildLabel) return B.buildLabel().plainText(text).position(at).attachedTo(tokId).layer('ATTACHMENT').locked(true).disableHit(true).visible(visible !== false)
-    .fontSize(20).fontWeight(600).fillColor('#ffffff').backgroundColor('#7a1f1f').backgroundOpacity(0.85).cornerRadius(8).padding(6).pointerDirection('UP').pointerWidth(10).pointerHeight(6).name('Conditions').metadata(meta).build();
-  return { id: uid() + uid(), type: 'LABEL', name: 'Conditions', layer: 'ATTACHMENT', attachedTo: tokId, position: at, rotation: 0, scale: { x: 1, y: 1 }, visible: visible !== false, locked: true, disableHit: true, zIndex: Date.now(), text: { plainText: text, type: 'PLAIN' }, metadata: meta };
 }
 /* ---- names as token text: monsters and characters, in their own colours ---- */
 const NAMETEXT = 'com.grimsheet/nametext';
@@ -3700,27 +3694,14 @@ async function doSyncCondLabels() {
   if (!IN_OBR || !OBRX.ready || OBRX.me.role !== 'GM' || condBusy) return;
   condBusy = true;
   try {
+    // conditions are written on the token; each person's Grimsheet draws them (in map units, under the name)
     const want = SETTINGS.condLabels === false ? {} : wantedCondLabels();
-    const have = await OBRX.api.scene.items.getItems(it => !!(it.metadata && it.metadata[CONDLABEL]));
-    const under = SETTINGS.nameText !== false && namePos() === 'BOTTOM' ? 'name' : 'token'; let dpi = 150; try { dpi = await OBRX.api.scene.grid.getDpi(); } catch (e) { } const wn = wantedNames();
-    const del = [], upd = {}, seen = new Set();
-    for (const it of have) {
-      const tok = it.attachedTo || (it.metadata[CONDLABEL] || {}).for;
-      const lay = under === 'name' && wn[tok] ? 'name' : 'token';
-      if (!want[tok] || seen.has(tok) || ((it.metadata[CONDLABEL] || {}).under || 'token') !== lay) { del.push(it.id); continue; }
-      seen.add(tok); if ((it.text && it.text.plainText) !== want[tok]) upd[it.id] = want[tok];
-    }
-    if (del.length) await OBRX.api.scene.items.deleteItems(del);
-    if (Object.keys(upd).length) await OBRX.api.scene.items.updateItems(Object.keys(upd), ds => { for (const d of ds) d.text.plainText = upd[d.id]; });
-    const add = [];
-    for (const [tok, text] of Object.entries(want)) {
-      if (seen.has(tok)) continue;
-      const it = OBRX.tokCache[tok] || Object.values(OBRX.monTokens).flat().concat(Object.values(OBRX.pcTokens).flat()).find(x => x.id === tok);
-      const lay = under === 'name' && wn[tok] ? 'name' : 'token';
-      let at; try { const b = await OBRX.api.scene.items.getItemBounds([tok]); at = { x: b.center.x, y: b.max.y + 6 + (lay === 'name' ? Math.round(dpi * 0.3) : 0) }; } catch (e) { continue; }
-      add.push(mkCondLabel(tok, text, at, it ? it.visible : true, lay));
-    }
-    if (add.length) await OBRX.api.scene.items.addItems(add);
+    const old = await OBRX.api.scene.items.getItems(it => !!(it.metadata && it.metadata[CONDLABEL]));
+    if (old.length) await OBRX.api.scene.items.deleteItems(old.map(i => i.id));   // labels from before 1.45
+    const toks = await OBRX.api.scene.items.getItems(it => !!(it.metadata && it.metadata[CONDMETA]) || !!want[it.id]);
+    const upd = {};
+    for (const it of toks) { const cur = (it.metadata[CONDMETA] || {}).text || '', w = want[it.id] || ''; if (cur !== w) upd[it.id] = w; }
+    if (Object.keys(upd).length) await OBRX.api.scene.items.updateItems(Object.keys(upd), ds => { for (const d of ds) { if (upd[d.id]) d.metadata[CONDMETA] = { text: upd[d.id] }; else delete d.metadata[CONDMETA]; } });
   } catch (e) { }
   try { await syncNameTexts(); } catch (e) { } finally { condBusy = false; }
 }
@@ -8436,7 +8417,7 @@ function settingsHtml() {
       <button class="switch ${SETTINGS.monShare ? 'on' : ''}" data-act="setmonshare" aria-pressed="${!!SETTINGS.monShare}"><i></i>${SETTINGS.monShare ? 'On' : 'Off'}</button></div>
     <div class="setrow"><div class="grow"><b>Apply damage automatically after a hit</b><div class="muted">Once you confirm a hit, the damage the player (or you) rolls next is applied straight away, with resistances. Saving throws still wait for you.</div></div>
       <button class="switch ${SETTINGS.autoDmg ? 'on' : ''}" data-act="setautodmg" aria-pressed="${!!SETTINGS.autoDmg}"><i></i>${SETTINGS.autoDmg ? 'On' : 'Off'}</button></div>
-    <div class="setrow"><div class="grow"><b>Show conditions under tokens</b><div class="muted">A small label under each linked token (monsters and players) lists its conditions, e.g. "Prone · Poisoned (2)". Everyone at the table sees it; it follows the token's visibility. Kept up to date while your Grimsheet panel is open.</div></div>
+    <div class="setrow"><div class="grow"><b>Show conditions under tokens</b><div class="muted">A small red tag under each linked token (monsters and players), below its name, lists its conditions, e.g. "Prone · Poisoned (2)". Everyone at the table sees it; it zooms with the map and follows the token's visibility. Kept up to date while your Grimsheet panel is open.</div></div>
       <button class="switch ${SETTINGS.condLabels !== false ? 'on' : ''}" data-act="setcondlabels" aria-pressed="${SETTINGS.condLabels !== false}"><i></i>${SETTINGS.condLabels !== false ? 'On' : 'Off'}</button></div>
     <div class="setrow"><div class="grow"><b>Names on tokens</b><div class="muted">Shows each linked token's monster or character name in a tag under or above the token, in these colours, clear of the HP bar. While it's on, the token's own text is hidden; turning it off puts it back.</div>
         <div class="inline" style="margin-top:6px"><label class="muted">Monsters <input type="color" id="nc-mon" data-namecolor="mon" value="${esc(nameColors().mon)}" aria-label="Monster name colour"></label><label class="muted">Characters <input type="color" id="nc-pc" data-namecolor="pc" value="${esc(nameColors().pc)}" aria-label="Character name colour"></label><button class="btn small ghost" data-act="namecolreset">Default colours</button></div>
