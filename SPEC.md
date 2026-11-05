@@ -569,3 +569,8 @@ Ordered by when it gets built. Priority applies inside a goal.
 - **Settings → HP bars on tokens** (each person, in Owlbear) turns them off. If Stat Bubbles is drawing in the room (its local items `<id>-health-background` / `<id>-ac-background`), Grimsheet removes its own bars and leaves it to Stat Bubbles.
 
 - 1.42.1: manifest description shortened to fit Owlbear's 128-character limit (the longer one in 1.41.1 stopped the extension loading).
+
+## Names and HP bars (app 1.43.0)
+
+- **Settings → Names on tokens → Name position**: Top / Middle / Bottom (default Bottom, Owlbear's usual). Sets the token text's `textAlignVertical` on names Grimsheet writes; turning names off restores the token's original alignment.
+- HP bars keep clear of names: on a token whose text is non-empty and aligned to the bottom (Owlbear's default), the bar and AC go along the **top** of the token; otherwise along the bottom. Works for any token name, not only Grimsheet's.

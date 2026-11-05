@@ -47,8 +47,10 @@
         if (ml.hpShow === 'status' && max > 0) { const t = hp <= 0 ? 'Down' : hp <= max / 2 ? 'Bloodied' : 'Healthy'; return { hp: hp <= 0 ? 0 : hp <= max / 2 ? 1 : 3, max: hp <= 0 ? 1 : hp <= max / 2 ? 4 : 3, temp: 0, ac: 0, text: t }; }
         return null;
       }
+      // keep clear of the token's name: Owlbear writes it at the bottom unless the text says otherwise
+      const barAtTop = it => { const t = it.text || {}; return !!(t.plainText || '').trim() && ((t.style || {}).textAlignVertical || 'BOTTOM') === 'BOTTOM'; };
       function build(it, w, bd) {
-        const out = [], width = Math.max(bd.width * 0.9, dpi * 0.7), h = Math.round(dpi * 0.17), left = bd.center.x - width / 2, top = bd.max.y - h - dpi * 0.04;
+        const out = [], width = Math.max(bd.width * 0.9, dpi * 0.7), h = Math.round(dpi * 0.17), left = bd.center.x - width / 2, top = barAtTop(it) ? bd.min.y + dpi * 0.04 : bd.max.y - h - dpi * 0.04;
         const common = x => x.attachedTo(it.id).locked(true).disableHit(true).visible(it.visible).disableAttachmentBehavior(['ROTATION', 'SCALE', 'LOCKED', 'COPY']).metadata({ [MINE]: { for: it.id } });
         let z = Date.now();
         if (w.text) {
@@ -59,7 +61,7 @@
           out.push(common(B.buildText().textType('PLAIN').plainText(w.text).width(width).height(h).position({ x: left, y: top }).textAlign('CENTER').textAlignVertical('MIDDLE').fontSize(Math.round(h * 0.8)).fontWeight(700).fontFamily('sans-serif').fillColor('#ffffff').strokeColor('#000000').strokeWidth(Math.max(1, h * 0.12)).padding(0).lineHeight(1)).layer('TEXT').zIndex(z++).name('HP').build());
         }
         if (w.ac > 0) {
-          const d = Math.round(dpi * 0.3), cx = w.text ? left - d * 0.25 : bd.center.x, cy = w.text ? top + h / 2 : bd.max.y - d / 2;
+          const d = Math.round(dpi * 0.3), cx = w.text ? left - d * 0.25 : bd.center.x, cy = w.text ? top + h / 2 : barAtTop(it) ? bd.min.y + d / 2 : bd.max.y - d / 2;
           out.push(common(B.buildShape().shapeType('CIRCLE').width(d).height(d).position({ x: cx, y: cy }).fillColor('#3b4a54').fillOpacity(0.95).strokeColor('#d9d9d9').strokeWidth(2).strokeOpacity(0.9)).layer('ATTACHMENT').zIndex(z++).name('AC').build());
           out.push(common(B.buildText().textType('PLAIN').plainText(String(w.ac)).width(d).height(d).position({ x: cx - d / 2, y: cy - d / 2 }).textAlign('CENTER').textAlignVertical('MIDDLE').fontSize(Math.round(d * 0.5)).fontWeight(700).fontFamily('sans-serif').fillColor('#ffffff').strokeWidth(0).padding(0).lineHeight(1)).layer('TEXT').zIndex(z++).name('AC').build());
         }
@@ -80,7 +82,7 @@
           try { dpi = await OBR.scene.grid.getDpi(); } catch (e) { }
           const toks = await OBR.scene.items.getItems(it => (it.layer === 'CHARACTER' || it.layer === 'MOUNT') && !!(it.metadata && it.metadata[S.BUBBLES]));
           const want = {};
-          for (const it of toks) { const w = wanted(it); if (w) want[it.id] = { it, w, sig: JSON.stringify([w, it.visible, it.scale, it.image && it.image.width, it.grid && it.grid.dpi, dpi, me.role]) }; }
+          for (const it of toks) { const w = wanted(it); if (w) want[it.id] = { it, w, sig: JSON.stringify([w, barAtTop(it), it.visible, it.scale, it.image && it.image.width, it.grid && it.grid.dpi, dpi, me.role]) }; }
           const mine = local.filter(i => i.metadata && i.metadata[MINE]), byTok = {};
           for (const i of mine) (byTok[i.metadata[MINE].for] = byTok[i.metadata[MINE].for] || []).push(i.id);
           const del = [], redo = [];
