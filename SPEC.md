@@ -578,3 +578,20 @@ Ordered by when it gets built. Priority applies inside a goal.
 - Conditions labels move down below the name when names are under tokens (`under: 'name'` on the label; relaid when the setting changes).
 - 1.44.1: the name tag is drawn in **map units** (a dark rectangle plus text, not an Owlbear label), so it zooms with the map instead of staying the same size on screen. It's never wider than 90% of the token: the text shrinks to fit, and a long name goes onto two lines (split at the space nearest the middle) when that keeps it noticeably bigger. Conditions under a named token sit a little lower to clear a two-line name.
 - 1.45.0: **conditions** are drawn the same way. The GM's panel writes `com.grimsheet/cond` = `{ text }` on each linked token (and deletes the shared condition labels earlier versions made); each person's background page draws a red tag in map units under the name (or under the token when the name is above), at most 90% of the token's width, wrapping long lists onto two lines at a " · ". Players don't get tags for hidden tokens.
+
+## Test version and releases (1.46.0)
+
+Every change goes to a **test extension** first; players only get it after it's been tried.
+
+- **Test extension:** `https://benfass.github.io/grimsheet/test/manifest.json`, named **Grimsheet TEST**, with an orange flask on its icon. Add it to Owlbear next to (or instead of) the main one.
+- **Kept apart from the main extension:**
+  - Every saved key is stored under a `test:` prefix (a small script at the top of each page wraps `localStorage`, and translates `storage` events back), so the test version never reads or writes the main version's characters, settings or homebrew.
+  - All Owlbear names (`com.grimsheet/...` metadata keys, broadcast channels, context-menu ids, local drawings) become `com.grimsheet-test/...`, so the two don't see or disturb each other even in the same room. Tokens have to be linked again in the test version.
+  - Stat Bubbles' HP/AC data on tokens is shared (same format, same values).
+- **Settings → Test version → Copy my characters from Grimsheet** replaces the test version's data with a copy of the main version's (the main version is untouched), then reloads.
+- **Build** (`/home/claude/sheet/build.py`; sources are `index.html` and `ext/` — `background.html`, `gm.html`, `shared.js`):
+  - `build.py dev` → `/home/claude/gdev` (local copy the automated tests run against).
+  - `build.py test` → `grimsheet/test/`, and records the source fingerprint in `test/build.json`.
+  - `build.py release` → the site root. It refuses unless the source is exactly what was last built with `test` (`--force` overrides, for emergencies only).
+  - Both manifests are generated, and the build checks Owlbear's limits (name 45 characters, description 128).
+- **Process:** change → `dev` + automated tests → `test` + push → the user tries **Grimsheet TEST** in Owlbear → when they say it's good, `release` + push.

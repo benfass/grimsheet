@@ -1,0 +1,17 @@
+{
+  "name": "Grimsheet TEST",
+  "version": "1.46.0",
+  "manifest_version": 1,
+  "author": "Ben Fassler",
+  "description": "Test build of Grimsheet for trying changes before release. Keeps its own characters.",
+  "homepage_url": "https://benfass.github.io/grimsheet/",
+  "icon": "https://benfass.github.io/grimsheet/test/icon.svg",
+  "action": {
+    "title": "Grimsheet TEST",
+    "icon": "https://benfass.github.io/grimsheet/test/icon.svg",
+    "popover": "https://benfass.github.io/grimsheet/test/index.html",
+    "height": 1400,
+    "width": 1600
+  },
+  "background_url": "https://benfass.github.io/grimsheet/test/background.html"
+}

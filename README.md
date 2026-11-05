@@ -12,6 +12,10 @@ By Ben Fassler. Questions, bugs and ideas: [GitHub Issues](https://github.com/be
 - **In Owlbear Rodeo:** open your profile → **Extensions** → **Add Custom Extension**, paste `https://benfass.github.io/grimsheet/manifest.json`, then enable Grimsheet in your room. A book icon appears in the toolbar. Updates arrive by themselves.
 - New to it? A short tour starts from the banner, and **Settings → Tours** replays any of them.
 
+## Test version
+
+New versions are tried in a separate **test extension** before everyone gets them: `https://benfass.github.io/grimsheet/test/manifest.json` (Grimsheet TEST, with an orange flask on the icon). It keeps its own characters and settings and doesn't interfere with the main extension, even in the same room. It may be broken at any time, so don't use it for real games. Settings → Test version copies your main characters into it.
+
 ## Privacy
 
 Grimsheet has no accounts, no analytics, no ads, no cookies and no server of its own. Every file it uses, fonts and the PDF reader included, comes from this site (GitHub Pages); it makes no requests to anyone else.
