@@ -67,15 +67,25 @@
       }
       const NAME = 'com.grimsheet/nametext';
       function nameOf(it) { const n = it.metadata && it.metadata[NAME]; return n && n.text ? { text: String(n.text), color: n.color || '#ffffff', pos: n.pos === 'TOP' ? 'TOP' : 'BOTTOM' } : null; }
+      // the name tag lives in map units, so it zooms with the map like the token does, and it's sized to fit
+      // within 90% of the token's width (long names get smaller text, never wider than the token)
+      const measure = (() => { const c = document.createElement('canvas').getContext('2d'); return (t, f) => { c.font = '700 ' + f + 'px sans-serif'; return c.measureText(t).width; }; })();
       function buildName(it, n, bd) {
-        const up = n.pos === 'TOP', f = Math.round(dpi * 0.13), pad = Math.max(2, Math.round(dpi * 0.02));
-        const at = { x: bd.center.x, y: up ? bd.min.y - dpi * 0.03 : bd.max.y + dpi * 0.02 };
-        return B.buildLabel().plainText(n.text).position(at).attachedTo(it.id).layer('TEXT').locked(true).disableHit(true).visible(it.visible)
-          .disableAttachmentBehavior(['ROTATION', 'SCALE', 'LOCKED', 'COPY'])
-          .fontSize(f).fontWeight(700).fontFamily('sans-serif').fillColor(n.color).strokeColor('#000000').strokeWidth(Math.max(1, Math.round(f * 0.1)))
-          .backgroundColor('#000000').backgroundOpacity(0.55).cornerRadius(Math.round(f * 0.4)).padding(pad)
-          .pointerDirection(up ? 'DOWN' : 'UP').pointerWidth(0).pointerHeight(0)
-          .zIndex(Date.now()).name('Name').metadata({ [MINE]: { for: it.id, name: true } }).build();
+        const maxW = bd.width * 0.9, padX = Math.max(2, bd.width * 0.03);
+        const base = Math.max(6, Math.min(dpi * 0.14, bd.width * 0.15)), fit = lines => Math.min(base, ...lines.map(l => base * (maxW - 2 * padX) / Math.max(1, measure(l, base))));
+        // a long name goes onto two lines (split at the space nearest the middle) when that keeps it bigger
+        let lines = [n.text], f = fit(lines);
+        const sp = [...n.text.matchAll(/ /g)].map(m => m.index);
+        if (f < base * 0.75 && sp.length) { const mid = n.text.length / 2, at = sp.reduce((a, b) => Math.abs(b - mid) < Math.abs(a - mid) ? b : a), two = [n.text.slice(0, at), n.text.slice(at + 1)], f2 = Math.min(fit(two), base * 0.85); if (f2 > f * 1.15) { lines = two; f = f2; } }
+        f = Math.max(4, f);
+        const w = Math.min(maxW, Math.max(...lines.map(l => measure(l, f))) + 2 * padX), h = Math.round(f * (lines.length * 1.15 + 0.25)), gap = Math.max(2, bd.height * 0.02);
+        const left = bd.center.x - w / 2, top = n.pos === 'TOP' ? bd.min.y - gap - h : bd.max.y + gap;
+        const common = x => x.attachedTo(it.id).locked(true).disableHit(true).visible(it.visible).disableAttachmentBehavior(['ROTATION', 'SCALE', 'LOCKED', 'COPY']).metadata({ [MINE]: { for: it.id, name: true } });
+        let z = Date.now();
+        return [
+          common(B.buildShape().shapeType('RECTANGLE').width(w).height(h).position({ x: left, y: top }).fillColor('#000000').fillOpacity(0.55).strokeWidth(0).strokeOpacity(0)).layer('ATTACHMENT').zIndex(z++).name('Name').build(),
+          common(B.buildText().textType('PLAIN').plainText(lines.join('\n')).width(w).height(h).position({ x: left, y: top }).textAlign('CENTER').textAlignVertical('MIDDLE').fontSize(f).fontWeight(700).fontFamily('sans-serif').fillColor(n.color).strokeColor('#000000').strokeWidth(Math.max(0.5, f * 0.08)).padding(0).lineHeight(1.15)).layer('TEXT').zIndex(z++).name('Name').build(),
+        ];
       }
       async function clearAll() {
         try { const ours = await OBR.scene.local.getItems(i => !!(i.metadata && i.metadata[MINE])); if (ours.length) await OBR.scene.local.deleteItems(ours.map(i => i.id)); } catch (e) { }
@@ -107,7 +117,7 @@
           const bounds = {};
           for (const tok of redo) { try { bounds[tok] = await OBR.scene.items.getItemBounds([tok]); } catch (e) { } }
           const add = [];
-          for (const tok of redo) { if (!bounds[tok]) continue; const x = want[tok]; if (x.w) add.push(...build(x.it, x.w, bounds[tok])); if (x.n) add.push(buildName(x.it, x.n, bounds[tok])); drawn[tok] = x.sig; }
+          for (const tok of redo) { if (!bounds[tok]) continue; const x = want[tok]; if (x.w) add.push(...build(x.it, x.w, bounds[tok])); if (x.n) add.push(...buildName(x.it, x.n, bounds[tok])); drawn[tok] = x.sig; }
           if (add.length) await OBR.scene.local.addItems(add);
         } catch (e) { }
         finally { busy = false; if (again) { again = false; schedule(); } }
