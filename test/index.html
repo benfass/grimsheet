@@ -3242,7 +3242,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.48.0';
+const APP_VERSION = '1.48.1';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -3548,6 +3548,39 @@ function showPausedForTest(OBR) {
   d.innerHTML = '<div style="max-width:420px;text-align:center;line-height:1.5"><div style="font-size:1.3rem;font-weight:700;margin-bottom:8px">Grimsheet is paused in this room</div><div class="muted">Grimsheet TEST is running here, so the main Grimsheet steps aside to keep the two from overlapping. Use Grimsheet TEST from the toolbar. When Grimsheet TEST is turned off for this room, this panel comes back by itself.</div></div>';
   document.body.appendChild(d);
 }
+// ---- one device keeps the tokens up to date ----
+// If the same person has Grimsheet open on two devices (a phone in the background, say), each would write its own
+// view onto the tokens and they'd fight, making names and bars flash. So one device "drives": the one last used.
+// It holds a lease in the room's metadata and renews it; the others leave the tokens alone until it goes quiet.
+const DRIVE_TTL = 30000;
+const DEV_ID = (() => { try { let d = localStorage.getItem('grimsheet.device.v1'); if (!d) { d = Math.random().toString(36).slice(2, 10); localStorage.setItem('grimsheet.device.v1', d); } return d; } catch (e) { return Math.random().toString(36).slice(2, 10); } })();
+const driveKey = () => 'com.grimsheet-test/drive.' + (OBRX.me && OBRX.me.role === 'GM' ? 'gm' : (OBRX.me && OBRX.me.id) || 'me');
+function drives() {
+  if (!IN_OBR || !OBRX.ready) return true;
+  const l = (OBRX.roomMd || {})[driveKey()];
+  return !l || l.dev === DEV_ID || Date.now() - (l.at || 0) > DRIVE_TTL;
+}
+let driveLast = 0, wasDriving = null;
+function driveClaim(force) {
+  if (!IN_OBR || !OBRX.ready) return;
+  if (!force && !drives()) return;
+  if (Date.now() - driveLast < 5000) return; driveLast = Date.now();
+  const v = { dev: DEV_ID, at: Date.now() };
+  OBRX.roomMd = Object.assign({}, OBRX.roomMd, { [driveKey()]: v });
+  OBRX.api.room.setMetadata({ [driveKey()]: v }).catch(() => { });
+  driveCheck();
+}
+function driveCheck() {
+  const now = drives(); if (now === wasDriving) return; wasDriving = now;
+  // just became the device that drives: bring the tokens in line with this device
+  if (now) setTimeout(() => { try { syncCondLabels(); syncMonTokens(); syncPcTokens(); publishStatus(); } catch (e) { } }, 300);
+}
+function driveStart() {
+  // using this device takes over; while it's the driver it renews the lease
+  ['pointerdown', 'keydown'].forEach(t => window.addEventListener(t, () => driveClaim(true), true));
+  setInterval(() => { const l = (OBRX.roomMd || {})[driveKey()]; if (!l || l.dev === DEV_ID || Date.now() - (l.at || 0) > DRIVE_TTL) { driveLast = 0; driveClaim(false); } else driveCheck(); }, 10000);
+  driveClaim(false);
+}
 async function startOwlbear() {
   try {
     let OBR = window.GrimsheetOBR; // a test double can be provided here
@@ -3576,7 +3609,8 @@ async function startOwlbear() {
         if (d.type === 'pasteFor') takePending();
         if (d.type === 'focus') { SETTINGS.view = 'encounter'; saveSettings(); ui.monFocus = d.inst; { const f = findMon(d.inst); if (f) ui.encSel = f.e.id; } render(); const n = document.querySelector(`[data-inst="${d.inst}"]`); if (n && n.scrollIntoView) n.scrollIntoView({ block: 'center' }); }
       });
-      try { const md = await OBR.room.getMetadata(); OBRX.init = md && md[INITKEY]; OBR.room.onMetadataChange(md => { OBRX.init = md && md[INITKEY]; refreshInitView(); }); } catch (e) { }
+      try { const md = await OBR.room.getMetadata(); OBRX.init = md && md[INITKEY]; OBRX.roomMd = md || {}; OBR.room.onMetadataChange(md => { OBRX.init = md && md[INITKEY]; OBRX.roomMd = md || {}; driveCheck(); refreshInitView(); }); } catch (e) { }
+      driveStart();
       OBR.player.onChange(p => onSelection(p.selection));
       OBR.player.onChange(p => { if (OBRX.me.role !== 'GM' || !p.selection) return; const sel = p.selection; const inst = Object.keys(OBRX.monTokens).find(k => OBRX.monTokens[k].some(it => sel.includes(it.id))); if (inst && inst !== ui.monFocus) { ui.monFocus = inst; if (encView()) { renderGrid(); const n = document.querySelector(`[data-inst="${inst}"]`); if (n && n.scrollIntoView) n.scrollIntoView({ block: 'nearest' }); } } });
       writeCatalog(); ENCS = null; enc(); render();
@@ -3648,7 +3682,7 @@ function paintLink() { document.querySelectorAll('[data-link]').forEach(n => { n
 // the GM keeps players' linked tokens in step too, from what each player publishes (covers rooms where
 // players can't edit tokens themselves, and players whose panel is closed)
 function syncPcTokens() {
-  if (!OBRX.ready || OBRX.me.role !== 'GM') return;
+  if (!OBRX.ready || OBRX.me.role !== 'GM' || !drives()) return;
   const want = {};
   for (const p of OBRX.party || []) {
     const s = p.s; if (!s || typeof s.hp !== 'number') continue;
@@ -3697,6 +3731,7 @@ function wantedNames() {
   return want;
 }
 async function syncNameTexts() {
+  if (!drives()) return;
   // the name is drawn by each person's Grimsheet as a label beside the token (above it or under it), so it
   // never covers the HP bar; the token's own text is cleared while that's on and put back when it's off
   const want = wantedNames(), pos = namePos();
@@ -3726,7 +3761,7 @@ async function syncNameTexts() {
 let condT = null, condBusy = false;
 function syncCondLabels() { clearTimeout(condT); condT = setTimeout(doSyncCondLabels, 400); }
 async function doSyncCondLabels() {
-  if (!IN_OBR || !OBRX.ready || OBRX.me.role !== 'GM' || condBusy) return;
+  if (!IN_OBR || !OBRX.ready || OBRX.me.role !== 'GM' || condBusy || !drives()) return;
   condBusy = true;
   try {
     // conditions are written on the token; each person's Grimsheet draws them (in map units, under the name)
@@ -3741,7 +3776,7 @@ async function doSyncCondLabels() {
   try { await syncNameTexts(); } catch (e) { } finally { condBusy = false; }
 }
 function syncTokens(st) {
-  if (!OBRX.ready || !OBRX.links.length) return;
+  if (!OBRX.ready || !OBRX.links.length || !drives()) return;
   const want = { health: st.hp, 'max health': st.max, 'temporary health': st.temp || 0, 'armor class': typeof st.ac === 'number' ? st.ac : 0, hide: false };
   const stale = OBRX.links.filter(l => !l.b || Object.keys(want).some(k => l.b[k] !== want[k])).map(l => l.id);
   if (!stale.length) return;
@@ -4174,7 +4209,7 @@ function scanTokens(items) {
   OBRX.monTokens = mon; OBRX.pcTokens = pc;
 }
 async function syncMonTokens() {
-  if (!IN_OBR || !OBRX.ready || OBRX.me.role !== 'GM') return;
+  if (!IN_OBR || !OBRX.ready || OBRX.me.role !== 'GM' || !drives()) return;
   const mode = SETTINGS.monHp || 'hidden', hide = mode !== 'exact', want = {};
   for (const m of allMons()) for (const it of OBRX.monTokens[m.id] || []) {
     const w = { health: m.hp, 'max health': m.max, 'temporary health': m.temp || 0, 'armor class': m.ac, hide };
@@ -4191,6 +4226,7 @@ function rowTokenIds(row) {
 }
 function selectRowTokens(row) { if (!IN_OBR || !OBRX.ready) return; const ids = rowTokenIds(row); if (ids.length) OBRX.api.player.select(ids, true).catch(() => { }); }
 function writeTrackerTokens(e) {
+  if (!drives()) return;
   const rows = initRows(e), want = {};
   for (const r of rows) for (const id of rowTokenIds(r)) if (r.init != null) want[id] = { count: String(r.init), active: e.combat.active && e.combat.turn === r.k };
   const ids = Object.keys(want); if (!ids.length) return;
