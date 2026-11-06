@@ -1,6 +1,6 @@
 {
   "name": "Grimsheet TEST",
-  "version": "1.47.0",
+  "version": "1.48.0",
   "manifest_version": 1,
   "author": "Ben Fassler",
   "description": "Test build of Grimsheet for trying changes before release. Keeps its own characters.",

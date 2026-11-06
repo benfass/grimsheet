@@ -116,7 +116,7 @@ window.GRIMSHEET_TEST = true;
         return out;
       }
       const NAME = 'com.grimsheet-test/nametext', COND = 'com.grimsheet-test/cond';
-      function nameOf(it) { const n = it.metadata && it.metadata[NAME]; return n && n.text ? { text: String(n.text), color: n.color || '#ffffff', pos: n.pos === 'TOP' ? 'TOP' : 'BOTTOM' } : null; }
+      function nameOf(it) { const n = it.metadata && it.metadata[NAME]; return n && n.text ? { text: String(n.text), color: n.color || '#ffffff', pos: n.pos === 'TOP' ? 'TOP' : 'BOTTOM', size: Math.max(0.5, Math.min(2, +n.size || 1)) } : null; }
       // the name tag lives in map units, so it zooms with the map like the token does, and it's sized to fit
       // within 90% of the token's width (long names get smaller text, never wider than the token)
       const measure = (() => { const c = document.createElement('canvas').getContext('2d'); return (t, f) => { c.font = '700 ' + f + 'px sans-serif'; return c.measureText(t).width; }; })();
@@ -139,7 +139,7 @@ window.GRIMSHEET_TEST = true;
       }
       function buildName(it, n, bd) {
         const gap = Math.max(2, bd.height * 0.02);
-        return tag(it, n.text, { kind: 'name', label: 'Name', color: n.color, bg: '#000000', bgOpacity: 0.55, stroke: true }, bd, h => n.pos === 'TOP' ? bd.min.y - gap - h : bd.max.y + gap);
+        return tag(it, n.text, { kind: 'name', label: 'Name', color: n.color, bg: '#000000', bgOpacity: 0.55, stroke: true, scale: n.size }, bd, h => n.pos === 'TOP' ? bd.min.y - gap - h : bd.max.y + gap);
       }
       // conditions sit under the token, or under the name when the name is under the token
       function buildCond(it, text, bd, below) {

@@ -3242,7 +3242,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.47.0';
+const APP_VERSION = '1.48.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -3682,6 +3682,8 @@ function wantedCondLabels() {
 }
 /* ---- names as token text: monsters and characters, in their own colours ---- */
 const NAMETEXT = 'com.grimsheet-test/nametext';
+const NAME_SIZES = [[0.75, 'Small'], [1, 'Medium'], [1.3, 'Large'], [1.6, 'Extra large']];
+const nameSize = () => NAME_SIZES.some(([v]) => v === SETTINGS.nameSize) ? SETTINGS.nameSize : 1;
 const namePos = () => SETTINGS.namePos === 'TOP' ? 'TOP' : 'BOTTOM';
 const nameColors = () => ({ mon: SETTINGS.nameColorMon || '#E8692C', pc: SETTINGS.nameColorPc || '#1F9E8F' });
 function wantedNames() {
@@ -3702,7 +3704,7 @@ async function syncNameTexts() {
   const ids = [];
   for (const it of ours) {
     const w = want[it.id], m = it.metadata[NAMETEXT], tx = it.text || {};
-    if (w ? !m || m.text !== w.text || m.color !== w.color || m.pos !== pos || (tx.plainText || '') !== '' : !!m) ids.push(it.id);
+    if (w ? !m || m.text !== w.text || m.color !== w.color || m.pos !== pos || (m.size || 1) !== nameSize() || (tx.plainText || '') !== '' : !!m) ids.push(it.id);
   }
   if (!ids.length) return;
   await OBRX.api.scene.items.updateItems(ids, ds => {
@@ -3710,7 +3712,7 @@ async function syncNameTexts() {
       const w = want[d.id]; d.text = d.text || { type: 'PLAIN', plainText: '', style: {} }; d.text.style = d.text.style || {};
       if (w) {
         const orig = (d.metadata[NAMETEXT] || {}).orig || { plainText: d.text.plainText || '', fillColor: d.text.style.fillColor || null, strokeColor: d.text.style.strokeColor || null, strokeWidth: d.text.style.strokeWidth ?? null, align: d.text.style.textAlignVertical || null };
-        d.metadata[NAMETEXT] = { orig, text: w.text, color: w.color, pos };
+        d.metadata[NAMETEXT] = { orig, text: w.text, color: w.color, pos, size: nameSize() };
         d.text.plainText = '';
       } else {
         // switched off or unlinked: put back what the token had before
@@ -8455,8 +8457,8 @@ function settingsHtml() {
     <div class="setrow"><div class="grow"><b>Show conditions under tokens</b><div class="muted">A small red tag under each linked token (monsters and players), below its name, lists its conditions, e.g. "Prone · Poisoned (2)". Everyone at the table sees it; it zooms with the map and follows the token's visibility. Kept up to date while your Grimsheet panel is open.</div></div>
       <button class="switch ${SETTINGS.condLabels !== false ? 'on' : ''}" data-act="setcondlabels" aria-pressed="${SETTINGS.condLabels !== false}"><i></i>${SETTINGS.condLabels !== false ? 'On' : 'Off'}</button></div>
     <div class="setrow"><div class="grow"><b>Names on tokens</b><div class="muted">Shows each linked token's monster or character name in a tag under or above the token, in these colours, clear of the HP bar. While it's on, the token's own text is hidden; turning it off puts it back.</div>
-        <div class="inline" style="margin-top:6px"><label class="muted">Monsters <input type="color" id="nc-mon" data-namecolor="mon" value="${esc(nameColors().mon)}" aria-label="Monster name colour"></label><label class="muted">Characters <input type="color" id="nc-pc" data-namecolor="pc" value="${esc(nameColors().pc)}" aria-label="Character name colour"></label><button class="btn small ghost" data-act="namecolreset">Default colours</button></div>
-        <div class="inline" style="margin-top:6px"><label class="muted">Name <select class="ed-inline" data-namepos="1" id="set-namepos" aria-label="Name position on tokens">${[['BOTTOM', 'under the token'], ['TOP', 'above the token']].map(([v, l]) => `<option value="${v}" ${namePos() === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div></div>
+        <div class="inline" style="margin-top:6px"><label class="muted">Monsters <input type="color" id="nc-mon" data-namecolor="mon" value="${esc(nameColors().mon)}" aria-label="Monster name colour"></label><label class="muted">Characters <input type="color" id="nc-pc" data-namecolor="pc" value="${esc(nameColors().pc)}" aria-label="Character name colour"></label><label class="muted">Size <select class="ed-inline" style="font-family:inherit" id="set-namesize" data-namesize="1" aria-label="Name size">${NAME_SIZES.map(([v, l]) => `<option value="${v}" ${nameSize() === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label><button class="btn small ghost" data-act="namecolreset">Default colours</button></div>
+        <div class="inline" style="margin-top:6px"><label class="muted">Name <select class="ed-inline" style="font-family:inherit" data-namepos="1" id="set-namepos" aria-label="Name position on tokens">${[['BOTTOM', 'under the token'], ['TOP', 'above the token']].map(([v, l]) => `<option value="${v}" ${namePos() === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div></div>
       <button class="switch ${SETTINGS.nameText !== false ? 'on' : ''}" data-act="setnametext" aria-pressed="${SETTINGS.nameText !== false}"><i></i>${SETTINGS.nameText !== false ? 'On' : 'Off'}</button></div>
     <div class="setrow"><div class="grow"><b>Also update Owlbear's initiative tracker</b><div class="muted">Writes initiative and the current turn onto tokens, for tables that use that tracker.</div></div>
       <button class="switch ${SETTINGS.obrTracker !== false ? 'on' : ''}" data-act="setobrtracker" aria-pressed="${SETTINGS.obrTracker !== false}"><i></i>${SETTINGS.obrTracker !== false ? 'On' : 'Off'}</button></div>` : ''}
@@ -8989,6 +8991,7 @@ function doImport(lib) {
 document.addEventListener('change', ev => {
   const t = ev.target;
   if (t.dataset.cw != null && cwInput(t)) return;
+  if (t.dataset.namesize) { SETTINGS.nameSize = +t.value || 1; saveSettings(); syncCondLabels(); return; }
   if (t.dataset.namepos) { SETTINGS.namePos = t.value === 'TOP' ? 'TOP' : 'BOTTOM'; saveSettings(); syncCondLabels(); return; }
   if (t.dataset.prep != null && prepInput(t)) return;
   if (t.dataset.encname) { const x = encs().list[t.dataset.encname]; if (x) { x.name = t.value.trim() || x.name; saveEnc({ quiet: true }); } ui.encRen = null; setTimeout(renderGrid, 0); return; }
