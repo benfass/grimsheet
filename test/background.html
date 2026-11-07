@@ -46,6 +46,12 @@ window.GRIMSHEET_TEST = true;
     const beat = () => S.write(S.BG, { at: Date.now(), room, v: S.VERSION });
     beat(); setInterval(beat, 15000);
 
+    // new version on the site: the background page reloads itself (it otherwise runs until the room is reloaded)
+    const vNum = v => String(v || '').split('.').map(n => parseInt(n, 10) || 0).reduce((a, n) => a * 1000 + n, 0);
+    setInterval(async () => {
+      try { const r = await fetch(new URL('manifest.json', location.href).href + '?t=' + Date.now(), { cache: 'no-store' }); if (r.ok && vNum((await r.json()).version) > vNum(S.VERSION)) location.reload(); } catch (e) { }
+    }, 5 * 60 * 1000);
+
     // main extension: pause while Grimsheet TEST runs in this room (no drawings, menus or messages)
     let paused = S.testRunning(room);
     const listen = (ch, fn) => OBR.broadcast.onMessage(ch, ev => { if (!paused) return fn(ev); });

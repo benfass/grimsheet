@@ -18,7 +18,7 @@ New versions are tried in a separate **test extension** before everyone gets the
 
 ## Privacy
 
-Grimsheet has no accounts, no analytics, no ads, no cookies and no server of its own. Every file it uses, fonts and the PDF reader included, comes from this site (GitHub Pages); it makes no requests to anyone else.
+Grimsheet has no accounts, no analytics, no ads, no cookies and no server of its own. Every file it uses, fonts and the PDF reader included, comes from this site (GitHub Pages); it makes no requests to anyone else. Every few minutes it checks this site's `manifest.json` to see whether a newer version is out.
 
 - **Your characters are saved in your own browser** (local storage). Nothing is uploaded. **Characters → Export** gives you a file to keep or move to another device.
 - **PDFs are read on your device.** Character sheets and class books you import never leave it.
