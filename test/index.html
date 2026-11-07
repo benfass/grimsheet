@@ -3025,6 +3025,116 @@ const PDFIMPORT = (() => {
     return p;
   }
 
+  /* ---- official 2024 (Player's Handbook) character sheet, read by position ----
+     Works for a filled sheet that was flattened (no form fields left, only text) and for one with form fields:
+     every piece of text, field value and comment is placed on the page, and each field of the sheet is a box
+     (in the coordinates of a 603×774 copy, adjusted to the actual page from two labels it always has). */
+  const L24 = {
+    p1: { anchors: [['character name', 25, 736], ['passive perception', 507, 649]], boxes: {
+      name: [18, 740, 215, 762], background: [18, 718, 145, 735], cls: [145, 718, 245, 735], species: [18, 696, 145, 713], subclass: [145, 696, 245, 713],
+      level: [248, 722, 300, 748], xp: [248, 699, 300, 719], ac: [312, 708, 368, 738], hpCur: [370, 698, 432, 746], hpTemp: [432, 719, 486, 746], hpMax: [432, 697, 486, 715],
+      hdSpent: [486, 719, 538, 746], hdMax: [486, 697, 538, 715], prof: [12, 598, 104, 642], init: [232, 612, 315, 646], speed: [325, 612, 410, 646], size: [418, 612, 498, 646], passive: [500, 612, 595, 646],
+      STR: [18, 532, 104, 565], DEX: [18, 413, 104, 446], CON: [18, 266, 104, 298], INT: [122, 608, 206, 640], WIS: [122, 437, 206, 470], CHA: [122, 262, 206, 295],
+      saveSTR: [14, 497, 46, 513], saveDEX: [14, 381, 46, 397], saveCON: [14, 234, 46, 250], saveINT: [122, 577, 152, 593], saveWIS: [122, 401, 152, 417], saveCHA: [122, 228, 152, 244],
+      weapons: [222, 452, 595, 575], features: [222, 200, 595, 425], traits: [222, 15, 418, 184], feats: [418, 15, 595, 184],
+      heroic: [14, 150, 104, 198], wpnTrain: [14, 50, 215, 104], tools: [14, 12, 215, 45] } },
+    p2: { anchors: [['spellcasting ability', 25, 733], ['appearance', 474, 748]], boxes: {
+      spellRow1: [12, 698, 52, 724], spellDC: [12, 673, 52, 697], spellAtk: [12, 646, 52, 672], spells: [12, 12, 400, 594],
+      appearance: [405, 652, 595, 745], backstory: [405, 495, 595, 640], alignment: [446, 478, 595, 500], languages: [405, 378, 595, 436],
+      equipment: [405, 180, 595, 368], attune: [405, 96, 595, 177], cp: [412, 38, 446, 73], sp: [448, 38, 482, 73], ep: [484, 38, 518, 73], gp: [520, 38, 554, 73], pp: [556, 38, 590, 73] } },
+    skills: { Athletics: [47, 484], Acrobatics: [47, 367], 'Sleight of Hand': [47, 352], Stealth: [47, 338], Arcana: [153, 562], History: [153, 548], Investigation: [153, 534], Nature: [153, 520], Religion: [153, 506],
+      'Animal Handling': [153, 388], Insight: [153, 374], Medicine: [153, 360], Perception: [153, 346], Survival: [153, 332], Deception: [153, 214], Intimidation: [153, 200], Performance: [153, 186], Persuasion: [153, 172] },
+    slots: { 1: [155, 679], 2: [155, 665], 3: [155, 651], 4: [243, 679], 5: [243, 665], 6: [243, 651], 7: [321, 679], 8: [321, 665], 9: [321, 651] },
+  };
+  // printed words of the sheet that can sit inside a box (never taken as something the player wrote)
+  const L24_LABEL = /^(heroic|inspiration|saving throw|score|modifier|level ?\d?|total|expended|xp|shield|temp|max|current|spent|successes|failures|c|r|m|cc|&|name|notes|atk bonus \/ dc|damage & type|casting|time|range|concentration, ritual|required material|light|medium|heavy|shields|armor|training|weapons|tools|alignment|magic item attunement|cp|sp|ep|gp|pp)$/i;
+  function isLayout2024(pages) {
+    const t = pages.map(pg => pg.items.map(i => i.s.toLowerCase()).join('\n'));
+    return !!t[0] && /weapons & damage cantrips/.test(t[0]) && /heroic/.test(t[0]) && /passive perception/.test(t[0]) && /character name/.test(t[0]) && (!t[1] || /cantrips & prepared spells/.test(t[1]));
+  }
+  function fromLayout2024(pages) {
+    const p = { source: 'official 2024 character sheet' }, warns = [];
+    // map the sheet's coordinates onto each page using two labels (falls back to the page size)
+    const place = (pg, ref) => {
+      const find = l => pg.items.find(i => i.s.trim().toLowerCase() === l);
+      const [a, b] = ref.anchors.map(([l]) => find(l));
+      if (a && b) { const sx = (b.x - a.x) / (ref.anchors[1][1] - ref.anchors[0][1]), sy = (b.y - a.y) / (ref.anchors[1][2] - ref.anchors[0][2]); return (x, y) => [a.x + (x - ref.anchors[0][1]) * sx, a.y + (y - ref.anchors[0][2]) * sy]; }
+      return (x, y) => [x * pg.w / 603, y * pg.h / 774];
+    };
+    const userItems = pg => pg.items.filter(i => i.user || !L24_LABEL.test(i.s.trim()));
+    const inBox = (pg, map, box) => { const [x0, y0] = map(box[0], box[1]), [x1, y1] = map(box[2], box[3]); const lo = Math.min(x0, x1), hi = Math.max(x0, x1), bo = Math.min(y0, y1), to = Math.max(y0, y1);
+      return userItems(pg).filter(i => i.x >= lo && i.x <= hi && i.y >= bo && i.y <= to); };
+    // lines of text in a box, top to bottom
+    const lines = (pg, map, box) => { const its = inBox(pg, map, box).sort((a, b) => b.y - a.y || a.x - b.x), out = [];
+      for (const it of its) { const last = out[out.length - 1]; if (last && Math.abs(last.y - it.y) <= 3) { last.parts.push(it); } else out.push({ y: it.y, parts: [it] }); }
+      return out.map(l => ({ y: l.y, parts: l.parts.sort((a, b) => a.x - b.x) })); };
+    const text = (pg, map, box) => lines(pg, map, box).map(l => l.parts.map(x => x.s.trim()).join(' ')).join('\n').trim();
+    const pg1 = pages[0], m1 = place(pg1, L24.p1), B = L24.p1.boxes, t1 = k => text(pg1, m1, B[k]);
+    p.name = t1('name'); p.background = t1('background'); p.species = t1('species');
+    const cls = t1('cls'), lvl = t1('level'); p.classLevel = [cls, lvl].filter(Boolean).join(' '); p.xp = t1('xp');
+    p.abilities = {}; const mods = {};
+    for (const a of ABS) {
+      // two numbers in the ability box: the score is the bigger unsigned one, the other is the modifier
+      const nums = inBox(pg1, m1, B[a]).map(i => ({ s: i.s.trim(), n: firstInt(i.s) })).filter(x => x.n != null);
+      const sc = nums.filter(x => !/^[+\-−]/.test(x.s)).sort((x, y) => y.n - x.n)[0];
+      const md = nums.find(x => x !== sc);
+      p.abilities[a] = { raw: sc ? sc.s : '', mod: md ? md.s : '' };
+      mods[a] = sc ? Math.floor((sc.n - 10) / 2) : (md ? md.n : 0);
+    }
+    p.prof = t1('prof'); const pb = firstInt(p.prof) || (firstInt(lvl) ? Math.ceil(firstInt(lvl) / 4) + 1 : 2);
+    // proficiency isn't readable from the drawn checkboxes, so it's worked out from the numbers written beside them
+    const profOf = (v, md) => { const n = firstInt(v); if (n == null) return 0; if (n === md + 2 * pb) return 2; if (n === md + pb) return 1; return 0; };
+    p.saves = {}; for (const a of ABS) p.saves[a] = profOf(t1('save' + a), mods[a]) > 0;
+    p.skills = {};
+    for (const [sk, [x, y]] of Object.entries(L24.skills)) { const v = text(pg1, m1, [x - 30, y - 5, x - 2, y + 9]); const r = profOf(v, mods[SKILL_AB[sk]]); if (r) p.skills[sk] = r; }
+    p.ac = t1('ac'); p.init = t1('init'); p.speed = t1('speed');
+    p.hp = { cur: t1('hpCur'), max: t1('hpMax') || t1('hpCur'), temp: t1('hpTemp') };
+    const hdN = firstInt(t1('hdMax')), hdS = firstInt(t1('hdSpent'));
+    p.hitDice = { total: t1('hdMax'), remaining: hdN != null ? String(hdN - (hdS || 0)) : '' };
+    // weapons & damage cantrips: one line per row (name | bonus | damage | notes, by column)
+    const cols = [[222, 334], [334, 382], [382, 458], [458, 596]].map(([a, b]) => [m1(a, 0)[0], m1(b, 0)[0]]);
+    const loose = [];
+    p.attacks = [];
+    for (const l of lines(pg1, m1, B.weapons)) {
+      const cell = k => l.parts.filter(x => x.x >= cols[k][0] && x.x < cols[k][1]).map(x => x.s.trim()).join(' ');
+      const a = { name: cell(0), bonus: cell(1), damage: cell(2), notes: cell(3) };
+      if (a.name) p.attacks.push(a); else loose.push([a.bonus, a.damage, a.notes].filter(Boolean).join(' '));
+    }
+    p.attackNotes = p.attacks.filter(a => a.notes).map(a => a.name + ': ' + a.notes).concat(loose.filter(Boolean)).join('\n');
+    p.features = [t1('features'), t1('traits'), t1('feats')].filter(Boolean);
+    const notes = [['Subclass', t1('subclass')], ['Size', t1('size')], ['Passive perception on the sheet', t1('passive')], ['Heroic inspiration', t1('heroic')], ['Weapon training', t1('wpnTrain')], ['Tools', t1('tools')]];
+    p.currency = {}; p.slots = {}; p.spells = [];
+    const pg2 = pages[1];
+    if (pg2) {
+      const m2 = place(pg2, L24.p2), B2 = L24.p2.boxes, t2 = k => text(pg2, m2, B2[k]);
+      const r1 = t2('spellRow1');
+      p.spellcasting = { cls, ability: /^[a-z]/i.test(r1) ? r1 : '', dc: t2('spellDC'), attack: t2('spellAtk') };
+      for (const [l, [x, y]] of Object.entries(L24.slots)) { const v = text(pg2, m2, [x + 24, y - 5, x + 44, y + 9]); if (firstInt(v) != null) p.slots[l] = { max: v, remaining: '' }; }
+      // spells table: level | name | casting time | range | notes, one line per row
+      const sc = [[12, 38], [38, 150], [150, 186], [186, 232], [300, 400]].map(([a, b]) => [m2(a, 0)[0], m2(b, 0)[0]]);
+      for (const l of lines(pg2, m2, B2.spells)) {
+        const cell = k => l.parts.filter(x => x.x >= sc[k][0] && x.x < sc[k][1]).map(x => x.s.trim()).join(' ');
+        const name = cell(1); if (!name) continue;
+        const lv = cell(0); const n = /cantrip/i.test(lv) ? 0 : firstInt(lv);
+        p.spells.push({ name, level: n == null ? 0 : n });
+      }
+      for (const c of ['cp', 'sp', 'ep', 'gp', 'pp']) p.currency[c] = t2(c);
+      p.equipment = t2('equipment');
+      notes.push(['Appearance', t2('appearance')], ['Backstory & personality', t2('backstory')], ['Alignment', t2('alignment')], ['Languages', t2('languages')], ['Magic item attunements', t2('attune')]);
+      if (r1 && !p.spellcasting.ability) notes.push(['Spellcasting modifier', r1]);
+    }
+    // comments stuck on the sheet (sticky notes) are kept as notes, named after the box they sit on
+    const where = (pi, c) => { const pg = pages[pi], ref = pi ? L24.p2 : L24.p1, map = place(pg, ref);
+      for (const [k, b] of Object.entries(ref.boxes)) { const [x0, y0] = map(b[0], b[1]), [x1, y1] = map(b[2], b[3]); if (c.x >= Math.min(x0, x1) - 10 && c.x <= Math.max(x0, x1) + 10 && c.y >= Math.min(y0, y1) - 10 && c.y <= Math.max(y0, y1) + 10) return k; }
+      return 'page ' + (pi + 1); };
+    const NICE = { hpCur: 'hit points', hpTemp: 'temporary hit points', hpMax: 'max hit points', gp: 'gold', sp: 'silver', cp: 'copper', ep: 'electrum', pp: 'platinum' };
+    const comments = [];
+    pages.forEach((pg, pi) => (pg.comments || []).forEach(c => comments.push('Near ' + (NICE[where(pi, c)] || where(pi, c)) + ': ' + c.s)));
+    if (comments.length) { notes.push(['Comments on the sheet', comments.join('\n')]); p.warnings = ['The sheet has ' + comments.length + ' comment' + (comments.length === 1 ? '' : 's') + ' (' + comments.join('; ') + '). They are in Notes; apply any changes they describe yourself.']; }
+    p.notes = notes.map(([label, t]) => ({ label, text: t })).filter(n => n.text);
+    return p;
+  }
+
   // fo: pdf.js getFieldObjects() result: { name: [{ value, rect, page, type }] }
   function fromFormFields(fo) {
     const by = {}; for (const k of Object.keys(fo)) by[norm(k)] = fo[k][0];
@@ -3091,7 +3201,7 @@ const PDFIMPORT = (() => {
 "notes":[{"label":"Backstory","text":"..."}]}`;
   function aiPrompt(text) {
     return 'You are converting a Dungeons & Dragons 5e character sheet into data. Below is the text extracted from a PDF character sheet (layout may be jumbled).\n' +
-      'Reply with only one JSON object in exactly this shape (skills: 1 = proficient, 2 = expertise; omit anything not on the sheet; keep features as the sheet\'s own words, one string per feature; spells with level 0 for cantrips):\n' +
+      'Your reply will be pasted into the Grimsheet app, so reply with only one JSON object (no other text) in exactly this shape (skills: 1 = proficient, 2 = expertise; omit anything not on the sheet; keep features as the sheet\'s own words, one string per feature; spells with level 0 for cantrips):\n' +
       AI_SHAPE + '\n\nSheet text:\n"""\n' + String(text).slice(0, 60000) + '\n"""';
   }
 
@@ -3135,6 +3245,7 @@ const PDFIMPORT = (() => {
     const { E, SRD, blankChar, newEntry, normalize } = d;
     const rep = [];
     const ok = t => rep.push({ kind: 'ok', text: t }), warn = t => rep.push({ kind: 'warn', text: t }), info = t => rep.push({ kind: 'info', text: t });
+    (p.warnings || []).forEach(warn);
     const c = blankChar(p.name || 'Imported character');
     c.example = false;
     c.modules.forEach(m => { m.entries = []; });
@@ -3311,7 +3422,7 @@ const PDFIMPORT = (() => {
     return { char: c, report: rep };
   }
 
-  return { isOfficialForm, fromFormFields, isSheet2024, fromSheet2024, aiPrompt, build, splitFeatures, similar };
+  return { isOfficialForm, fromFormFields, isSheet2024, fromSheet2024, isLayout2024, fromLayout2024, aiPrompt, build, splitFeatures, similar };
 })();
 if (typeof module !== 'undefined') module.exports = PDFIMPORT;
 </script>
@@ -3325,7 +3436,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.49.1';
+const APP_VERSION = '1.50.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -8501,12 +8612,26 @@ async function readPdf(file) {
     const fo = (await doc.getFieldObjects()) || {};
     if (PDFIMPORT.isOfficialForm(fo)) { finishParse(PDFIMPORT.fromFormFields(fo)); return; }
     if (PDFIMPORT.isSheet2024(fo)) { finishParse(PDFIMPORT.fromSheet2024(fo)); return; }
+    // every piece of text, filled field and comment, with its place on the page (for sheets read by layout)
+    const pages = [];
+    for (let i = 1; i <= Math.min(doc.numPages, 4); i++) {
+      const page = await doc.getPage(i), vp = page.view, items = [], comments = [];
+      for (const t of (await page.getTextContent()).items) if (t.str && t.str.trim()) items.push({ x: t.transform[4], y: t.transform[5], s: t.str });
+      for (const k of Object.keys(fo)) for (const f of fo[k]) {
+        if (f.page !== i - 1 || !f.rect || f.type === 'checkbox' || f.type === 'radiobutton' || f.type === 'button') continue;
+        const v = f.value == null ? '' : String(f.value); if (!v.trim() || v === 'Off') continue;
+        v.replace(/\r\n?/g, '\n').split('\n').forEach((line, j) => { if (line.trim()) items.push({ x: f.rect[0] + 2, y: (v.includes('\n') ? f.rect[3] - 10 : f.rect[1] + 2) - j * 10, s: line, user: true }); });
+      }
+      try { for (const a of await page.getAnnotations()) { const t = a.contentsObj && a.contentsObj.str; if (t && t.trim() && /^(Text|FreeText)$/.test(a.subtype) && a.rect) comments.push({ x: (a.rect[0] + a.rect[2]) / 2, y: (a.rect[1] + a.rect[3]) / 2, s: t.trim() }); } } catch (e) { }
+      pages.push({ w: vp[2] - vp[0], h: vp[3] - vp[1], items, comments });
+    }
+    if (PDFIMPORT.isLayout2024(pages)) { finishParse(PDFIMPORT.fromLayout2024(pages)); return; }
     let text = '';
     for (let i = 1; i <= doc.numPages; i++) { const tc = await (await doc.getPage(i)).getTextContent(); text += tc.items.map(t => t.str + (t.hasEOL ? '\n' : ' ')).join('') + '\n\n'; }
     const filled = Object.values(fo).map(a => a[0]).filter(f => f && f.value && f.value !== 'Off').map(f => f.name + ': ' + f.value).join('\n');
     text = (filled ? 'Form fields:\n' + filled + '\n\nPage text:\n' : '') + text;
     if (!text.replace(/\s/g, '')) { m.stage = 'error'; m.msg = 'This PDF has no readable text or form fields, which usually means it is a scan or a photo. Try exporting the sheet again as a fillable PDF.'; renderModal(); return; }
-    m.text = text; m.stage = 'needai'; renderModal();
+    m.text = text; m.msg = ''; m.answer = ''; m.stage = 'needai'; renderModal();
   } catch (e) {
     m.stage = 'error';
     m.msg = e && e.message === 'load' ? 'Couldn\'t load the PDF reader. Reading PDFs needs an internet connection; try again when you\'re online.' : 'Couldn\'t read this file as a PDF' + (e && e.name === 'PasswordException' ? ' because it is password protected.' : '. Check that it opens in a PDF viewer.');
@@ -8541,8 +8666,19 @@ function pdfHtml(m) {
   const head = dlgHead('Import from PDF');
   if (m.stage === 'reading') return head + `<div class="dlg-b"><div class="sugg"><h3>Working…</h3><span>${esc(m.msg)}</span></div></div>`;
   if (m.stage === 'error') return head + `<div class="dlg-b"><div class="banner warn" style="margin:0">${esc(m.msg)}</div></div><div class="dlg-f"><button class="btn" data-act="pdfopen">Choose another file</button><button class="btn primary" data-act="close">Close</button></div>`;
-  if (m.stage === 'needai') return head + `<div class="dlg-b"><div>This PDF isn't one of the fillable sheets Grimsheet reads directly, so its fields can't be read as they are. Claude can read the sheet's text and fill in the character for you; you'll check everything before it's saved.</div>${m.msg ? `<div class="banner warn" style="margin:0">${esc(m.msg)}</div>` : ''}<div class="muted" style="font-size:.85rem">${esc(String(m.text.length))} characters of text found.</div></div>
-    <div class="dlg-f"><button class="btn" data-act="close">Cancel</button><button class="btn primary" data-act="pdfai">Read with Claude</button></div>`;
+  if (m.stage === 'needai') {
+    const here = !!(window.claude && window.claude.use);
+    return head + `<div class="dlg-b"><div>This PDF isn't one of the sheets Grimsheet reads by itself (${esc(String(m.text.length))} characters of text found). Claude can read it for you: you'll check everything before it's saved.</div>
+      ${m.msg ? `<div class="banner warn" style="margin:0">${esc(m.msg)}</div>` : ''}
+      ${here ? `<div class="sugg"><h3>Read it here</h3><span>Claude reads the sheet's text right now.</span><div><button class="btn primary" data-act="pdfai">Read with Claude</button></div></div>` : ''}
+      <div class="sugg"><h3>${here ? 'Or use any Claude chat' : 'Use Claude'}</h3>
+        <ol style="margin:4px 0 0;padding-left:20px;font-size:.9rem;line-height:1.5"><li><button class="btn small" data-act="pdfcopyprompt">Copy the prompt</button> It has the instructions and your sheet's text.</li>
+        <li>Paste it into a new chat on <b>claude.ai</b> or the Claude app, and send it.</li>
+        <li>Copy Claude's whole reply and paste it here:</li></ol>
+        <textarea id="pdf-answer" rows="5" placeholder="Paste Claude's reply here" style="width:100%;box-sizing:border-box;font-family:var(--f-mono,monospace);font-size:.8rem">${esc(m.answer || '')}</textarea>
+        <div><button class="btn primary" data-act="pdfuseanswer">Use Claude's reply</button></div></div></div>
+    <div class="dlg-f"><button class="btn" data-act="pdfopen">Choose another file</button><span class="sp"></span><button class="btn" data-act="close">Cancel</button></div>`;
+  }
   if (m.stage === 'preview') {
     const c = m.result.char, r = m.result.report;
     const count = t => (c.modules.find(x => x.type === t) || { entries: [] }).entries.length;
@@ -8562,7 +8698,7 @@ function pdfHtml(m) {
   }
   return head + `<div class="dlg-b">
     <label class="fld"><span>Character sheet PDF</span><input type="file" id="pdf-file" accept="application/pdf,.pdf"></label>
-    <div class="muted" style="font-size:.88rem">These fillable sheets are read directly: scores, proficiencies, HP, attacks, spells by level, features, equipment and notes.</div><ul class="muted" style="font-size:.88rem;margin:0;padding-left:18px"><li>The official 5e (2014) character sheet</li><li>The 2024-style two-page sheet (Heroic Inspiration &amp; Proficiency Bonus box, “Weapons &amp; Damage Cantrips”, spells on page 2)</li></ul><div class="muted" style="font-size:.88rem">Other PDFs, such as D&D Beyond exports, can be read with Claude's help. You'll see a preview before anything is saved.</div>
+    <div class="muted" style="font-size:.88rem">These fillable sheets are read directly: scores, proficiencies, HP, attacks, spells by level, features, equipment and notes.</div><ul class="muted" style="font-size:.88rem;margin:0;padding-left:18px"><li>The official 5e (2014) character sheet</li><li>The official 2024 character sheet (Player's Handbook), also when it was printed or saved flat, without fillable fields</li><li>The community 2024-style two-page sheet (a Heroic Inspiration &amp; Proficiency Bonus box, “Summon More Character Sheets” on page 2)</li></ul><div class="muted" style="font-size:.88rem">Any other PDF, such as a D&D Beyond export, can be read with Claude: Grimsheet gives you a prompt to paste into a Claude chat. You'll see a preview before anything is saved.</div>
   </div><div class="dlg-f"><button class="btn" data-act="close">Cancel</button></div>`;
 }
 function settingsHtml() {
@@ -9053,6 +9189,19 @@ document.addEventListener('click', ev => {
     case 'backuplater': ui.backupLater = true; renderBanner(); break;
     case 'settest': roll('Test roll', [{ f: '1d20' }, { f: '2d6' }]); break;
     case 'pdfai': readWithClaude(); break;
+    case 'pdfcopyprompt': {
+      const text = PDFIMPORT.aiPrompt(ui.modal.text), done = () => toast('Prompt copied. Paste it into a new Claude chat.');
+      const fallback = () => { const ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('style', 'position:fixed;left:-9999px'); document.body.appendChild(ta); ta.select(); let okc = false; try { okc = document.execCommand('copy'); } catch (e) { } ta.remove(); okc ? done() : toast('Couldn\'t copy here. Try Grimsheet in a browser tab.'); };
+      try { navigator.clipboard.writeText(text).then(done, fallback); } catch (e) { fallback(); }
+      break;
+    }
+    case 'pdfuseanswer': {
+      const m = ui.modal, raw = ($('#pdf-answer') || {}).value || ''; m.answer = raw;
+      let parsed = null;
+      try { const t = raw.replace(/```(?:json)?/gi, ''), i = t.indexOf('{'), j = t.lastIndexOf('}'); if (i >= 0 && j > i) parsed = JSON.parse(t.slice(i, j + 1)); } catch (e) { parsed = null; }
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) { m.msg = 'That doesn\'t look like Claude\'s reply to the prompt. Copy the whole reply (it starts with { and ends with }) and paste it again.'; renderModal(); break; }
+      parsed.source = 'reply you pasted from Claude'; m.msg = ''; finishParse(parsed); break;
+    }
     case 'pdfimport': { const ch = ui.modal.result.char; store.chars[ch.id] = ch; store.active = ch.id; ui.open.clear(); save(); closeModal(); render(); toast('Imported ' + ch.name + '. Switch to Edit mode to adjust anything.'); break; }
     case 'clearlog': ui.log = []; renderTray(); renderModal(); break;
     case 'libadd': { const m = c.modules.find(x => x.id === id); const e = clone(library[i]); e.id = uid(); if (m.type === 'inventory' && !e.item) e.item = { qty: 1, weight: 0, equipped: false }; m.entries.push(normalizeEntry(e)); closeModal(); rerender(); toast(e.name + ' added.'); break; }
