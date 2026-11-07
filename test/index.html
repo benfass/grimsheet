@@ -3135,6 +3135,265 @@ const PDFIMPORT = (() => {
     return p;
   }
 
+  /* ---- field-based readers for other popular sheets ----
+     They read a flat list of fields: { name, value, page, rect, type }, from the PDF's form or, when a PDF keeps
+     its fields only on the pages (D&D Beyond exports), from the pages' widgets. The same name can appear on
+     several pages with different values (D&D Beyond repeats its continuation fields), so lookups know the page. */
+  function fieldsOf(fl) {
+    const by = {};
+    for (const f of fl) { const k = norm(f.name); (by[k] = by[k] || []).push(f); }
+    // dropdowns: some store a number and show a name ("7" -> "Dwarf (Hill)"); others store the words and show a short label
+    const shown = (f, v) => { if (!/^\d+$/.test(String(v))) return v; const it = f.items && f.items.find(o => o && String(o.exportValue) === String(v)); return it && it.displayValue != null ? it.displayValue : v; };
+    const val = f => { const v = f && f.value; if (v == null || v === false) return ''; return clean(Array.isArray(v) ? v.map(x => shown(f, x)).join(', ') : shown(f, v)); };
+    const get = (n, page) => { const fs = by[norm(n)] || []; const f = fs.find(x => (page == null || x.page === page) && val(x) && val(x) !== 'None' && val(x) !== '--'); return f ? val(f) : ''; };
+    const box = n => (by[norm(n)] || []).some(f => { const v = f.value; return v != null && v !== false && v !== '' && !/^(off|no|false|0)$/i.test(String(v)); });
+    const has = n => !!by[norm(n)];
+    const all = re => fl.filter(f => re.test(norm(f.name)));
+    return { by, get, box, has, all, val };
+  }
+  const SK_ORDER = ['Acrobatics', 'Animal Handling', 'Arcana', 'Athletics', 'Deception', 'History', 'Insight', 'Intimidation', 'Investigation', 'Medicine', 'Nature', 'Perception', 'Performance', 'Persuasion', 'Religion', 'Sleight of Hand', 'Stealth', 'Survival'];
+  // "Rogue 5 / Warlock 8" -> "Rogue / Warlock 13" (the builder takes the number as the character level)
+  function multiclass(cl) {
+    const parts = clean(cl).split(/\s*[\/,;]\s*/).filter(Boolean);
+    const lv = parts.map(x => firstInt(x)).filter(n => n != null);
+    if (parts.length < 2 || lv.length < 2) return { classLevel: clean(cl), note: '' };
+    return { classLevel: parts.map(x => x.replace(/\s*\d+\s*$/, '').trim()).join(' / ') + ' ' + lv.reduce((a, b) => a + b, 0), note: clean(cl) };
+  }
+  const levelOfHeader = t => { t = String(t || '').toLowerCase(); if (/cantrip/.test(t)) return 0; const m = t.match(/(\d)\s*(?:st|nd|rd|th)?\s*level|level\s*(\d)/); return m ? +(m[1] || m[2]) : null; };
+  const rectOf = f => { const r = f.rect || [0, 0, 0, 0]; return { x0: Math.min(r[0], r[2]), x1: Math.max(r[0], r[2]), y0: Math.min(r[1], r[3]), y1: Math.max(r[1], r[3]) }; };
+  // each item in `items` gets the level of the nearest header above it in the same column of the same page
+  function levelsByHeaders(items, headers) {
+    for (const it of items) {
+      const r = rectOf(it);
+      const above = headers.filter(h => h.page === it.page && h.lv != null && rectOf(h).y0 >= r.y1 - 2 && Math.abs(rectOf(h).x0 - r.x0) < 90);
+      if (above.length) it.level = above.reduce((a, b) => (rectOf(b).y0 < rectOf(a).y0 ? b : a)).lv;
+    }
+  }
+  function notesFrom(list) { return list.map(([label, text]) => ({ label, text: clean(text) })).filter(n => n.text); }
+
+  /* D&D Beyond "Export to PDF" (2014 and 2024 characters): the fields are on the pages, without a form */
+  function isDDB(F) { return F.has('class  level') && F.has('acrobaticsprof') && (F.has('wpn name') || F.has('featurestraits1')); }
+  function ddbBlocks(text) {
+    // "=== WARLOCK FEATURES ===", then "* Name • PHB 107" and its text; "| Choice • Source" lines are choices or
+    // sub-features (kept inside their feature), "| 1 / Short Rest • 1 Action" lines say how it's used
+    const out = []; let cur = null;
+    const src = t => t.replace(/\s*•\s*[A-Za-z&'’ ]*\s*\d*\s*$/, '').trim();
+    for (const raw of clean(text).split('\n')) {
+      const line = raw.trim(); if (!line) continue;
+      if (/^===.*===$/.test(line)) { cur = null; continue; }
+      if (/^\*\s+/.test(line)) { cur = { name: src(line.replace(/^\*\s+/, '')), text: [] }; out.push(cur); continue; }
+      const sub = line.match(/^\|\s*(.+)$/);
+      if (sub) {
+        const t = sub[1].trim();
+        if (/^\d+\s*\/\s*(short|long)\s*rest|^(\d+\s+)?(bonus action|action|reaction|no action|special)\b/i.test(t)) { if (cur) cur.text.push('(' + t.replace(/\s*•\s*/g, ', ') + ')'); continue; }
+        if (cur) cur.text.push(src(t) + ':'); continue;
+      }
+      if (cur) cur.text.push(line); else out.push({ name: '', text: [line] });
+    }
+    return out.map(b => { const t = b.text.join(' ').replace(/:\s*(?=\(|$)/g, '').trim(); return b.name ? (t ? b.name + ': ' + t : '') : t; }).filter(Boolean);
+  }
+  function fromDDB(F) {
+    const g = F.get, p = { source: 'D&D Beyond export' };
+    p.name = g('CharacterName'); const mc = multiclass(g('CLASS  LEVEL')); p.classLevel = mc.classLevel;
+    p.species = g('RACE'); p.background = g('BACKGROUND'); p.xp = g('EXPERIENCE POINTS');
+    const AB = { STR: ['STR', 'STRmod', 'StrProf'], DEX: ['DEX', 'DEXmod', 'DexProf'], CON: ['CON', 'CONmod', 'ConProf'], INT: ['INT', 'INTmod', 'IntProf'], WIS: ['WIS', 'WISmod', 'WisProf'], CHA: ['CHA', 'CHamod', 'ChaProf'] };
+    p.abilities = {}; p.saves = {};
+    for (const a of ABS) { p.abilities[a] = { raw: g(AB[a][0]), mod: g(AB[a][1]) }; p.saves[a] = !!g(AB[a][2]); }
+    p.skills = {}; const half = [];
+    for (const sk of SK_ORDER) { const v = g(sk.replace(/ of /, 'Of').replace(/ /g, '') + 'Prof').toUpperCase(); if (v === 'E') p.skills[sk] = 2; else if (v === 'P') p.skills[sk] = 1; else if (v === 'H') half.push(sk); }
+    p.prof = g('ProfBonus'); p.ac = g('AC'); p.init = g('Init');
+    const sp = g('Speed'); const spm = sp.match(/(\d+)\s*ft/i); p.speed = spm ? spm[1] : sp;
+    p.hp = { max: g('MaxHP'), cur: g('CurrentHP') || g('MaxHP'), temp: g('TempHP') };
+    p.hitDice = { total: g('Total'), remaining: g('HD') };
+    p.death = { s: ['Check Box 12', 'Check Box 13', 'Check Box 14'].filter(F.box).length, f: ['Check Box 15', 'Check Box 16', 'Check Box 17'].filter(F.box).length };
+    p.attacks = [];
+    for (let i = 1; i <= 8; i++) {
+      const a = { name: g(i === 1 ? 'Wpn Name' : 'Wpn Name ' + i), bonus: g('Wpn' + i + ' AtkBonus'), damage: g('Wpn' + i + ' Damage'), notes: g('Wpn Notes ' + i) };
+      if (a.name) p.attacks.push(a);
+    }
+    p.attackNotes = p.attacks.filter(a => a.notes).map(a => a.name + ': ' + a.notes).join('\n');
+    // spellcasting: the first class listed; the rest go into notes
+    const casters = [0, 1, 2, 3].map(i => ({ cls: g('spellCastingClass' + i), ability: g('spellCastingAbility' + i), dc: g('spellSaveDC' + i), attack: g('spellAtkBonus' + i) })).filter(c => c.cls || c.dc);
+    p.spellcasting = casters[0] || {};
+    const headers = F.all(/^spellheader\d+$/).map(h => Object.assign({}, h, { lv: levelOfHeader(F.val(h)) }));
+    const slotHeads = F.all(/^spellslotheader\d+$/);
+    p.slots = {};
+    for (const h of headers) {
+      if (!h.lv) continue;
+      const sh = slotHeads.find(s => s.page === h.page && Math.abs(rectOf(s).y0 - rectOf(h).y0) < 4);
+      const n = sh ? firstInt(F.val(sh)) : null; if (n != null && !p.slots[h.lv]) p.slots[h.lv] = { max: String(n), remaining: '' };
+    }
+    const names = F.all(/^spellname\d+$/).filter(f => F.val(f));
+    const same = (f, base) => { const idx = norm(f.name).replace(/^\D+/, ''); const m = F.all(new RegExp('^' + base + idx + '$')).find(x => x.page === f.page); return m ? F.val(m) : ''; };
+    const spells = names.map(f => ({ page: f.page, rect: f.rect, name: F.val(f), level: null, time: same(f, 'spellcastingtime'), range: same(f, 'spellrange'), components: same(f, 'spellcomponents'), duration: same(f, 'spellduration'), notes: same(f, 'spellnotes') }));
+    levelsByHeaders(spells, headers);
+    p.spells = spells.map(s => ({ name: s.name, level: s.level, castTime: s.time.replace(/^1A$/, '1 action').replace(/^1BA$/, '1 bonus action').replace(/^1R$/, '1 reaction'), range: s.range, components: s.components, duration: s.duration, notes: s.notes }));
+    // features (pages 2 and 3), split into one block per "* Name"
+    p.features = []; p.featureBlocks = [];
+    // the text runs on from one column to the next, so it's joined before being split into features
+    const ftext = F.all(/^featurestraits\d+$/).sort((a, b) => a.page - b.page || rectOf(a).x0 - rectOf(b).x0).map(f => F.val(f)).filter(v => v && v !== 'None').join('\n');
+    p.featureBlocks.push(...ddbBlocks(ftext));
+    // inventory (several pages of name / qty rows) and attuned items
+    p.items = [];
+    const num = f => +norm(f.name).replace(/^\D+/, '');
+    for (const f of F.all(/^eq name\d+$/).sort((a, b) => a.page - b.page || num(a) - num(b)).concat(F.all(/^attuned name\d+$/))) {
+      const v = F.val(f); if (!v || v === 'None') continue;
+      if (/^attuned/.test(norm(f.name)) && p.items.some(i => i.name.toLowerCase() === v.toLowerCase())) continue;
+      const q = norm(f.name).replace('name', 'qty'), qf = F.all(new RegExp('^' + q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$')).find(x => x.page === f.page);
+      p.items.push({ name: v, qty: Math.max(1, firstInt(qf && F.val(qf)) || 1) });
+    }
+    p.currency = { cp: g('CP'), sp: g('SP'), ep: g('EP'), gp: g('GP'), pp: g('PP') };
+    const look = [['Age', 'AGE'], ['Height', 'HEIGHT'], ['Weight', 'WEIGHT'], ['Eyes', 'EYES'], ['Skin', 'SKIN'], ['Hair', 'HAIR'], ['Gender', 'GENDER']].map(([l, k]) => g(k) ? l + ' ' + g(k) : '').filter(Boolean).join(' · ');
+    p.notes = notesFrom([['Classes', mc.note], ['Player', g('PLAYER NAME')], ['Proficiencies & training', g('ProficienciesLang')], ['Defenses', g('Defenses')], ['Saving throw modifiers', g('SaveModifiers')],
+      ['Senses', [g('AdditionalSenses'), g('Passive1') && 'Passive Perception ' + g('Passive1'), g('Passive2') && 'Passive Insight ' + g('Passive2'), g('Passive3') && 'Passive Investigation ' + g('Passive3')].filter(Boolean).join('\n')],
+      ['Half proficiency', half.join(', ')], ['Actions', [g('Actions1'), g('Actions2')].filter(Boolean).join('\n')], ['Other spellcasting classes', casters.slice(1).map(c => c.cls + ' (' + [c.ability, c.dc && 'DC ' + c.dc, c.attack && 'attack ' + c.attack].filter(Boolean).join(', ') + ')').join('\n')],
+      ['Size', g('SIZE')], ['Alignment', g('ALIGNMENT')], ['Faith', g('FAITH')], ['Appearance', [look, g('Appearance')].filter(Boolean).join('\n')], ['Personality traits', g('PersonalityTraits')], ['Ideals', g('Ideals')], ['Bonds', g('Bonds')], ['Flaws', g('Flaws')],
+      ['Backstory', g('Backstory')], ['Allies & organizations', g('AlliesOrganizations')], ['Additional notes', [g('AdditionalNotes1'), g('AdditionalNotes2')].filter(Boolean).join('\n')]]);
+    return p;
+  }
+
+  /* "D&D 5e FormFillable Calculating Charsheet" (1.7, StatBig Multiclass) */
+  function isCalcSheet(F) { return F.has('strscore') && F.has('acroprof') && F.has('hitdicetotal') && F.has('attacksspellsmisc'); }
+  function fromCalcSheet(F) {
+    const g = F.get, p = { source: 'Calculating Charsheet' };
+    p.name = g('CharacterName');
+    const cls = [[g('Class1'), g('Lv1')], [g('Class2'), g('Lv2')]].filter(([c]) => c);
+    const mc = multiclass(cls.map(([c, l]) => (c + ' ' + l).trim()).join(' / ')); p.classLevel = mc.classLevel;
+    p.species = g('Race'); p.background = g('Background'); p.xp = g('ExperiencePoints');
+    p.abilities = {}; p.saves = {};
+    for (const a of ABS) { p.abilities[a] = { raw: g(a + 'score'), mod: g(a + 'bonus') }; p.saves[a] = F.box(a + 'savePROF'); }
+    const K = { Acrobatics: 'acro', 'Animal Handling': 'anhan', Arcana: 'arcana', Athletics: 'ath', Deception: 'decep', History: 'hist', Insight: 'insight', Intimidation: 'intim', Investigation: 'invest', Medicine: 'med', Nature: 'nature', Perception: 'per', Performance: 'perf', Persuasion: 'pers', Religion: 'relig', 'Sleight of Hand': 'soh', Stealth: 'stealth', Survival: 'surv' };
+    p.skills = {}; for (const [sk, k] of Object.entries(K)) { if (F.box(k + 'EXP')) p.skills[sk] = 2; else if (F.box(k + 'PROF')) p.skills[sk] = 1; }
+    p.prof = g('ProfBonus'); p.ac = g('AC'); p.init = g('Init'); p.speed = g('Speed');
+    p.hp = { max: g('HPMax'), cur: g('CurrentHP'), temp: g('TempHP') };
+    p.hitDice = { total: g('HitDiceTotal'), remaining: '' };
+    p.death = { s: ['CheckDth1', 'CheckDth2', 'CheckDth3'].filter(F.box).length, f: ['CheckDth4', 'CheckDth5', 'CheckDth6'].filter(F.box).length };
+    p.attacks = [1, 2, 3].map(i => ({ name: g('Attack' + i), bonus: g('AtkBonus' + i), damage: g('Damage' + i) })).filter(a => a.name);
+    p.attackNotes = g('AttacksSpellsMisc');
+    p.spellcasting = { cls: g('SpellClass'), ability: g('SpellAbility'), dc: g('SpellSaveDC'), attack: g('SAB') };
+    p.slots = {}; for (let l = 1; l <= 9; l++) if (g('SlotsTot' + l)) p.slots[l] = { max: g('SlotsTot' + l), remaining: g('SlotsRemaining' + l) };
+    // Spells1-8 cantrips, then each level's lines in order
+    const START = [1, 9, 21, 34, 47, 60, 69, 78, 87, 94, 101];
+    p.spells = [];
+    for (let l = 0; l <= 9; l++) for (let i = START[l]; i < START[l + 1]; i++) { const v = g('Spells' + i); if (v) p.spells.push({ name: v, level: l }); }
+    p.features = [g('FeaturesTraits')].filter(Boolean);
+    p.equipment = g('Equipment');
+    p.currency = { cp: g('Copper'), sp: g('Silver'), ep: g('Electrum'), gp: g('Gold'), pp: g('Platinum') };
+    const tools = [1, 2].map(i => g('tools' + i) ? g('tools' + i) + (g('toolBonus' + i) ? ' ' + g('toolBonus' + i) : '') : '').filter(Boolean).join('\n');
+    p.notes = notesFrom([['Classes', mc.note], ['Player', g('PlayerName')], ['Alignment', g('Alignment')], ['Proficiencies & languages', g('ProfsLangs')], ['Tools', tools],
+      ['Armor worn', [g('ArmorWorn'), g('ACworn') && 'AC ' + g('ACworn'), F.box('shieldyes') ? 'with a shield' : ''].filter(Boolean).join(', ')], ['Inspiration', F.box('InspYes') ? 'Yes' : ''],
+      ['Passive perception', g('PWP')], ['Personality traits', g('PersonalityTraits')], ['Ideals', g('Ideals')], ['Bonds', g('Bonds')], ['Flaws', g('Flaws')]]);
+    return p;
+  }
+
+  /* "Class Character Sheet" series (one fillable sheet per class: Front_… and Back_… fields) */
+  function isClassSeries(F) { return F.has('front_character name') && F.has('front_str score') && F.has('front_skill acrobatics'); }
+  const CLASS_HINTS = [['Wizard', /arcane tradition|arcane recovery/], ['Cleric', /domain|channel divinity/], ['Barbarian', /\brage\b|primal|brutal critical/], ['Bard', /bardic|college/], ['Druid', /circle|wild shape/],
+    ['Monk', /\bki\b|monastic|martial arts/], ['Paladin', /oath|lay on hands|divine sense/], ['Ranger', /favou?red|ranger|conclave|beast master/], ['Sorcerer', /sorcer|metamagic|origin/], ['Warlock', /pact|invocation|patron/],
+    ['Rogue', /sneak attack|roguish/], ['Fighter', /martial archetype|action surge|second wind|fighting style/], ['Artificer', /infus|artificer|gunsmith|artillerist/]];
+  const CLASS_KNOWN = /^front_(character name|race|background|alignment|xp|level|archetype|proficiency|passive perception|inspiration( total| used)?|passive insight|(str|dex|con|int|wis|cha) (mod|score|save throw)|skill .*|racial traits|languages|tools|ac|shield bonus|initiative|speed|max hp|current hp|temp hp|used hit dice|total hit dice|weapon (name|atk bonus|damage) \d+|spell (atk|dc|level \d+|name \d+|range \d+|casting time \d+|save \d+|effect \d+|attack name \d+)|cantrips known|spells known|spell slots level)$/;
+  function fromClassSeries(F, fl) {
+    const g = F.get, p = { source: 'Class Character Sheet' };
+    const names = fl.map(f => norm(f.name)).join('\n');
+    const guess = (CLASS_HINTS.find(([, re]) => re.test(names)) || [])[0] || '';
+    p.name = g('Front_Character Name') || g('Back_Character Name');
+    p.classLevel = [guess, g('Front_Level')].filter(Boolean).join(' ');
+    p.species = g('Front_Race'); p.background = g('Front_Background') || g('Back_Background'); p.xp = g('Front_XP');
+    const AB = { STR: 'Str', DEX: 'Dex', CON: 'Con', INT: 'Int', WIS: 'Wis', CHA: 'Cha' };
+    p.abilities = {}; p.saves = {};
+    for (const a of ABS) { p.abilities[a] = { raw: g('Front_' + AB[a] + ' Score'), mod: g('Front_' + AB[a] + ' Mod') }; p.saves[a] = F.box('Front_Save ' + AB[a]); }
+    p.skills = {}; for (const sk of SK_ORDER) { if (F.box('Front_Expertise ' + sk)) p.skills[sk] = 2; else if (F.box('Front_Proficiency ' + sk)) p.skills[sk] = 1; }
+    p.prof = g('Front_Proficiency');
+    const ac = firstInt(g('Front_AC')), sh = firstInt(g('Front_Shield Bonus')); p.ac = ac != null ? String(ac + (sh || 0)) : '';
+    p.init = g('Front_Initiative'); p.speed = g('Front_Speed');
+    p.hp = { max: g('Front_Max HP'), cur: g('Front_Current HP'), temp: g('Front_Temp HP') };
+    const hdT = g('Front_Total Hit Dice'), hdU = firstInt(g('Front_Used Hit Dice'));
+    p.hitDice = { total: hdT, remaining: firstInt(hdT) != null && hdU != null ? String(firstInt(hdT) - hdU) : '' };
+    p.death = { s: [1, 2, 3].filter(i => F.box('Front_Success ' + i)).length, f: [1, 2, 3].filter(i => F.box('Front_Fail ' + i)).length };
+    p.attacks = [1, 2, 3, 4, 5].map(i => ({ name: g('Front_Weapon Name ' + i), bonus: g('Front_Weapon Atk Bonus ' + i), damage: g('Front_Weapon Damage ' + i) })).filter(a => a.name);
+    // spell attacks (name, range, casting time, save, effect) are kept as notes on the attack list
+    const sa = [1, 2, 3, 4, 5, 6].map(i => g('Front_Spell Attack Name ' + i) ? [g('Front_Spell Attack Name ' + i), g('Front_Spell Casting Time ' + i), g('Front_Spell Range ' + i), g('Front_Spell Save ' + i), g('Front_Spell Effect ' + i)].filter(Boolean).join(' · ') : '').filter(Boolean);
+    p.attackNotes = sa.join('\n');
+    p.spellcasting = { cls: guess, ability: '', dc: g('Front_Spell DC'), attack: g('Front_Spell Atk') };
+    p.spells = [];
+    for (let i = 1; i <= 60; i++) { const n = g('Front_Spell Name ' + i); if (n) { const lv = g('Front_Spell Level ' + i); p.spells.push({ name: n, level: /cantrip/i.test(lv) ? 0 : firstInt(lv) }); } }
+    // the class's own feature boxes ("Arcane Tradition 2", "Domain Feature 6"…) are whatever Front_ text fields aren't standard
+    p.featureBlocks = []; const counters = [];
+    for (const f of fl) {
+      const k = norm(f.name); if (!/^front_/.test(k) || CLASS_KNOWN.test(k) || f.type === 'checkbox' || f.type === 'button') continue;
+      const v = F.val(f); if (!v) continue;
+      const label = f.name.replace(/^Front_/, '').replace(/\s+(\d+)$/, ' (level $1)');
+      // counters ("Rage Total: 2", "Brutal Critical Die: 1d12") are notes, not features
+      if (/^[\d\s+\-–dD\/×x]+$/.test(v) && v.length <= 12) counters.push(f.name.replace(/^Front_/, '') + ': ' + v);
+      else p.featureBlocks.push(label + ': ' + v.replace(/\n+/g, ' '));
+    }
+    p.features = [g('Front_Racial Traits'), g('Back_Additional Features & Traits')].filter(Boolean);
+    const slots = ['Amulet', 'Head', 'Cloak', 'Arms', 'Ring1', 'Ring2', 'Boots', 'Armour', 'Belt'].map(s => g('Back_' + s)).filter(Boolean);
+    const named = F.all(/^back_item name \d+$/).map(f => F.val(f)).filter(Boolean);
+    p.equipment = [g('Back_Backpack'), ...slots, ...named].filter(Boolean).join('\n');
+    p.currency = { cp: g('Back_CP'), sp: g('Back_SP'), ep: g('Back_EP'), gp: g('Back_GP'), pp: g('Back_PP') };
+    const armor = ['Light Armour', 'Medium Armour', 'Heavy Armour', 'Shields', 'Simple Weapons', 'Martial Weapons'].filter(x => F.box('Front_' + x));
+    const look = ['Age', 'Height', 'Weight', 'Eyes', 'Skin', 'Hair'].map(k => g('Back_' + k) ? k + ' ' + g('Back_' + k) : '').filter(Boolean).join(' · ');
+    const effects = F.all(/^back_item effect \d+$/).map(f => F.val(f)).filter(Boolean);
+    p.notes = notesFrom([['Subclass', g('Front_Archetype')], ['Class', guess ? 'Worked out from the sheet (' + guess + '); change it in Edit mode if that\'s wrong.' : ''], ['Alignment', g('Front_Alignment')], ['Training', armor.join(', ')], ['Languages', g('Front_Languages')], ['Tools', g('Front_Tools')],
+      ['Inspiration', g('Front_Inspiration')], ['Class counters', counters.join('\n')], ['Item effects', effects.join('\n')], ['Appearance', [look, g('Back_Distinguishing Marks'), g('Back_Scars')].filter(Boolean).join('\n')], ['Personality traits', g('Back_Personality Traits')], ['Ideals', g('Back_Ideals')],
+      ['Bonds', g('Back_Bonds')], ['Flaws', g('Back_Flaws')], ['Allies', g('Back_Allies')], ['Enemies', g('Back_Enemies')]]);
+    if (!guess) p.warnings = ['This sheet doesn\'t say its class in a field; set the class in Edit mode.'];
+    return p;
+  }
+
+  /* MorePurpleMoreBetter's Character Record Sheet (v13, 2014 rules) */
+  function isMPMB(F) { return F.has('pc name') && F.has('class and levels') && F.has('hp max') && F.has('acr prof'); }
+  function fromMPMB(F, fl) {
+    const g = F.get, p = { source: 'MPMB character sheet' };
+    p.name = g('PC Name'); const mc = multiclass(g('Class and Levels'));
+    p.classLevel = mc.classLevel && firstInt(mc.classLevel) == null && g('Character Level') ? mc.classLevel + ' ' + g('Character Level') : mc.classLevel;
+    p.species = g('Race'); p.background = g('Background'); p.xp = g('Total Experience');
+    const AB = { STR: 'Str', DEX: 'Dex', CON: 'Con', INT: 'Int', WIS: 'Wis', CHA: 'Cha' };
+    p.abilities = {}; p.saves = {};
+    for (const a of ABS) { p.abilities[a] = { raw: g(AB[a]), mod: g(AB[a] + ' Mod') }; p.saves[a] = F.box(AB[a] + ' ST Prof'); }
+    const K = { Acrobatics: 'Acr', 'Animal Handling': 'Ani', Arcana: 'Arc', Athletics: 'Ath', Deception: 'Dec', History: 'His', Insight: 'Ins', Intimidation: 'Inti', Investigation: 'Inv', Medicine: 'Med', Nature: 'Nat', Perception: 'Perc', Performance: 'Perf', Persuasion: 'Pers', Religion: 'Rel', 'Sleight of Hand': 'Sle', Stealth: 'Ste', Survival: 'Sur' };
+    p.skills = {}; for (const [sk, k] of Object.entries(K)) { if (F.box(k + ' Exp')) p.skills[sk] = 2; else if (F.box(k + ' Prof')) p.skills[sk] = 1; }
+    p.prof = g('Proficiency Bonus'); p.ac = g('AC'); p.init = g('Initiative bonus'); p.speed = g('Speed');
+    p.hp = { max: g('HP Max'), cur: g('HP Current'), temp: g('HP Temp') };
+    const hd = [1, 2, 3].map(i => g('HD' + i + ' Level') && g('HD' + i + ' Die') ? { n: firstInt(g('HD' + i + ' Level')), d: g('HD' + i + ' Die').replace(/^d?/i, ''), used: firstInt(g('HD' + i + ' Used')) || 0 } : null).filter(Boolean);
+    p.hitDice = { total: hd.map(h => h.n + 'd' + h.d).join(' + '), remaining: hd.length ? String(hd.reduce((s, h) => s + h.n - h.used, 0)) : '' };
+    p.death = { s: [1, 2, 3].filter(i => F.box('Death Save Success' + i)).length, f: [1, 2, 3].filter(i => F.box('Death Save Fail' + i)).length };
+    p.attacks = [];
+    for (let i = 1; i <= 6; i++) {
+      const n = g('Attack.' + i + '.Weapon Selection') || g('Attack.' + i + '.Weapon'); if (!n) continue;
+      p.attacks.push({ name: n, bonus: g('Attack.' + i + '.To Hit'), damage: [g('Attack.' + i + '.Damage'), g('Attack.' + i + '.Damage Type')].filter(Boolean).join(' '), notes: [g('Attack.' + i + '.Range'), g('Attack.' + i + '.Description')].filter(Boolean).join(' · ') });
+    }
+    p.attackNotes = p.attacks.filter(a => a.notes).map(a => a.name + ': ' + a.notes).join('\n');
+    // spell sheets are added by the sheet itself (fields named like "P5.SSfront.spells.name.3"); levels come from the dividers
+    const sn = fl.filter(f => /(^|\.)spells\.name\.\d+$/.test(norm(f.name)) && F.val(f));
+    const divs = fl.filter(f => /(^|\.)spellsdiv\.text\.\d+$/.test(norm(f.name))).map(h => Object.assign({}, h, { lv: levelOfHeader(F.val(h)) }));
+    const sps = sn.map(f => ({ page: f.page, rect: f.rect, name: F.val(f), level: null }));
+    levelsByHeaders(sps, divs);
+    p.spells = sps.map(s => ({ name: s.name, level: s.level }));
+    const head = fl.find(f => /(^|\.)spellshead\.class\.\d+$/.test(norm(f.name)) && F.val(f));
+    const hv = re => { const f = fl.find(x => re.test(norm(x.name)) && F.val(x)); return f ? F.val(f) : ''; };
+    // the sheet fills in a spell save DC for everyone, so it's only used for characters with spells
+    p.spellcasting = p.spells.length || head ? { cls: head ? F.val(head) : '', ability: hv(/(^|\.)spellshead\.ability\.\d+$/), dc: hv(/(^|\.)spellshead\.dc\.\d+$/) || g('Spell save DC 1'), attack: hv(/(^|\.)spellshead\.attack\.\d+$/) } : {};
+    p.features = [g('Class Features'), g('Racial Traits')].filter(Boolean);
+    p.featureBlocks = [];
+    for (let i = 1; i <= 8; i++) if (g('Feat Name ' + i)) p.featureBlocks.push(g('Feat Name ' + i) + ': ' + (g('Feat Description ' + i) || '').replace(/\n+/g, ' '));
+    if (g('Background Feature')) p.featureBlocks.push(g('Background Feature') + ': ' + (g('Background Feature Description') || '').replace(/\n+/g, ' '));
+    p.items = [];
+    for (const [row, amt] of [['Adventuring Gear Row ', 'Adventuring Gear Amount '], ['Extra.Gear Row ', 'Extra.Gear Amount ']]) for (let i = 1; i <= 80; i++) { const n = g(row + i); if (n) p.items.push({ name: n, qty: Math.max(1, firstInt(g(amt + i)) || 1) }); }
+    for (let i = 1; i <= 12; i++) { const n = g('Extra.Magic Item ' + i); if (n) p.items.push({ name: n, qty: 1 }); }
+    p.currency = { cp: g('Copper Pieces'), sp: g('Silver Pieces'), ep: g('Electrum Pieces'), gp: g('Gold Pieces'), pp: g('Platinum Pieces') };
+    const lim = [];
+    for (let i = 1; i <= 12; i++) if (g('Limited Feature ' + i)) lim.push(g('Limited Feature ' + i) + ' (' + [g('Limited Feature Max Usages ' + i) && g('Limited Feature Max Usages ' + i) + ' uses', g('Limited Feature Recovery ' + i)].filter(Boolean).join(', ') + ')');
+    const langs = [1, 2, 3, 4, 5, 6].map(i => g('Language ' + i)).filter(Boolean).join(', '), tools = [1, 2, 3, 4, 5, 6].map(i => g('Tool ' + i)).filter(Boolean).join(', ');
+    const armor = [['Light armor', 'Proficiency Armor Light'], ['Medium armor', 'Proficiency Armor Medium'], ['Heavy armor', 'Proficiency Armor Heavy'], ['Shields', 'Proficiency Shields'], ['Simple weapons', 'Proficiency Weapon Simple'], ['Martial weapons', 'Proficiency Weapon Martial']].filter(([, k]) => F.box(k)).map(([l]) => l);
+    if (g('Proficiency Weapon Other Description')) armor.push(g('Proficiency Weapon Other Description'));
+    p.notes = notesFrom([['Classes', mc.note], ['Player', g('Player Name')], ['Size', g('Size Category')], ['Alignment', g('Alignment')], ['Languages', langs], ['Tools', tools], ['Training', armor.join(', ')],
+      ['Resistances', [1, 2, 3, 4, 5, 6].map(i => g('Resistance Damage Type ' + i)).filter(Boolean).join(', ')], ['Limited features', lim.join('\n')], ['Inspiration', F.box('Inspiration') ? 'Yes' : ''],
+      ['Personality traits', g('Personality Trait')], ['Ideals', g('Ideal')], ['Bonds', g('Bond')], ['Flaws', g('Flaw')], ['Notes', [g('Extra.Notes'), g('Notes.Left'), g('Notes.Right')].filter(Boolean).join('\n')]]);
+    return p;
+  }
+
   // fo: pdf.js getFieldObjects() result: { name: [{ value, rect, page, type }] }
   function fromFormFields(fo) {
     const by = {}; for (const k of Object.keys(fo)) by[norm(k)] = fo[k][0];
@@ -3230,7 +3489,7 @@ const PDFIMPORT = (() => {
   function splitFeatures(text) {
     const out = [];
     for (const raw of clean(text).split('\n')) {
-      const line = raw.trim().replace(/^[-•*·]\s*/, ''); if (!line) continue;
+      const line = raw.trim().replace(/^[-•*·◆◇►▸▪■□○●]\s*/, ''); if (!line) continue;
       if (out.length && /^[a-z]/.test(line)) out[out.length - 1] += ' ' + line; else out.push(line);
     }
     return out;
@@ -3296,7 +3555,7 @@ const PDFIMPORT = (() => {
     if ((c.currency.gp || 0) < 0 || Object.values(c.currency).some(v => v < 0)) warn('A negative coin amount was kept as written.');
 
     // features
-    const featBlocks = (p.features || []).flatMap(splitFeatures);
+    const featBlocks = (p.featureBlocks || []).concat((p.features || []).flatMap(splitFeatures));
     const featMod = M('features');
     const scanApply = (e, text) => { const ss = E.scan(text); const used = []; for (const s of ss) { if (s.key === 'short') continue; s.apply(e); used.push(s.label); } return used; };
     for (const line of featBlocks) {
@@ -3392,7 +3651,7 @@ const PDFIMPORT = (() => {
         if (hit.it.level !== s.level && s.level != null) warn('“' + base + '” is listed under ' + (s.level ? 'level ' + s.level : 'cantrips') + ' but is a ' + (hit.it.level ? 'level ' + hit.it.level + ' spell' : 'cantrip') + ' in the SRD. Used the SRD level.');
         if (simple(base) !== simple(hit.it.name)) ok('“' + base + '” matched to the SRD spell ' + hit.it.name + '.');
       } else {
-        e = newEntry({ name: base, short: 'Not in the SRD pack. Paste its description to add dice and details.', spell: { level: s.level || 0, school: '', castTime: '', range: '', duration: '', components: '', upcast: '', cantrip: false }, tags: { action: '', conc: false, ritual: false } });
+        e = newEntry({ name: base, short: 'Not in the SRD pack. Paste its description to add dice and details.', spell: { level: s.level || 0, school: '', castTime: clean(s.castTime), range: clean(s.range), duration: clean(s.duration), components: clean(s.components), upcast: '', cantrip: s.level === 0 }, tags: { action: '', conc: false, ritual: false } });
         unmatched.push(base);
       }
       if (paren) { const used = scanApply(e, paren); e.short = (e.short ? e.short + ' ' : '') + '(' + paren + ')'; if (used.length) ok('“' + base + '” note “' + paren + '”: ' + used.join('; ') + '.'); }
@@ -3403,9 +3662,9 @@ const PDFIMPORT = (() => {
 
     // equipment
     const invMod = M('inventory');
-    for (const line of [p.equipment, p.treasure].filter(Boolean).flatMap(t => clean(t).split(/\n|,\s*(?=[A-Z0-9])/))) {
-      if (!line.trim()) continue;
-      const { name, qty } = parseItem(line);
+    const itemList = (p.items || []).map(i => ({ name: clean(i.name), qty: i.qty || 1 })).concat([p.equipment, p.treasure].filter(Boolean).flatMap(t => clean(t).split(/\n|,\s*(?=[A-Z0-9])/)).filter(l => l.trim()).map(parseItem));
+    for (const { name, qty } of itemList) {
+      if (!name) continue;
       const hit = matchSrd(SRD, name, it => it.kind === 'gear' || it.kind === 'armor');
       const e = hit ? newEntry(SRD.toEntry(hit.it, 'inventory', ctx())) : newEntry({ name: name.replace(/^\w/, ch => ch.toUpperCase()), item: { qty, weight: 0, equipped: false } });
       if (hit) { e.item.qty = qty; e.item.equipped = false; if (e.effect) e.effect.active = true; }
@@ -3422,7 +3681,7 @@ const PDFIMPORT = (() => {
     return { char: c, report: rep };
   }
 
-  return { isOfficialForm, fromFormFields, isSheet2024, fromSheet2024, isLayout2024, fromLayout2024, aiPrompt, build, splitFeatures, similar };
+  return { isOfficialForm, fromFormFields, isSheet2024, fromSheet2024, isLayout2024, fromLayout2024, fieldsOf, isDDB, fromDDB, isCalcSheet, fromCalcSheet, isClassSeries, fromClassSeries, isMPMB, fromMPMB, aiPrompt, build, splitFeatures, similar };
 })();
 if (typeof module !== 'undefined') module.exports = PDFIMPORT;
 </script>
@@ -3436,7 +3695,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.50.0';
+const APP_VERSION = '1.51.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -8017,7 +8276,7 @@ const TOURS = {
       { title: 'Welcome to Grimsheet', text: 'A character sheet that does the maths and rolls the dice. This tour takes a minute; you can leave it any time and replay it from Settings.' },
       { sel: '#top .ident', title: 'Your character', text: 'Name, species, class and level. Open <b>Characters</b> to switch characters, make a new one, import one, or export a copy.' },
       { sel: '.dlg [data-act=create]', before: () => { if (!ui.modal || ui.modal.type !== 'chars') openModal('chars'); }, title: 'Make a character', text: '<b>Create a character</b> walks you through class, species, background, ability scores, skills, gear and spells, and can start you above level 1.' },
-      { sel: '[data-act=pdfopen]', before: () => { if (!ui.modal || ui.modal.type !== 'chars') openModal('chars'); }, title: 'Bring in your character', text: '<b>Import from PDF</b> reads a filled-in character sheet PDF (a D&amp;D Beyond export, or most fillable sheets): abilities, skills, attacks, spells and features, and shows you what it found before adding it. <b>Import</b> takes a Grimsheet file, like one exported on another device.' },
+      { sel: '[data-act=pdfopen]', before: () => { if (!ui.modal || ui.modal.type !== 'chars') openModal('chars'); }, title: 'Bring in your character', text: '<b>Import from PDF</b> reads a filled-in character sheet PDF (a D&amp;D Beyond export, the official sheets, MPMB and other popular sheets): abilities, skills, attacks, spells and features, and shows you what it found before adding it. <b>Import</b> takes a Grimsheet file, like one exported on another device.' },
       { sel: '.dlg [data-act=modal][data-v=classes]', before: () => { if (!ui.modal || ui.modal.type !== 'chars') openModal('chars'); }, title: 'Homebrew classes and subclasses', text: 'Open <b>Classes</b> and give it a PDF or pasted text: a homebrew class, or new subclasses for the basic classes (like Tasha’s). After that, levelling up offers those subclasses and adds each feature with its full text.' },
       { sel: () => modEl('abilities'), before: () => { if (ui.modal) closeModal(); }, title: 'Tap any number to roll', text: 'Every bonus with a dotted underline is a button: abilities, saves, skills, attacks, damage. The result appears at the bottom, with the dice shown.' },
       { sel: '#top .seg.adv', title: 'Advantage and disadvantage', text: 'Set it before you roll. It goes back to Normal after the roll.' },
@@ -8612,19 +8871,35 @@ async function readPdf(file) {
     const fo = (await doc.getFieldObjects()) || {};
     if (PDFIMPORT.isOfficialForm(fo)) { finishParse(PDFIMPORT.fromFormFields(fo)); return; }
     if (PDFIMPORT.isSheet2024(fo)) { finishParse(PDFIMPORT.fromSheet2024(fo)); return; }
-    // every piece of text, filled field and comment, with its place on the page (for sheets read by layout)
-    const pages = [];
-    for (let i = 1; i <= Math.min(doc.numPages, 4); i++) {
+    // every piece of text, filled field and comment, with its place on the page (for sheets read by layout),
+    // and every field: from the form, or from the pages' widgets when there's no form (D&D Beyond exports)
+    const pages = [], widgets = [];
+    for (let i = 1; i <= Math.min(doc.numPages, 12); i++) {
       const page = await doc.getPage(i), vp = page.view, items = [], comments = [];
+      let annots = []; try { annots = await page.getAnnotations(); } catch (e) { }
+      for (const a of annots) if (a.subtype === 'Widget' && a.fieldName) widgets.push({ name: a.fieldName, value: a.fieldValue, page: i - 1, rect: a.rect, type: a.checkBox ? 'checkbox' : a.radioButton ? 'radiobutton' : a.pushButton ? 'button' : a.fieldType, items: a.options });
+      if (i > 4) continue;
       for (const t of (await page.getTextContent()).items) if (t.str && t.str.trim()) items.push({ x: t.transform[4], y: t.transform[5], s: t.str });
       for (const k of Object.keys(fo)) for (const f of fo[k]) {
         if (f.page !== i - 1 || !f.rect || f.type === 'checkbox' || f.type === 'radiobutton' || f.type === 'button') continue;
         const v = f.value == null ? '' : String(f.value); if (!v.trim() || v === 'Off') continue;
         v.replace(/\r\n?/g, '\n').split('\n').forEach((line, j) => { if (line.trim()) items.push({ x: f.rect[0] + 2, y: (v.includes('\n') ? f.rect[3] - 10 : f.rect[1] + 2) - j * 10, s: line, user: true }); });
       }
-      try { for (const a of await page.getAnnotations()) { const t = a.contentsObj && a.contentsObj.str; if (t && t.trim() && /^(Text|FreeText)$/.test(a.subtype) && a.rect) comments.push({ x: (a.rect[0] + a.rect[2]) / 2, y: (a.rect[1] + a.rect[3]) / 2, s: t.trim() }); } } catch (e) { }
+      // sticky notes are comments; text typed onto the page with Fill & Sign (FreeText) is part of the sheet
+      for (const a of annots) { const t = a.contentsObj && a.contentsObj.str; if (!t || !t.trim() || !a.rect) continue;
+        if (a.subtype === 'FreeText') t.split(/\r\n?|\n/).forEach((line, j) => { if (line.trim()) items.push({ x: a.rect[0] + 2, y: a.rect[3] - 10 - j * 10, s: line, user: true }); });
+        else if (a.subtype === 'Text') comments.push({ x: (a.rect[0] + a.rect[2]) / 2, y: (a.rect[1] + a.rect[3]) / 2, s: t.trim() }); }
       pages.push({ w: vp[2] - vp[0], h: vp[3] - vp[1], items, comments });
     }
+    const formList = [];
+    for (const k of Object.keys(fo)) for (const f of fo[k]) if (f && f.page != null && f.page >= 0) formList.push({ name: k, value: f.value, page: f.page, rect: f.rect, type: f.type, items: f.items });
+    // some sheets keep part of their fields out of the form (D&D Beyond: all of them), so the pages' widgets fill the gaps
+    const seen = new Set(formList.map(f => f.name + '@' + f.page));
+    const fl = formList.concat(widgets.filter(w => !seen.has(w.name + '@' + w.page))), F = PDFIMPORT.fieldsOf(fl);
+    if (PDFIMPORT.isDDB(F)) { finishParse(PDFIMPORT.fromDDB(F)); return; }
+    if (PDFIMPORT.isCalcSheet(F)) { finishParse(PDFIMPORT.fromCalcSheet(F)); return; }
+    if (PDFIMPORT.isClassSeries(F)) { finishParse(PDFIMPORT.fromClassSeries(F, fl)); return; }
+    if (PDFIMPORT.isMPMB(F)) { finishParse(PDFIMPORT.fromMPMB(F, fl)); return; }
     if (PDFIMPORT.isLayout2024(pages)) { finishParse(PDFIMPORT.fromLayout2024(pages)); return; }
     let text = '';
     for (let i = 1; i <= doc.numPages; i++) { const tc = await (await doc.getPage(i)).getTextContent(); text += tc.items.map(t => t.str + (t.hasEOL ? '\n' : ' ')).join('') + '\n\n'; }
@@ -8698,7 +8973,7 @@ function pdfHtml(m) {
   }
   return head + `<div class="dlg-b">
     <label class="fld"><span>Character sheet PDF</span><input type="file" id="pdf-file" accept="application/pdf,.pdf"></label>
-    <div class="muted" style="font-size:.88rem">These fillable sheets are read directly: scores, proficiencies, HP, attacks, spells by level, features, equipment and notes.</div><ul class="muted" style="font-size:.88rem;margin:0;padding-left:18px"><li>The official 5e (2014) character sheet</li><li>The official 2024 character sheet (Player's Handbook), also when it was printed or saved flat, without fillable fields</li><li>The community 2024-style two-page sheet (a Heroic Inspiration &amp; Proficiency Bonus box, “Summon More Character Sheets” on page 2)</li></ul><div class="muted" style="font-size:.88rem">Any other PDF, such as a D&D Beyond export, can be read with Claude: Grimsheet gives you a prompt to paste into a Claude chat. You'll see a preview before anything is saved.</div>
+    <div class="muted" style="font-size:.88rem">These fillable sheets are read directly: scores, proficiencies, HP, attacks, spells by level, features, equipment and notes.</div><ul class="muted" style="font-size:.88rem;margin:0;padding-left:18px"><li>D&amp;D Beyond's <b>Export to PDF</b></li><li>The official 5e (2014) character sheet</li><li>The official 2024 character sheet (Player's Handbook), also when it was printed or saved flat, without fillable fields</li><li>MorePurpleMoreBetter's (MPMB) character record sheet (2014)</li><li>The “Class Character Sheet” series (one sheet per class)</li><li>The Calculating Charsheet (StatBig Multiclass)</li><li>The community 2024-style two-page sheet (“Summon More Character Sheets” on page 2)</li></ul><div class="muted" style="font-size:.88rem">Any other PDF can be read with Claude: Grimsheet gives you a prompt to paste into a Claude chat. You'll see a preview before anything is saved.</div>
   </div><div class="dlg-f"><button class="btn" data-act="close">Cancel</button></div>`;
 }
 function settingsHtml() {
