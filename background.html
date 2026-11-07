@@ -25,6 +25,12 @@
     const beat = () => S.write(S.BG, { at: Date.now(), room, v: S.VERSION });
     beat(); setInterval(beat, 15000);
 
+    // new version on the site: the background page reloads itself (it otherwise runs until the room is reloaded)
+    const vNum = v => String(v || '').split('.').map(n => parseInt(n, 10) || 0).reduce((a, n) => a * 1000 + n, 0);
+    setInterval(async () => {
+      try { const r = await fetch(new URL('manifest.json', location.href).href + '?t=' + Date.now(), { cache: 'no-store' }); if (r.ok && vNum((await r.json()).version) > vNum(S.VERSION)) location.reload(); } catch (e) { }
+    }, 5 * 60 * 1000);
+
     // main extension: pause while Grimsheet TEST runs in this room (no drawings, menus or messages)
     let paused = S.testRunning(room);
     const listen = (ch, fn) => OBR.broadcast.onMessage(ch, ev => { if (!paused) return fn(ev); });
@@ -95,7 +101,7 @@
         return out;
       }
       const NAME = 'com.grimsheet/nametext', COND = 'com.grimsheet/cond';
-      function nameOf(it) { const n = it.metadata && it.metadata[NAME]; return n && n.text ? { text: String(n.text), color: n.color || '#ffffff', pos: n.pos === 'TOP' ? 'TOP' : 'BOTTOM' } : null; }
+      function nameOf(it) { const n = it.metadata && it.metadata[NAME]; return n && n.text ? { text: String(n.text), color: n.color || '#ffffff', pos: n.pos === 'TOP' ? 'TOP' : 'BOTTOM', size: Math.max(0.5, Math.min(2, +n.size || 1)) } : null; }
       // the name tag lives in map units, so it zooms with the map like the token does, and it's sized to fit
       // within 90% of the token's width (long names get smaller text, never wider than the token)
       const measure = (() => { const c = document.createElement('canvas').getContext('2d'); return (t, f) => { c.font = '700 ' + f + 'px sans-serif'; return c.measureText(t).width; }; })();
@@ -118,7 +124,7 @@
       }
       function buildName(it, n, bd) {
         const gap = Math.max(2, bd.height * 0.02);
-        return tag(it, n.text, { kind: 'name', label: 'Name', color: n.color, bg: '#000000', bgOpacity: 0.55, stroke: true }, bd, h => n.pos === 'TOP' ? bd.min.y - gap - h : bd.max.y + gap);
+        return tag(it, n.text, { kind: 'name', label: 'Name', color: n.color, bg: '#000000', bgOpacity: 0.55, stroke: true, scale: n.size }, bd, h => n.pos === 'TOP' ? bd.min.y - gap - h : bd.max.y + gap);
       }
       // conditions sit under the token, or under the name when the name is under the token
       function buildCond(it, text, bd, below) {

@@ -2921,6 +2921,89 @@ const PDFIMPORT = (() => {
     return ['charactername', 'str', 'check box 11', 'features and traits'].every(k => ks.has(k));
   }
 
+
+  /* ---- 2024-style community fillable sheet (2 pages: "Heroic Inspiration & Proficiency Bonus", "Weapons & Damage
+     Cantrips", spells on page 2 under "Summon More Character Sheets"). Field names checked against a filled copy;
+     several fields are unnamed ("Texto8", "undefined_7"), so rows are matched by position where needed. ---- */
+  const HD_OF = { barbarian: 12, fighter: 10, paladin: 10, ranger: 10, bard: 8, cleric: 8, druid: 8, monk: 8, rogue: 8, warlock: 8, sorcerer: 6, wizard: 6, artificer: 8 };
+  function isSheet2024(fo) {
+    const ks = new Set(Object.keys(fo).map(norm));
+    return ['score str', 'check boxath', 'atk bonusdcrow0', 'can 1', 'lvl 1 - 1'].every(k => ks.has(k));
+  }
+  function fromSheet2024(fo) {
+    const by = {}; for (const k of Object.keys(fo)) by[norm(k)] = fo[k][0];
+    const get = n => clean(by[norm(n)] && by[norm(n)].value);
+    const box = n => { const f = by[norm(n)]; return !!f && f.value != null && f.value !== 'Off' && f.value !== '' && f.value !== false; };
+    const all = Object.keys(fo).map(k => Object.assign({ key: norm(k) }, fo[k][0]));
+    const cy = f => f.rect ? (f.rect[1] + f.rect[3]) / 2 : 0;
+    const p = { source: '2024-style fillable sheet' };
+    p.name = get('Name');
+    const cls = get('CLASS'), lvl = get('level'), sub = get('SUBCLASS');
+    p.classLevel = [cls, lvl].filter(Boolean).join(' ');
+    p.species = get('species'); p.background = get('back'); p.xp = get('XP');
+    const AB = { STR: 'str', DEX: 'dex', CON: 'con', INT: 'int', WIS: 'wis', CHA: 'cha' };
+    p.abilities = {}; for (const a of ABS) p.abilities[a] = { raw: get('score ' + AB[a]), mod: get('mod ' + AB[a]) };
+    const SAVE = { STR: 'Check Box str', DEX: 'Check Box dex', CON: 'Check Boxcon', INT: 'Check Boxint', WIS: 'Check Box wis', CHA: 'Check Boxcha' };
+    p.saves = {}; for (const a of ABS) p.saves[a] = box(SAVE[a]);
+    // the printed skill list leaves out Investigation and Persuasion; those go on the blank lines underneath
+    const SK = { Acrobatics: 'acro', 'Animal Handling': 'animal', Arcana: 'arcana', Athletics: 'ath', Deception: 'decep', History: 'his', Insight: 'inst', Intimidation: 'intim',
+      Medicine: 'med', Nature: 'natu', Perception: 'percp', Performance: 'perfo', Religion: 'religi', 'Sleight of Hand': 'slei', Stealth: 'steal', Survival: 'sur' };
+    p.skills = {}; for (const [sk, b] of Object.entries(SK)) if (box('Check Box' + b)) p.skills[sk] = 1;
+    const extraBox = ['Check Box5 esp', 'Check Boxesp2', 'Check Boxesp3333', 'Check Boxesp3', 'Check Boxesp4'];
+    const extra = [];
+    for (let i = 1; i <= 5; i++) {
+      const name = get('espaço ' + i); if (!name) continue;
+      const lo = name.toLowerCase().replace(/[^a-z ]/g, '');
+      // forgiving match ("persuasiion" is Persuasion)
+      const sk = SKILLS.find(x => lo.startsWith(x.toLowerCase().slice(0, 6)));
+      if (sk) { if (box(extraBox[i - 1])) p.skills[sk] = 1; }
+      else extra.push(name + (box(extraBox[i - 1]) ? ' (proficient)' : '') + (get('esp ' + i) ? ' ' + get('esp ' + i) : ''));
+    }
+    p.prof = get('tJ'); p.ac = get('AC'); p.init = get('Texto8'); p.speed = get('Texto9');
+    p.hp = { max: get('MAX'), cur: get('current'), temp: get('TEMP') };
+    const hdMax = get('MAX_2'), hdSpent = firstInt(get('SPENT')), hdN = firstInt(hdMax);
+    const die = HD_OF[(cls || '').toLowerCase().trim()];
+    p.hitDice = { total: /d\s*\d/i.test(hdMax) ? hdMax : (hdN && die ? hdN + 'd' + die : ''), remaining: hdN != null && hdSpent != null ? String(hdN - hdSpent) : '' };
+    p.death = { s: ['Check Box2', 'Check Box3', 'Check Box4'].filter(box).length, f: ['Check Box5', 'Check Box6', 'Check Box7'].filter(box).length };
+    // weapons & damage cantrips: each "name N" row, with the bonus, damage and notes fields on the same line
+    const near = (f, re) => { const c = all.filter(x => x.page === f.page && re.test(x.key)).sort((a, b) => Math.abs(cy(a) - cy(f)) - Math.abs(cy(b) - cy(f)))[0]; return c && Math.abs(cy(c) - cy(f)) <= 8 ? clean(c.value) : ''; };
+    p.attacks = all.filter(f => /^name \d+$/.test(f.key) && clean(f.value)).sort((a, b) => cy(b) - cy(a))
+      .map(f => ({ name: clean(f.value), bonus: near(f, /^atk bonusdc/), damage: near(f, /^damage/), notes: near(f, /^(notes lirow\d+|row\d(_\d)?)$/) }))
+      .map(a => Object.assign(a, { bonus: a.bonus.replace(/\\/g, '/') }));
+    p.attackNotes = p.attacks.filter(a => a.notes).map(a => a.name + ': ' + a.notes).join('\n');
+    // spells: "can N" are cantrips, "lvl L - N" level L; slot boxes sit just above each level's first line
+    p.spellcasting = { cls, ability: '', dc: get('SPELLCASTING ABILITYRow2'), attack: get('SPELLCASTING atk mod') };
+    p.spells = [];
+    for (const f of all) {
+      const v = clean(f.value); if (!v) continue;
+      let m = f.key.match(/^can (\d+)$/); if (m) { p.spells.push({ name: v, level: 0, o: +m[1] }); continue; }
+      m = f.key.match(/^lvl (\d) - (\d+)$/); if (m) p.spells.push({ name: v, level: +m[1], o: +m[2] });
+    }
+    p.spells.sort((a, b) => a.level - b.level || a.o - b.o).forEach(x => delete x.o);
+    p.slots = {};
+    const slotF = all.filter(f => /^(texto\d+|\d)$/.test(f.key) && f.rect && f.page === (by[norm('lvl 1 - 1')] || {}).page);
+    for (let l = 1; l <= 9; l++) {
+      const first = by[norm('lvl ' + l + ' - 1')]; if (!first || !first.rect) continue;
+      const hs = slotF.filter(f => f.rect[1] > first.rect[3] - 2 && f.rect[1] < first.rect[3] + 40 && f.rect[0] >= first.rect[0] - 20 && f.rect[0] <= first.rect[2]);
+      if (!hs.length) continue;
+      hs.sort((a, b) => (a.rect[2] - a.rect[0]) - (b.rect[2] - b.rect[0]));
+      const total = clean(hs[0].value), used = hs[1] ? clean(hs[1].value) : '';
+      const usedN = firstInt(used) != null ? firstInt(used) : (used.match(/[x✓✔●■/|]/gi) || []).length;
+      p.slots[l] = { max: total, remaining: firstInt(total) != null ? String(Math.max(0, firstInt(total) - usedN)) : '' };
+    }
+    p.features = [get('i  CLASS FEATURES TRAITS  FEATS e Action A Bonus Action  Reaction OtherLimited Uses 1Row1'), get('i  CLASS FEATURES TRAITS  FEATS e Action A Bonus Action  Reaction OtherLimited Uses 1Row2')].filter(Boolean);
+    p.equipment = get('Texto12');
+    p.currency = { cp: get('copper'), sp: get('silver'), ep: get('eletrum'), gp: get('gold'), pp: get('platinum') };
+    const attune = ['undefined_12', 'undefined_13', 'undefined_14', 'undefined_15', 'undefined_16'].map(get).filter(Boolean);
+    const armor = [['Light', 'Check Box14'], ['Medium', 'Check Box15'], ['Heavy', 'Check Box16'], ['Shields', 'Check Box17']].filter(([, b]) => box(b)).map(([a]) => a);
+    p.notes = [['Subclass', sub], ['Size', get('SIZE')], ['Languages & senses', get('undefined_10')], ['Resistances', get('RESISTANCES')], ['Conditions', get('CONDITIONS')],
+      ['Armor training', armor.join(', ')], ['Weapon proficiencies', get('weapom')], ['Tools', get('undefined_11')], ['Other skills', extra.join('\n')],
+      ['Magic item attunements', attune.join('\n')], ['Spellcasting ability modifier', get('SPELLCASTING ABILITYRow1')], ['Spellcasting resources & materials', get('undefined_17')],
+      ['Heroic inspiration', box('Check Box34') ? 'Yes' : ''], ['Passive perception on the sheet', get('Texto10')], ['Other notes', get('Texto11')]]
+      .map(([label, text]) => ({ label, text })).filter(n => n.text);
+    return p;
+  }
+
   // fo: pdf.js getFieldObjects() result: { name: [{ value, rect, page, type }] }
   function fromFormFields(fo) {
     const by = {}; for (const k of Object.keys(fo)) by[norm(k)] = fo[k][0];
@@ -3207,7 +3290,7 @@ const PDFIMPORT = (() => {
     return { char: c, report: rep };
   }
 
-  return { isOfficialForm, fromFormFields, aiPrompt, build, splitFeatures, similar };
+  return { isOfficialForm, fromFormFields, isSheet2024, fromSheet2024, aiPrompt, build, splitFeatures, similar };
 })();
 if (typeof module !== 'undefined') module.exports = PDFIMPORT;
 </script>
@@ -3221,7 +3304,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.47.0';
+const APP_VERSION = '1.49.1';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -3520,12 +3603,66 @@ window.addEventListener('storage', ev => {
   } catch (e) { }
 });
 window.addEventListener('storage', ev => { if (ev.key && ev.key.startsWith('grimsheet.feed.') && ui.modal && ui.modal.type === 'log' && ui.logTab === 'table') renderModal(); });
+// ---- updates: Owlbear keeps a panel (and the background page) running until the room is reloaded, and browsers
+// can hold the old files for a few minutes; so check our own manifest now and then and offer the new version
+const vNum = v => String(v || '').split('.').map(n => parseInt(n, 10) || 0).reduce((a, n) => a * 1000 + n, 0);
+let updShown = false;
+async function checkForUpdate() {
+  if (updShown || !/^https?:$/.test(location.protocol)) return;
+  try {
+    const r = await fetch(new URL('manifest.json', location.href).href + '?t=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) return;
+    const v = (await r.json()).version;
+    if (vNum(v) <= vNum(APP_VERSION)) return;
+    updShown = true;
+    const d = document.createElement('div'); d.id = 'update-bar';
+    d.setAttribute('style', 'position:fixed;left:50%;transform:translateX(-50%);top:12px;z-index:9998;display:flex;gap:10px;align-items:center;padding:8px 10px 8px 14px;border-radius:12px;background:var(--ink,#222);color:var(--bg,#fff);box-shadow:0 6px 24px rgba(0,0,0,.25);font-size:.9rem;max-width:calc(100vw - 32px)');
+    d.innerHTML = '<span>Grimsheet ' + esc(v) + ' is ready.</span><button class="btn small primary" id="update-now">Reload</button>';
+    document.body.appendChild(d);
+    d.querySelector('#update-now').addEventListener('click', () => location.reload());
+  } catch (e) { }
+}
+setTimeout(checkForUpdate, 4000); setInterval(checkForUpdate, 5 * 60 * 1000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkForUpdate(); });
 function showPausedForTest(OBR) {
   try { OBR.theme.getTheme().then(t => { if (t && t.mode) document.documentElement.setAttribute('data-theme', t.mode === 'DARK' ? 'dark' : 'light'); }).catch(() => { }); } catch (e) { }
   const d = document.createElement('div'); d.id = 'test-paused';
   d.setAttribute('style', 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;padding:24px;background:var(--bg,#fff);color:var(--ink,#222)');
   d.innerHTML = '<div style="max-width:420px;text-align:center;line-height:1.5"><div style="font-size:1.3rem;font-weight:700;margin-bottom:8px">Grimsheet is paused in this room</div><div class="muted">Grimsheet TEST is running here, so the main Grimsheet steps aside to keep the two from overlapping. Use Grimsheet TEST from the toolbar. When Grimsheet TEST is turned off for this room, this panel comes back by itself.</div></div>';
   document.body.appendChild(d);
+}
+// ---- one device keeps the tokens up to date ----
+// If the same person has Grimsheet open on two devices (a phone in the background, say), each would write its own
+// view onto the tokens and they'd fight, making names and bars flash. So one device "drives": the one last used.
+// It holds a lease in the room's metadata and renews it; the others leave the tokens alone until it goes quiet.
+const DRIVE_TTL = 30000;
+const DEV_ID = (() => { try { let d = localStorage.getItem('grimsheet.device.v1'); if (!d) { d = Math.random().toString(36).slice(2, 10); localStorage.setItem('grimsheet.device.v1', d); } return d; } catch (e) { return Math.random().toString(36).slice(2, 10); } })();
+const driveKey = () => 'com.grimsheet/drive.' + (OBRX.me && OBRX.me.role === 'GM' ? 'gm' : (OBRX.me && OBRX.me.id) || 'me');
+function drives() {
+  if (!IN_OBR || !OBRX.ready) return true;
+  const l = (OBRX.roomMd || {})[driveKey()];
+  return !l || l.dev === DEV_ID || Date.now() - (l.at || 0) > DRIVE_TTL;
+}
+let driveLast = 0, wasDriving = null;
+function driveClaim(force) {
+  if (!IN_OBR || !OBRX.ready) return;
+  if (!force && !drives()) return;
+  if (Date.now() - driveLast < 5000) return; driveLast = Date.now();
+  const v = { dev: DEV_ID, at: Date.now() };
+  OBRX.roomMd = Object.assign({}, OBRX.roomMd, { [driveKey()]: v });
+  OBRX.api.room.setMetadata({ [driveKey()]: v }).catch(() => { });
+  driveCheck();
+}
+function driveCheck() {
+  const now = drives(); if (now === wasDriving) return; wasDriving = now;
+  // just became the device that drives: bring the tokens in line with this device
+  if (now) setTimeout(() => { try { syncCondLabels(); syncMonTokens(); syncPcTokens(); publishStatus(); } catch (e) { } }, 300);
+}
+function driveStart() {
+  // using this device takes over; while it's the driver it renews the lease
+  ['pointerdown', 'keydown'].forEach(t => window.addEventListener(t, () => driveClaim(true), true));
+  setInterval(() => { const l = (OBRX.roomMd || {})[driveKey()]; if (!l || l.dev === DEV_ID || Date.now() - (l.at || 0) > DRIVE_TTL) { driveLast = 0; driveClaim(false); } else driveCheck(); }, 10000);
+  driveClaim(false);
 }
 async function startOwlbear() {
   try {
@@ -3555,7 +3692,8 @@ async function startOwlbear() {
         if (d.type === 'pasteFor') takePending();
         if (d.type === 'focus') { SETTINGS.view = 'encounter'; saveSettings(); ui.monFocus = d.inst; { const f = findMon(d.inst); if (f) ui.encSel = f.e.id; } render(); const n = document.querySelector(`[data-inst="${d.inst}"]`); if (n && n.scrollIntoView) n.scrollIntoView({ block: 'center' }); }
       });
-      try { const md = await OBR.room.getMetadata(); OBRX.init = md && md[INITKEY]; OBR.room.onMetadataChange(md => { OBRX.init = md && md[INITKEY]; refreshInitView(); }); } catch (e) { }
+      try { const md = await OBR.room.getMetadata(); OBRX.init = md && md[INITKEY]; OBRX.roomMd = md || {}; OBR.room.onMetadataChange(md => { OBRX.init = md && md[INITKEY]; OBRX.roomMd = md || {}; driveCheck(); refreshInitView(); }); } catch (e) { }
+      driveStart();
       OBR.player.onChange(p => onSelection(p.selection));
       OBR.player.onChange(p => { if (OBRX.me.role !== 'GM' || !p.selection) return; const sel = p.selection; const inst = Object.keys(OBRX.monTokens).find(k => OBRX.monTokens[k].some(it => sel.includes(it.id))); if (inst && inst !== ui.monFocus) { ui.monFocus = inst; if (encView()) { renderGrid(); const n = document.querySelector(`[data-inst="${inst}"]`); if (n && n.scrollIntoView) n.scrollIntoView({ block: 'nearest' }); } } });
       writeCatalog(); ENCS = null; enc(); render();
@@ -3627,7 +3765,7 @@ function paintLink() { document.querySelectorAll('[data-link]').forEach(n => { n
 // the GM keeps players' linked tokens in step too, from what each player publishes (covers rooms where
 // players can't edit tokens themselves, and players whose panel is closed)
 function syncPcTokens() {
-  if (!OBRX.ready || OBRX.me.role !== 'GM') return;
+  if (!OBRX.ready || OBRX.me.role !== 'GM' || !drives()) return;
   const want = {};
   for (const p of OBRX.party || []) {
     const s = p.s; if (!s || typeof s.hp !== 'number') continue;
@@ -3661,6 +3799,8 @@ function wantedCondLabels() {
 }
 /* ---- names as token text: monsters and characters, in their own colours ---- */
 const NAMETEXT = 'com.grimsheet/nametext';
+const NAME_SIZES = [[0.75, 'Small'], [1, 'Medium'], [1.3, 'Large'], [1.6, 'Extra large']];
+const nameSize = () => NAME_SIZES.some(([v]) => v === SETTINGS.nameSize) ? SETTINGS.nameSize : 1;
 const namePos = () => SETTINGS.namePos === 'TOP' ? 'TOP' : 'BOTTOM';
 const nameColors = () => ({ mon: SETTINGS.nameColorMon || '#E8692C', pc: SETTINGS.nameColorPc || '#1F9E8F' });
 function wantedNames() {
@@ -3674,6 +3814,7 @@ function wantedNames() {
   return want;
 }
 async function syncNameTexts() {
+  if (!drives()) return;
   // the name is drawn by each person's Grimsheet as a label beside the token (above it or under it), so it
   // never covers the HP bar; the token's own text is cleared while that's on and put back when it's off
   const want = wantedNames(), pos = namePos();
@@ -3681,7 +3822,7 @@ async function syncNameTexts() {
   const ids = [];
   for (const it of ours) {
     const w = want[it.id], m = it.metadata[NAMETEXT], tx = it.text || {};
-    if (w ? !m || m.text !== w.text || m.color !== w.color || m.pos !== pos || (tx.plainText || '') !== '' : !!m) ids.push(it.id);
+    if (w ? !m || m.text !== w.text || m.color !== w.color || m.pos !== pos || (m.size || 1) !== nameSize() || (tx.plainText || '') !== '' : !!m) ids.push(it.id);
   }
   if (!ids.length) return;
   await OBRX.api.scene.items.updateItems(ids, ds => {
@@ -3689,7 +3830,7 @@ async function syncNameTexts() {
       const w = want[d.id]; d.text = d.text || { type: 'PLAIN', plainText: '', style: {} }; d.text.style = d.text.style || {};
       if (w) {
         const orig = (d.metadata[NAMETEXT] || {}).orig || { plainText: d.text.plainText || '', fillColor: d.text.style.fillColor || null, strokeColor: d.text.style.strokeColor || null, strokeWidth: d.text.style.strokeWidth ?? null, align: d.text.style.textAlignVertical || null };
-        d.metadata[NAMETEXT] = { orig, text: w.text, color: w.color, pos };
+        d.metadata[NAMETEXT] = { orig, text: w.text, color: w.color, pos, size: nameSize() };
         d.text.plainText = '';
       } else {
         // switched off or unlinked: put back what the token had before
@@ -3703,7 +3844,7 @@ async function syncNameTexts() {
 let condT = null, condBusy = false;
 function syncCondLabels() { clearTimeout(condT); condT = setTimeout(doSyncCondLabels, 400); }
 async function doSyncCondLabels() {
-  if (!IN_OBR || !OBRX.ready || OBRX.me.role !== 'GM' || condBusy) return;
+  if (!IN_OBR || !OBRX.ready || OBRX.me.role !== 'GM' || condBusy || !drives()) return;
   condBusy = true;
   try {
     // conditions are written on the token; each person's Grimsheet draws them (in map units, under the name)
@@ -3718,7 +3859,7 @@ async function doSyncCondLabels() {
   try { await syncNameTexts(); } catch (e) { } finally { condBusy = false; }
 }
 function syncTokens(st) {
-  if (!OBRX.ready || !OBRX.links.length) return;
+  if (!OBRX.ready || !OBRX.links.length || !drives()) return;
   const want = { health: st.hp, 'max health': st.max, 'temporary health': st.temp || 0, 'armor class': typeof st.ac === 'number' ? st.ac : 0, hide: false };
   const stale = OBRX.links.filter(l => !l.b || Object.keys(want).some(k => l.b[k] !== want[k])).map(l => l.id);
   if (!stale.length) return;
@@ -4151,7 +4292,7 @@ function scanTokens(items) {
   OBRX.monTokens = mon; OBRX.pcTokens = pc;
 }
 async function syncMonTokens() {
-  if (!IN_OBR || !OBRX.ready || OBRX.me.role !== 'GM') return;
+  if (!IN_OBR || !OBRX.ready || OBRX.me.role !== 'GM' || !drives()) return;
   const mode = SETTINGS.monHp || 'hidden', hide = mode !== 'exact', want = {};
   for (const m of allMons()) for (const it of OBRX.monTokens[m.id] || []) {
     const w = { health: m.hp, 'max health': m.max, 'temporary health': m.temp || 0, 'armor class': m.ac, hide };
@@ -4168,6 +4309,7 @@ function rowTokenIds(row) {
 }
 function selectRowTokens(row) { if (!IN_OBR || !OBRX.ready) return; const ids = rowTokenIds(row); if (ids.length) OBRX.api.player.select(ids, true).catch(() => { }); }
 function writeTrackerTokens(e) {
+  if (!drives()) return;
   const rows = initRows(e), want = {};
   for (const r of rows) for (const id of rowTokenIds(r)) if (r.init != null) want[id] = { count: String(r.init), active: e.combat.active && e.combat.turn === r.k };
   const ids = Object.keys(want); if (!ids.length) return;
@@ -8337,6 +8479,7 @@ async function readPdf(file) {
     const doc = await lib.getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false }).promise;
     const fo = (await doc.getFieldObjects()) || {};
     if (PDFIMPORT.isOfficialForm(fo)) { finishParse(PDFIMPORT.fromFormFields(fo)); return; }
+    if (PDFIMPORT.isSheet2024(fo)) { finishParse(PDFIMPORT.fromSheet2024(fo)); return; }
     let text = '';
     for (let i = 1; i <= doc.numPages; i++) { const tc = await (await doc.getPage(i)).getTextContent(); text += tc.items.map(t => t.str + (t.hasEOL ? '\n' : ' ')).join('') + '\n\n'; }
     const filled = Object.values(fo).map(a => a[0]).filter(f => f && f.value && f.value !== 'Off').map(f => f.name + ': ' + f.value).join('\n');
@@ -8360,7 +8503,7 @@ function finishParse(parsed) {
 async function readWithClaude() {
   const m = ui.modal;
   const sample = window.claude && window.claude.use ? await window.claude.use('sample') : null;
-  if (!sample) { m.stage = 'error'; m.msg = 'This PDF isn\'t the official fillable sheet, and reading other layouts uses Claude, which isn\'t available here. Open Grimsheet from claude.ai to use it.'; renderModal(); return; }
+  if (!sample) { m.stage = 'error'; m.msg = 'This PDF isn\'t one of the fillable sheets Grimsheet reads directly, and reading other layouts uses Claude, which isn\'t available here. Open Grimsheet from claude.ai to use it.'; renderModal(); return; }
   m.stage = 'reading'; m.msg = 'Claude is reading the sheet. This usually takes under a minute.'; renderModal();
   try {
     const parsed = await sample.json(PDFIMPORT.aiPrompt(m.text));
@@ -8369,7 +8512,7 @@ async function readWithClaude() {
     finishParse(parsed);
   } catch (e) {
     m.stage = e && (e.code === 'not_granted' || e.code === 'sampling_disabled') ? 'error' : 'needai';
-    m.msg = { not_granted: 'Claude wasn\'t allowed for this page, so only the official fillable sheet can be imported.', sampling_disabled: 'Claude isn\'t available for this account.', rate_limited: 'Too many requests right now. Try again in a minute.', invalid_json: 'Claude\'s answer couldn\'t be read as a character. Try again.' }[e && e.code] || 'Something went wrong reading the sheet. Try again.';
+    m.msg = { not_granted: 'Claude wasn\'t allowed for this page, so only the fillable sheets Grimsheet reads directly can be imported.', sampling_disabled: 'Claude isn\'t available for this account.', rate_limited: 'Too many requests right now. Try again in a minute.', invalid_json: 'Claude\'s answer couldn\'t be read as a character. Try again.' }[e && e.code] || 'Something went wrong reading the sheet. Try again.';
     renderModal();
   }
 }
@@ -8377,7 +8520,7 @@ function pdfHtml(m) {
   const head = dlgHead('Import from PDF');
   if (m.stage === 'reading') return head + `<div class="dlg-b"><div class="sugg"><h3>Working…</h3><span>${esc(m.msg)}</span></div></div>`;
   if (m.stage === 'error') return head + `<div class="dlg-b"><div class="banner warn" style="margin:0">${esc(m.msg)}</div></div><div class="dlg-f"><button class="btn" data-act="pdfopen">Choose another file</button><button class="btn primary" data-act="close">Close</button></div>`;
-  if (m.stage === 'needai') return head + `<div class="dlg-b"><div>This PDF isn't the official fillable 5e sheet, so its fields can't be read directly. Claude can read the sheet's text and fill in the character for you; you'll check everything before it's saved.</div>${m.msg ? `<div class="banner warn" style="margin:0">${esc(m.msg)}</div>` : ''}<div class="muted" style="font-size:.85rem">${esc(String(m.text.length))} characters of text found.</div></div>
+  if (m.stage === 'needai') return head + `<div class="dlg-b"><div>This PDF isn't one of the fillable sheets Grimsheet reads directly, so its fields can't be read as they are. Claude can read the sheet's text and fill in the character for you; you'll check everything before it's saved.</div>${m.msg ? `<div class="banner warn" style="margin:0">${esc(m.msg)}</div>` : ''}<div class="muted" style="font-size:.85rem">${esc(String(m.text.length))} characters of text found.</div></div>
     <div class="dlg-f"><button class="btn" data-act="close">Cancel</button><button class="btn primary" data-act="pdfai">Read with Claude</button></div>`;
   if (m.stage === 'preview') {
     const c = m.result.char, r = m.result.report;
@@ -8398,7 +8541,7 @@ function pdfHtml(m) {
   }
   return head + `<div class="dlg-b">
     <label class="fld"><span>Character sheet PDF</span><input type="file" id="pdf-file" accept="application/pdf,.pdf"></label>
-    <div class="muted" style="font-size:.88rem">The official fillable 5e character sheet is read directly: scores, proficiencies, HP, attacks, spells by level, features, equipment and notes. Other PDFs, such as D&D Beyond exports, can be read with Claude's help. You'll see a preview before anything is saved.</div>
+    <div class="muted" style="font-size:.88rem">These fillable sheets are read directly: scores, proficiencies, HP, attacks, spells by level, features, equipment and notes.</div><ul class="muted" style="font-size:.88rem;margin:0;padding-left:18px"><li>The official 5e (2014) character sheet</li><li>The 2024-style two-page sheet (Heroic Inspiration &amp; Proficiency Bonus box, “Weapons &amp; Damage Cantrips”, spells on page 2)</li></ul><div class="muted" style="font-size:.88rem">Other PDFs, such as D&D Beyond exports, can be read with Claude's help. You'll see a preview before anything is saved.</div>
   </div><div class="dlg-f"><button class="btn" data-act="close">Cancel</button></div>`;
 }
 function settingsHtml() {
@@ -8434,8 +8577,8 @@ function settingsHtml() {
     <div class="setrow"><div class="grow"><b>Show conditions under tokens</b><div class="muted">A small red tag under each linked token (monsters and players), below its name, lists its conditions, e.g. "Prone · Poisoned (2)". Everyone at the table sees it; it zooms with the map and follows the token's visibility. Kept up to date while your Grimsheet panel is open.</div></div>
       <button class="switch ${SETTINGS.condLabels !== false ? 'on' : ''}" data-act="setcondlabels" aria-pressed="${SETTINGS.condLabels !== false}"><i></i>${SETTINGS.condLabels !== false ? 'On' : 'Off'}</button></div>
     <div class="setrow"><div class="grow"><b>Names on tokens</b><div class="muted">Shows each linked token's monster or character name in a tag under or above the token, in these colours, clear of the HP bar. While it's on, the token's own text is hidden; turning it off puts it back.</div>
-        <div class="inline" style="margin-top:6px"><label class="muted">Monsters <input type="color" id="nc-mon" data-namecolor="mon" value="${esc(nameColors().mon)}" aria-label="Monster name colour"></label><label class="muted">Characters <input type="color" id="nc-pc" data-namecolor="pc" value="${esc(nameColors().pc)}" aria-label="Character name colour"></label><button class="btn small ghost" data-act="namecolreset">Default colours</button></div>
-        <div class="inline" style="margin-top:6px"><label class="muted">Name <select class="ed-inline" data-namepos="1" id="set-namepos" aria-label="Name position on tokens">${[['BOTTOM', 'under the token'], ['TOP', 'above the token']].map(([v, l]) => `<option value="${v}" ${namePos() === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div></div>
+        <div class="inline" style="margin-top:6px"><label class="muted">Monsters <input type="color" id="nc-mon" data-namecolor="mon" value="${esc(nameColors().mon)}" aria-label="Monster name colour"></label><label class="muted">Characters <input type="color" id="nc-pc" data-namecolor="pc" value="${esc(nameColors().pc)}" aria-label="Character name colour"></label><label class="muted">Size <select class="ed-inline" style="font-family:inherit" id="set-namesize" data-namesize="1" aria-label="Name size">${NAME_SIZES.map(([v, l]) => `<option value="${v}" ${nameSize() === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label><button class="btn small ghost" data-act="namecolreset">Default colours</button></div>
+        <div class="inline" style="margin-top:6px"><label class="muted">Name <select class="ed-inline" style="font-family:inherit" data-namepos="1" id="set-namepos" aria-label="Name position on tokens">${[['BOTTOM', 'under the token'], ['TOP', 'above the token']].map(([v, l]) => `<option value="${v}" ${namePos() === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div></div>
       <button class="switch ${SETTINGS.nameText !== false ? 'on' : ''}" data-act="setnametext" aria-pressed="${SETTINGS.nameText !== false}"><i></i>${SETTINGS.nameText !== false ? 'On' : 'Off'}</button></div>
     <div class="setrow"><div class="grow"><b>Also update Owlbear's initiative tracker</b><div class="muted">Writes initiative and the current turn onto tokens, for tables that use that tracker.</div></div>
       <button class="switch ${SETTINGS.obrTracker !== false ? 'on' : ''}" data-act="setobrtracker" aria-pressed="${SETTINGS.obrTracker !== false}"><i></i>${SETTINGS.obrTracker !== false ? 'On' : 'Off'}</button></div>` : ''}
@@ -8968,6 +9111,7 @@ function doImport(lib) {
 document.addEventListener('change', ev => {
   const t = ev.target;
   if (t.dataset.cw != null && cwInput(t)) return;
+  if (t.dataset.namesize) { SETTINGS.nameSize = +t.value || 1; saveSettings(); syncCondLabels(); return; }
   if (t.dataset.namepos) { SETTINGS.namePos = t.value === 'TOP' ? 'TOP' : 'BOTTOM'; saveSettings(); syncCondLabels(); return; }
   if (t.dataset.prep != null && prepInput(t)) return;
   if (t.dataset.encname) { const x = encs().list[t.dataset.encname]; if (x) { x.name = t.value.trim() || x.name; saveEnc({ quiet: true }); } ui.encRen = null; setTimeout(renderGrid, 0); return; }
