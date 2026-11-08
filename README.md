@@ -40,7 +40,7 @@ Grimsheet has no accounts, no analytics, no ads, no cookies and no server of its
 - Formulas linked to your scores (`STR + PROF`, `8 + PROF + WIS`, `table(LEVEL, …)`), with a breakdown of every roll.
 - Paste text and get suggested dice, saves, uses and spell details.
 - SRD 5.2 content: 309 spells, all weapons and armor, magic items, gear, class and subclass features, plus familiars, beasts and mounts.
-- Import a character from a PDF: D&D Beyond's Export to PDF, the official 2014 and 2024 sheets (also flattened copies), MPMB's character record sheet, the Class Character Sheet series, the Calculating Charsheet and the community 2024-style sheet are read directly. For any other PDF, Grimsheet gives you a prompt to paste into a Claude chat, and reads Claude's reply.
+- Import a character from a PDF: D&D Beyond's Export to PDF, the official 2014 and 2024 sheets (also flattened copies), MPMB's character record sheet, the Class Character Sheet series, the Calculating Charsheet and the community 2024-style sheet are read directly. For any other PDF, Grimsheet gives you a prompt to paste into a Claude chat, and reads Claude's reply. Using a different sheet template? [Open an issue](https://github.com/benfass/grimsheet/issues/new?title=Support%20for%20a%20new%20sheet%20template) with its name and a link (or a filled copy) and it can be added.
 - Spells that do something again on later turns (Witch Bolt, Spiritual Weapon) get a second roll button.
 - Features that raise your maximum HP each level (Tough, Dwarven Toughness) are counted at every level-up.
 - Optional dice animation, short and long rests, counters, toggled buffs, a personal homebrew library.

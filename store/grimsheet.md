@@ -23,7 +23,7 @@ A 5e character sheet that handles homebrew as well as the rules. Tap any number 
 
 - **Tap to roll.** Abilities, saves, skills, attacks, damage and spells are buttons, with advantage and disadvantage, and every roll shows how it was worked out. Rolls are shared with the room (or only with the GM, or not at all).
 - **Create a character** in a few minutes: class, species, background, ability scores (standard array, point buy or rolled), skills, gear and spells, at level 1 or higher.
-- **Bring your own character**: import it from a PDF character sheet, or from a Grimsheet file.
+- **Bring your own character**: import it from a PDF character sheet (D&D Beyond exports, the official 2014 and 2024 sheets, MPMB and other popular sheets are read directly; any other sheet through a prompt you paste into Claude), or from a Grimsheet file.
 - **Homebrew is first class.** Paste any feature, spell or item and Grimsheet finds its dice, saves, limited uses and effects. Import homebrew classes and subclasses from a PDF or pasted text, a whole book at once, and levelling up adds their features with the full text.
 - **Level up** in one dialog: hit points, new features, ability scores or a feat, spell slots, and the spells you can now prepare.
 - **Link your token**: right-click it and choose *Link to my Grimsheet character*. Its HP, AC and conditions follow your sheet, and your initiative goes into the GM's tracker.
@@ -56,5 +56,7 @@ No accounts, no analytics, no ads and no server of its own. Characters are saved
 ## Support
 
 Questions, bugs and ideas: [GitHub Issues](https://github.com/benfass/grimsheet/issues).
+
+Using a character sheet PDF that Grimsheet doesn't read directly? [Open an issue](https://github.com/benfass/grimsheet/issues/new?title=Support%20for%20a%20new%20sheet%20template) with the sheet's name and a link to it (or attach a filled copy), and it can be added.
 
 Grimsheet is compatible with fifth edition. It includes material from the System Reference Document 5.2 and 5.1 by Wizards of the Coast LLC, licensed under CC BY 4.0.
