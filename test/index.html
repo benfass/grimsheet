@@ -3696,7 +3696,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.54.1';
+const APP_VERSION = '1.54.2';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -4287,7 +4287,7 @@ async function startOwlbear() {
       gmBeat(); setInterval(gmBeat, 10000); setTimeout(catchUpTurn, 500);
       setInterval(() => { if (!document.hidden) refreshLinks(); }, 5000);
       try {
-        OBR.scene.items.onChange(items => { refreshLinks(items); areaWatch(items); });
+        OBR.scene.items.onChange(items => { refreshLinks(items); areaWatch(items); glowWatch(items); });
         OBR.scene.onReadyChange(() => refreshLinks());
         refreshLinks();
       } catch (e) { }
@@ -5445,7 +5445,10 @@ function targetChipHtml() {
 // the token you're targeting gets a soft grey glow: drawn as local items, so only you see it. Soft grey rings
 // behind the token (glow) plus a thin dark-and-light ring around it, so it reads on dark, light and busy maps.
 const TGLOW = 'com.grimsheet-test/tglow';
-let glowFor = null, glowBusy = false, glowAgain = false;
+let glowFor = null, glowSig = '', glowBusy = false, glowAgain = false;
+const glowSigOf = it => it ? [it.scale && it.scale.x, it.scale && it.scale.y, it.image && it.image.width, it.grid && it.grid.dpi].join(',') : '';
+// the glow keeps the same thickness whatever the token's size, so it isn't scaled with the token: redraw it when the token is resized
+function glowWatch(items) { if (!glowFor) return; const it = items.find(i => i.id === glowFor); if (!it) { glowFor = null; return; } if (glowSigOf(it) !== glowSig) { glowFor = null; paintGlow(); } }
 async function paintGlow() {
   if (!IN_OBR || !OBRX.ready || !OBRX.api.scene || !OBRX.api.scene.local) return;
   if (glowBusy) { glowAgain = true; return; }
@@ -5457,8 +5460,9 @@ async function paintGlow() {
     glowFor = null;
     const B = window.OwlbearBuild; if (!want || !B) return;
     let bd, dpi = 150; try { bd = await OBRX.api.scene.items.getItemBounds([want]); dpi = await OBRX.api.scene.grid.getDpi(); } catch (e) { return; }
-    const r = Math.max(bd.width, bd.height) / 2, g = Math.max(dpi * 0.07, r * 0.16), c = bd.center;
-    const common = x => x.attachedTo(want).locked(true).disableHit(true).disableAttachmentBehavior(['ROTATION', 'LOCKED', 'COPY']).metadata({ [TGLOW]: { for: want } }).name('Target');
+    const r = Math.max(bd.width, bd.height) / 2, g = dpi * 0.08, c = bd.center;
+    try { const [ti] = await OBRX.api.scene.items.getItems([want]); glowSig = glowSigOf(ti); } catch (e) { glowSig = ''; }
+    const common = x => x.attachedTo(want).locked(true).disableHit(true).disableAttachmentBehavior(['ROTATION', 'SCALE', 'LOCKED', 'COPY']).metadata({ [TGLOW]: { for: want } }).name('Target');
     const circle = (rad, fill, fo, stroke, so, sw, layer) => common(B.buildShape().shapeType('CIRCLE').width(rad * 2).height(rad * 2).position({ x: c.x, y: c.y }).fillColor(fill).fillOpacity(fo).strokeColor(stroke).strokeOpacity(so).strokeWidth(sw)).layer(layer).build();
     const items = [], w = Math.max(2, dpi * 0.022);
     // the glow: four mid-grey discs behind the token, stacking to strongest close to it, with a soft dark edge so it
