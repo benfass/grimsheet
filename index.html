@@ -3556,10 +3556,13 @@ const PDFIMPORT = (() => {
       if (dcm) e.save = { ability: 'DEX', dc: dcm[1] };
       else if (bonusRaw) {
         const b = firstInt(bonusRaw);
-        let pick = null;
-        for (const k of ABS) { if (mod(k) + PB === b) { pick = { ab: k, prof: true }; break; } }
-        if (!pick) for (const k of ABS) { if (mod(k) === b) { pick = { ab: k, prof: false }; break; } }
-        if (pick) { e.attack = { ability: pick.ab, prof: pick.prof && PB !== 0, bonus: '', crit: 20 }; notes.push('to-hit ' + bonusRaw + ' linked to ' + pick.ab + (pick.prof && PB ? ' + proficiency' : '')); }
+        // a magic weapon's bonus (from the importer, or "+1" in its name) is kept apart, so the ability still matches
+        const mg = a.magic != null ? +a.magic || 0 : +((nm.match(/\+\s*([1-3])\b/) || [])[1] || 0);
+        const order = ['STR', 'DEX'].filter(k => ABS.includes(k)).concat(ABS.filter(k => k !== 'STR' && k !== 'DEX'));
+        let pick = a.ability && ABS.includes(a.ability) ? { ab: a.ability, prof: mod(a.ability) + mg !== b } : null;
+        if (!pick) for (const k of order) { if (mod(k) + PB + mg === b) { pick = { ab: k, prof: true }; break; } }
+        if (!pick) for (const k of order) { if (mod(k) + mg === b) { pick = { ab: k, prof: false }; break; } }
+        if (pick) { const extra = b - mod(pick.ab) - (pick.prof ? PB : 0); e.attack = { ability: pick.ab, prof: pick.prof && PB !== 0, bonus: extra ? String(extra) : '', crit: 20 }; notes.push('to-hit ' + bonusRaw + ' linked to ' + pick.ab + (pick.prof && PB ? ' + proficiency' : '') + (extra ? ' ' + (extra > 0 ? '+ ' + extra : '− ' + -extra) + (mg && extra === mg ? ' magic' : '') : '')); }
         else { e.attack = { ability: 'none', prof: false, bonus: String(b), crit: 20 }; warn('“' + nm + '” to-hit ' + bonusRaw + ' doesn\'t match any ability; kept as a fixed +' + b + '.'); }
       }
       const dm = clean(a.damage).replace(/−/g, '-').match(/(\d*d\d+)\s*(?:([+-])\s*(\d+))?\s*([a-z ]*)/i);
@@ -3675,7 +3678,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.54.3';
+const APP_VERSION = '1.55.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -7440,7 +7443,8 @@ const EPIC_BOONS = [
 ];
 const FULL_SLOTS = [[], [2], [3], [4, 2], [4, 3], [4, 3, 2], [4, 3, 3], [4, 3, 3, 1], [4, 3, 3, 2], [4, 3, 3, 3, 1], [4, 3, 3, 3, 2], [4, 3, 3, 3, 2, 1], [4, 3, 3, 3, 2, 1], [4, 3, 3, 3, 2, 1, 1], [4, 3, 3, 3, 2, 1, 1], [4, 3, 3, 3, 2, 1, 1, 1], [4, 3, 3, 3, 2, 1, 1, 1], [4, 3, 3, 3, 2, 1, 1, 1, 1], [4, 3, 3, 3, 3, 1, 1, 1, 1], [4, 3, 3, 3, 3, 2, 1, 1, 1], [4, 3, 3, 3, 3, 2, 2, 1, 1]];
 const classKey = name => Object.keys(CLASSES).find(k => String(name || '').toLowerCase().startsWith(k.toLowerCase())) || null;
-const classInfo = cl => CLASSES[classKey(cl.name)] || (importedClass(cl.name) ? importedInfo(importedClass(cl.name), cl.sub) : null) || { hd: cl.hd || 8, cast: cl.cast || '', ab: '', asi: ASI_STD, subAt: 3, f: {}, s: {}, homebrew: true };
+const THIRD_SUBS = { Fighter: /eldritch knight/i, Rogue: /arcane trickster/i };
+const classInfo = cl => (THIRD_SUBS[classKey(cl.name)] && THIRD_SUBS[classKey(cl.name)].test(cl.sub || '') && CLASSES[classKey(cl.name)] ? Object.assign({}, CLASSES[classKey(cl.name)], { cast: 'third', ab: 'INT' }) : null) || CLASSES[classKey(cl.name)] || (importedClass(cl.name) ? importedInfo(importedClass(cl.name), cl.sub) : null) || { hd: cl.hd || 8, cast: cl.cast || '', ab: '', asi: ASI_STD, subAt: 3, f: {}, s: {}, homebrew: true };
 // "Paladin (Oath of Devotion)", "Fighter 3 / Wizard 2"
 function classesOf(c) {
   if (Array.isArray(c.classes) && c.classes.length && c.classes.reduce((a, x) => a + (+x.level || 0), 0) === (+c.level || 1)) return c.classes;
@@ -7459,6 +7463,7 @@ function classString(list) {
   return list.map(x => x.name + (x.sub ? ' (' + x.sub + ')' : '') + ' ' + x.level).join(' / ');
 }
 // spell slots for all classes together (half casters count half, rounded up) plus pact slots
+const THIRD_SLOTS = [[], [], [], [2], [3], [3], [3], [4, 2], [4, 2], [4, 2], [4, 3], [4, 3], [4, 3], [4, 3, 2], [4, 3, 2], [4, 3, 2], [4, 3, 3], [4, 3, 3], [4, 3, 3], [4, 3, 3, 1], [4, 3, 3, 1]];
 function slotsFor(list) {
   let lv = 0, pact = null, tableSlots = null;
   for (const x of list) {
@@ -7469,6 +7474,9 @@ function slotsFor(list) {
   }
   const caster = list.some(x => classInfo(x).cast);
   if (!caster) return null;
+  // a single third caster (Eldritch Knight, Arcane Trickster) uses its own table; multiclassed, the combined table
+  const casters = list.filter(x => classInfo(x).cast && classInfo(x).cast !== 'pact');
+  if (casters.length === 1 && classInfo(casters[0]).cast === 'third' && !tableSlots) { const t = THIRD_SLOTS[Math.min(20, casters[0].level)] || []; const s = {}; for (let l = 1; l <= 9; l++) s[l] = t[l - 1] || 0; if (pact) s[pact.lvl] += pact.n; return s; }
   const s = {}; for (let l = 1; l <= 9; l++) s[l] = (FULL_SLOTS[Math.min(20, lv)] || [])[l - 1] || 0;
   if (pact) s[pact.lvl] += pact.n;
   for (const t of tableSlots || []) for (const [l, n] of Object.entries(t)) s[l] = (s[l] || 0) + n;
@@ -8499,13 +8507,13 @@ function prepHtml(md) {
   const otherCls = pcs.filter(Q => Q.k !== P.k).map(Q => ({ k: Q.k, n: md.sel.filter(n => own[n] === Q.k).length })).filter(x => x.n);
   const lvls = [...new Set(L.map(x => x.level))].sort((a, b) => a - b);
   const box = x => theirs(x.name)
-    ? `<label class="muted" title="Prepared for ${esc(own[x.name])}: it counts there, not here"><input type="checkbox" checked disabled> ${esc(x.name)} <small>(${esc(own[x.name])})</small></label>`
+    ? `<label class="muted" title="Prepared for ${esc(own[x.name])}: it counts there, not here"><input type="checkbox" checked disabled> ${esc(x.name)} <small>(${esc(own[x.name])})</small> <button class="btn small" data-act="prepmove" data-v="${esc(x.name)}" title="Count it for ${esc(P.k)} instead">Move here</button></label>`
     : `<label title="${esc((srdSpell(x.name) || {}).short || '')}"><input type="checkbox" id="pp-${esc(x.name.replace(/\W/g, ''))}" data-prep="${esc(x.name)}" ${mine(x.name) ? 'checked' : ''}> ${esc(x.name)}</label>`;
   return dlgHead('Prepare spells') + `<div class="dlg-b" style="gap:10px">
     ${md.note ? `<div class="banner" style="margin:0;background:var(--accent-soft)">${esc(md.note)}</div>` : ''}
     ${pcs.length > 1 ? `<div class="seg" role="group">${pcs.map((x, i) => `<button data-act="prepcls" data-v="${i}" class="${i === md.ci ? 'on' : ''}">${esc(x.k)}</button>`).join('')}</div>` : ''}
     <div class="prep-count"><span>${esc(P.k)} level ${P.level}:</span> <b class="${sn > P.prep ? 'over' : ''}">${sn} of ${P.prep}</b> spells prepared${P.cant ? ` · <b class="${cn > P.cant ? 'over' : ''}">${cn} of ${P.cant}</b> cantrips` : ''} · up to ${E.ordinal(P.max)} level</div>
-    ${otherCls.length ? `<div class="muted" style="font-size:.85rem">Not counted here: ${otherCls.map(x => `${x.n} prepared for ${esc(x.k)}`).join(', ')}. A spell on both lists counts for the class you prepared it for.</div>` : ''}
+    ${otherCls.length ? `<div class="muted" style="font-size:.85rem">Not counted here: ${otherCls.map(x => `${x.n} prepared for ${esc(x.k)}`).join(', ')}. A spell on both lists counts for the class you prepared it for; <b>Move here</b> switches it.</div>` : ''}
     ${lvls.map(l => `<div class="lvl-h">${l === 0 ? 'Cantrips' : E.ordinal(l) + ' level'}</div><div class="cw-checks">${L.filter(x => x.level === l).map(box).join('')}</div>`).join('')}
     ${other.length ? `<div class="muted" style="font-size:.85rem">Also on your sheet, not counted (subclass, feat or other spells): ${esc(other.join(', '))}.</div>` : ''}
   </div><div class="dlg-f"><span class="muted" style="font-size:.85rem">${sn > P.prep || cn > P.cant ? 'More than your class allows: untick some, or keep them if a feature lets you.' : 'Unticking takes a spell off your sheet; one undo puts it back.'}</span><span class="sp"></span><button class="btn" data-act="close">Cancel</button><button class="btn primary" data-act="prepsave">Save</button></div>`;
@@ -8513,6 +8521,7 @@ function prepHtml(md) {
 function prepAct(act, el, v) {
   const md = ui.modal; if (!md || md.type !== 'prep') return false;
   if (act === 'prepcls') { md.ci = +v; renderModal(); return true; }
+  if (act === 'prepmove') { const pcs = prepClasses(C()), P = pcs[md.ci] || pcs[0]; md.own = md.own || {}; md.own[v] = P.k; renderModal(); return true; }
   if (act === 'prepsave') {
     const c = C(); let m = c.modules.find(x => x.type === 'spells'); if (!m) { m = mkModule('spells'); c.modules.push(m); }
     c.hidden = c.hidden.filter(x => x !== m.id);
@@ -9905,9 +9914,11 @@ function fromDDBJson(x) {
   for (const i of use) {
     const w = i.definition; if (seen.has(w.name)) continue; seen.add(w.name);
     const props = (w.properties || []).map(x => x.name), ranged = w.attackType === 2, fin = props.includes('Finesse');
-    const ab = ranged ? 'DEX' : fin && mod('DEX') > mod('STR') ? 'DEX' : 'STR', mb = magic(i);
+    // monks use DEX with simple melee weapons and martial Light ones (Martial Arts)
+    const monkW = cls.some(c => /monk/i.test(c.name)) && !ranged && (w.categoryId === 1 || props.includes('Light'));
+    const ab = ranged ? 'DEX' : (fin || monkW) && mod('DEX') > mod('STR') ? 'DEX' : 'STR', mb = magic(i);
     const dmg = (w.damage || {}).diceString || (w.fixedDamage != null ? String(w.fixedDamage) : '');
-    p.attacks.push({ name: w.name, bonus: '+' + (mod(ab) + prof + mb), damage: dmg ? dmg + (mod(ab) + mb ? (mod(ab) + mb > 0 ? '+' : '') + (mod(ab) + mb) : '') + (w.damageType ? ' ' + w.damageType.toLowerCase() : '') : '', notes: props.join(', ') });
+    p.attacks.push({ name: w.name, ability: ab, magic: mb, bonus: '+' + (mod(ab) + prof + mb), damage: dmg ? dmg + (mod(ab) + mb ? (mod(ab) + mb > 0 ? '+' : '') + (mod(ab) + mb) : '') + (w.damageType ? ' ' + w.damageType.toLowerCase() : '') : '', notes: props.join(', ') });
   }
   // spells: every class's list, and spells from species, items and feats
   const spells = [];
