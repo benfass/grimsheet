@@ -3696,7 +3696,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.54.2';
+const APP_VERSION = '1.54.3';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -7722,7 +7722,7 @@ function applyLevelUp(md) {
   const k = classKey(P.cl.name), P2 = prepClasses(c).find(x => x.k === k);
   if (P2) {
     const was = P2.level - 1, more = P2.prep > preparedAt(k, was) || P2.cant > cantripsKnown(k, was) || P2.max > maxSpellLevel(k, was);
-    if (more || ended) setTimeout(() => openPrep(`${k} level ${P2.level}: you can prepare ${P2.prep} spells${P2.cant ? ' and know ' + P2.cant + ' cantrips' : ''}, up to ${E.ordinal(P2.max)} level.`), 300);
+    if (more || ended) setTimeout(() => openPrep(`${k} level ${P2.level}: you can prepare ${P2.prep} spells${P2.cant ? ' and know ' + P2.cant + ' cantrips' : ''}, up to ${E.ordinal(P2.max)} level.`, k), 300);
   }
 }
 function undoLevelUp() {
@@ -8476,7 +8476,7 @@ function cwMake(md) {
   c.hp.max = c.hp.cur = Math.max(1, C0.hd + cwMod(fin.CON) + (md.species === 'Dwarf' ? 1 : 0));
   // spell slots and spells
   const sl = slotsFor(c.classes); if (sl) for (let l = 1; l <= 9; l++) c.slots[l] = { max: sl[l] || 0, used: 0 };
-  for (const n of md.spells) { const it = srdSpell(n); if (it) M('spells').entries.push(normalizeEntry(Object.assign(SRD.toEntry(it, 'spells', CTX), { id: uid() }))); }
+  for (const n of md.spells) { const it = srdSpell(n); if (it) { const e = normalizeEntry(Object.assign(SRD.toEntry(it, 'spells', CTX), { id: uid() })); if (e.spell && classKey(md.cls)) e.spell.cls = classKey(md.cls); M('spells').entries.push(e); } }
   if (!C0.cast) c.hidden = c.modules.filter(m => m.type === 'spells').map(m => m.id);
   // what isn't tracked elsewhere
   c.notes = [`Background: ${c.background}${bg.tool ? ' (tool: ' + bg.tool + ')' : ''}.`, C0.def ? (C0.training || 'Training: see the class') + '.' : `Armor training: ${C0.armor.length ? C0.armor.join(', ') : 'none'}. Weapons: ${{ martial: 'simple and martial', simple: 'simple', monk: 'simple, and martial weapons with the Light property', rogue: 'simple, and martial weapons with the Finesse or Light property' }[C0.weapons]}.`, `Size ${sp.size}. Languages: Common and two more of your choice.`].join('\n');
@@ -8494,22 +8494,39 @@ function prepClasses(c) {
   return classesOf(c).map(cl => ({ cl, k: classKey(cl.name) })).filter(x => x.k && SPELL_LISTS[x.k] && PREPARED[x.k])
     .map(({ cl, k }) => ({ k, level: cl.level, prep: preparedAt(k, cl.level), cant: cantripsKnown(k, cl.level), max: maxSpellLevel(k, cl.level) }));
 }
-function openPrep(note) {
+// Which class each spell on the sheet counts for: the class it was prepared for (spell.cls), or for older sheets
+// the first of your casting classes whose list has it. Spells no class lists (subclass, feat…) count for none.
+function spellOwners(c) {
+  const pcs = prepClasses(c), own = {};
+  (c.modules.find(m => m.type === 'spells') || { entries: [] }).entries.forEach(e => {
+    if (!e.spell) return;
+    const ks = pcs.filter(P => spellList(P.k).some(x => x.name === e.name)).map(P => P.k);
+    const k = e.spell.cls && pcs.some(P => P.k === e.spell.cls) ? e.spell.cls : ks[0];
+    if (k && !(e.name in own)) own[e.name] = k;
+  });
+  return own;
+}
+function openPrep(note, k) {
   const c = C(), pcs = prepClasses(c); if (!pcs.length) { toast('Preparing spells works for the bard, cleric, druid, paladin, ranger, sorcerer, warlock and wizard.'); return; }
   const have = new Set((c.modules.find(m => m.type === 'spells') || { entries: [] }).entries.map(e => e.name));
-  openModal('prep', { ci: 0, sel: [...have], note: note || '', show: 'all' });
+  openModal('prep', { ci: Math.max(0, pcs.findIndex(P => P.k === k)), sel: [...have], own: spellOwners(c), note: note || '', show: 'all' });
 }
 function prepHtml(md) {
   const c = C(), pcs = prepClasses(c), P = pcs[md.ci] || pcs[0], L = spellList(P.k).filter(x => x.level <= P.max && srdSpell(x.name));
-  const on = new Set(md.sel), onList = new Set(L.map(x => x.name));
-  const cn = L.filter(x => x.level === 0 && on.has(x.name)).length, sn = L.filter(x => x.level > 0 && on.has(x.name)).length;
-  const other = md.sel.filter(n => !onList.has(n));
+  const on = new Set(md.sel), onList = new Set(L.map(x => x.name)), own = md.own || {};
+  const mine = n => on.has(n) && own[n] === P.k, theirs = n => on.has(n) && own[n] && own[n] !== P.k;
+  const cn = L.filter(x => x.level === 0 && mine(x.name)).length, sn = L.filter(x => x.level > 0 && mine(x.name)).length;
+  const other = md.sel.filter(n => !onList.has(n) && !own[n]);
+  const otherCls = pcs.filter(Q => Q.k !== P.k).map(Q => ({ k: Q.k, n: md.sel.filter(n => own[n] === Q.k).length })).filter(x => x.n);
   const lvls = [...new Set(L.map(x => x.level))].sort((a, b) => a - b);
-  const box = x => `<label title="${esc((srdSpell(x.name) || {}).short || '')}"><input type="checkbox" id="pp-${esc(x.name.replace(/\W/g, ''))}" data-prep="${esc(x.name)}" ${on.has(x.name) ? 'checked' : ''}> ${esc(x.name)}</label>`;
+  const box = x => theirs(x.name)
+    ? `<label class="muted" title="Prepared for ${esc(own[x.name])}: it counts there, not here"><input type="checkbox" checked disabled> ${esc(x.name)} <small>(${esc(own[x.name])})</small></label>`
+    : `<label title="${esc((srdSpell(x.name) || {}).short || '')}"><input type="checkbox" id="pp-${esc(x.name.replace(/\W/g, ''))}" data-prep="${esc(x.name)}" ${mine(x.name) ? 'checked' : ''}> ${esc(x.name)}</label>`;
   return dlgHead('Prepare spells') + `<div class="dlg-b" style="gap:10px">
     ${md.note ? `<div class="banner" style="margin:0;background:var(--accent-soft)">${esc(md.note)}</div>` : ''}
     ${pcs.length > 1 ? `<div class="seg" role="group">${pcs.map((x, i) => `<button data-act="prepcls" data-v="${i}" class="${i === md.ci ? 'on' : ''}">${esc(x.k)}</button>`).join('')}</div>` : ''}
     <div class="prep-count"><span>${esc(P.k)} level ${P.level}:</span> <b class="${sn > P.prep ? 'over' : ''}">${sn} of ${P.prep}</b> spells prepared${P.cant ? ` · <b class="${cn > P.cant ? 'over' : ''}">${cn} of ${P.cant}</b> cantrips` : ''} · up to ${E.ordinal(P.max)} level</div>
+    ${otherCls.length ? `<div class="muted" style="font-size:.85rem">Not counted here: ${otherCls.map(x => `${x.n} prepared for ${esc(x.k)}`).join(', ')}. A spell on both lists counts for the class you prepared it for.</div>` : ''}
     ${lvls.map(l => `<div class="lvl-h">${l === 0 ? 'Cantrips' : E.ordinal(l) + ' level'}</div><div class="cw-checks">${L.filter(x => x.level === l).map(box).join('')}</div>`).join('')}
     ${other.length ? `<div class="muted" style="font-size:.85rem">Also on your sheet, not counted (subclass, feat or other spells): ${esc(other.join(', '))}.</div>` : ''}
   </div><div class="dlg-f"><span class="muted" style="font-size:.85rem">${sn > P.prep || cn > P.cant ? 'More than your class allows: untick some, or keep them if a feature lets you.' : 'Unticking takes a spell off your sheet; one undo puts it back.'}</span><span class="sp"></span><button class="btn" data-act="close">Cancel</button><button class="btn primary" data-act="prepsave">Save</button></div>`;
@@ -8520,11 +8537,12 @@ function prepAct(act, el, v) {
   if (act === 'prepsave') {
     const c = C(); let m = c.modules.find(x => x.type === 'spells'); if (!m) { m = mkModule('spells'); c.modules.push(m); }
     c.hidden = c.hidden.filter(x => x !== m.id);
-    const listed = new Set(prepClasses(c).flatMap(P => spellList(P.k).map(x => x.name))), want = new Set(md.sel);
+    const listed = new Set(prepClasses(c).flatMap(P => spellList(P.k).map(x => x.name))), want = new Set(md.sel), own = md.own || {};
     let added = 0, removed = 0;
     m.entries = m.entries.filter(e => { if (listed.has(e.name) && !want.has(e.name)) { removed++; return false; } return true; });
+    m.entries.forEach(e => { if (e.spell && own[e.name]) e.spell.cls = own[e.name]; });
     const have = new Set(m.entries.map(e => e.name));
-    for (const n of want) if (!have.has(n)) { const it = srdSpell(n); if (it) { m.entries.push(normalizeEntry(Object.assign(SRD.toEntry(it, 'spells', CTX), { id: uid() }))); added++; } }
+    for (const n of want) if (!have.has(n)) { const it = srdSpell(n); if (it) { const e = normalizeEntry(Object.assign(SRD.toEntry(it, 'spells', CTX), { id: uid() })); if (e.spell && own[n]) e.spell.cls = own[n]; m.entries.push(e); added++; } }
     save(); closeModal(); render(); toast(added || removed ? `Prepared: ${added} added, ${removed} taken off.` : 'No changes.');
     return true;
   }
@@ -8532,7 +8550,8 @@ function prepAct(act, el, v) {
 }
 function prepInput(t) {
   const md = ui.modal; if (!md || md.type !== 'prep' || t.dataset.prep == null) return false;
-  const n = t.dataset.prep; md.sel = md.sel.filter(x => x !== n); if (t.checked) md.sel.push(n);
+  const n = t.dataset.prep, pcs = prepClasses(C()), P = pcs[md.ci] || pcs[0]; md.own = md.own || {};
+  md.sel = md.sel.filter(x => x !== n); if (t.checked) { md.sel.push(n); md.own[n] = P.k; } else delete md.own[n];
   renderModal(); return true;
 }
 
