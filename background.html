@@ -18,8 +18,17 @@
   S.sdk().then(OBR => OBR.onReady(async () => {
     const room = OBR.room && OBR.room.id ? OBR.room.id : 'room';
     const FEED = 'grimsheet.feed.' + room;
-    const me = { id: OBR.player.id, name: await OBR.player.getName(), role: await OBR.player.getRole() };
-    OBR.player.onChange(p => { me.name = p.name; me.role = p.role; });
+    // a co-DM (a player the main DM made co-DM) gets the GM side here too; a change of DMs restarts this page
+    const DMKEY = 'com.grimsheet/dms';
+    let dms = {}; try { dms = ((await OBR.room.getMetadata()) || {})[DMKEY] || {}; } catch (e) { }
+    const realRole = { v: await OBR.player.getRole() };
+    const eff = () => (realRole.v === 'GM' || (dms.co || {})[OBR.player.id] ? 'GM' : realRole.v);
+    const me = { id: OBR.player.id, name: await OBR.player.getName(), role: eff() };
+    OBR.player.onChange(p => { me.name = p.name; if (p.role !== realRole.v) { realRole.v = p.role; if (eff() !== me.role) location.reload(); } });
+    OBR.room.onMetadataChange(md => { dms = (md || {})[DMKEY] || {}; if (eff() !== me.role) location.reload(); });
+    // the DM device that keeps the tokens up to date (the panels hold this lease); with none, the main DM's
+    const DEV = (() => { try { return localStorage.getItem('grimsheet.device.v1') || ''; } catch (e) { return ''; } })();
+    const iHandle = md => { const l = (md || {})['com.grimsheet/drive.gm']; if (l && Date.now() - (l.at || 0) < 30000) return l.dev === DEV; return !dms.main || dms.main === me.id; };
 
     // heartbeat: while fresh, the panel leaves notifications and GM requests to this page
     const beat = () => S.write(S.BG, { at: Date.now(), room, v: S.VERSION });
@@ -356,6 +365,7 @@
         if (beat && beat.room === room && Date.now() - beat.at < 25000) return;
         if (endSeen.has(d.id)) return; endSeen.add(d.id);
         OBR.room.getMetadata().then(md => {
+          if (!iHandle(md)) return;   // another DM's Grimsheet moves the turn on
           const I = md && md['com.grimsheet/initiative'];
           if (!I || !I.active || !I.rows || !I.rows.length || I.turn !== d.key || I.round !== d.round) return;
           const i = I.rows.findIndex(r => r.k === I.turn); let j = i + 1, round = I.round;
@@ -445,7 +455,7 @@
     // the GM's menu opens a small panel inside the right-click menu
     MENUS.push({
       id: 'com.grimsheet/menu-gm',
-      icons: [{ icon: ICON, label: 'Grimsheet', filter: { min: 1, roles: ['GM'], some: [{ key: 'layer', value: 'CHARACTER', coordinator: '||' }, { key: 'layer', value: 'MOUNT' }] } }],
+      icons: [{ icon: ICON, label: 'Grimsheet', filter: { min: 1, roles: [me.role === 'GM' && realRole.v !== 'GM' ? 'PLAYER' : 'GM'], some: [{ key: 'layer', value: 'CHARACTER', coordinator: '||' }, { key: 'layer', value: 'MOUNT' }] } }],
       embed: { url: GM_URL, height: 260 },
     });
     const menus = on => Promise.all(MENUS.map(m => (on ? OBR.contextMenu.create(m) : OBR.contextMenu.remove(m.id)).catch(() => { })));
