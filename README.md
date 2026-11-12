@@ -30,8 +30,8 @@ Grimsheet has no accounts, no analytics, no ads, no cookies and no server of its
   - The GM can save their own data (encounters, notes, monsters, backups) to their own Owlbear library.
 - The clipboard is only used when you press **Copy**.
 - For PDFs Grimsheet can't read itself, **Copy the prompt** puts the sheet's text on your clipboard for you to paste into a Claude chat yourself; nothing is sent by Grimsheet. In the claude.ai version only, **Read with Claude** sends the sheet's text to Claude, and only when you press it.
-
 - **Problem reports are yours to send.** If something breaks, Grimsheet offers to open a GitHub issue with its version, your browser and the error filled in; nothing is sent unless you submit it, and no character data is included.
+
 ## Features
 
 - **Create a character** step by step (2024 rules from the SRD 5.2): class, species, background, ability scores (standard array, point buy or rolled), skills, starting gear and spells, from level 1 or higher. Homebrew classes and species work too.
