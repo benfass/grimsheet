@@ -418,6 +418,9 @@ select.ed-inline{width:auto}
 .tray3d>svg{position:absolute;inset:0;width:100%;height:100%;display:block}
 .tray3d .d3floor{position:absolute;top:20px;bottom:20px;left:20px;right:20px;overflow:hidden;border-radius:3px}
 .tray3d canvas{display:block}
+.tray3d .d3wall{position:absolute;top:14px;bottom:14px;left:calc(50% - 5px);width:10px;border-radius:3px;background:linear-gradient(90deg,#3d2512,#7a4d2a 40%,#5d3920 70%,#2c1808);box-shadow:3px 0 8px rgba(0,0,0,.45),-3px 0 8px rgba(0,0,0,.3);opacity:0;transform:translateY(-14px);transition:opacity .25s,transform .3s;z-index:1;pointer-events:none}
+.tray3d.split .d3wall{opacity:1;transform:none}
+.dicefx.d3 .shelf.rolling .die{opacity:.45}
 .tray3d .d3tot{position:absolute;right:26px;top:-14px;z-index:2;box-shadow:0 2px 6px rgba(0,0,0,.35);font-family:var(--f-mono);font-weight:700;font-size:1.2rem;color:#fff8e6;background:#3a220f;border:1px solid #c9a24a;border-radius:10px;padding:2px 10px;opacity:0;transform:scale(.7);transition:opacity .2s,transform .25s}
 .tray3d .d3tot small{display:block;font-size:.62rem;font-weight:500;opacity:.85;text-align:center;margin-top:-3px}
 .tray3d.landed .d3tot{opacity:1;transform:none}
@@ -3713,7 +3716,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.57.0';
+const APP_VERSION = '1.57.1';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, dice3d: !navigator.webdriver, diceSound: true, diceSet: 'ivory', diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -7954,9 +7957,11 @@ function doReroll(entry, S, dice) {
   if (S.e && S.left != null) { S.e.counter.used = (+S.e.counter.used || 0) + 1; save(); renderGrid(); }
   if (S.insp) { C().inspiration = false; save(); renderGrid(); publishStatus(); }
   if (S.mon && S.left != null) { S.mon.uses[S.ref] = (S.mon.uses[S.ref] || 0) + 1; saveEnc({ quiet: true }); if (encView()) renderGrid(); }
-  renderTray(true); paintDiceBox(entry, changes.map(c => c.x.k));
-  announceReroll(entry, S, text, before);
-  toast(`${S.name}: ${text}. ${before} → ${entry.total}.`);
+  const finish = () => { renderTray(true); paintDiceBox(entry, changes.map(c => c.x.k)); announceReroll(entry, S, text, before); toast(`${S.name}: ${text}. ${before} → ${entry.total}.`); };
+  let p = null; try { if (SETTINGS.diceAnim && SETTINGS.dice3d) p = d3Reroll(entry, changes); } catch (e) { p = null; }
+  if (!p) { finish(); return; }
+  const sh = document.querySelector('#dicefx .shelf'); if (sh) sh.classList.add('rolling');
+  p.then(() => { if (sh) sh.classList.remove('rolling'); finish(); }, () => { if (sh) sh.classList.remove('rolling'); finish(); });
 }
 // keep the table honest: rerolls of shared rolls are always announced (GM only when sharing is off)
 function announceReroll(entry, S, text, before) {
@@ -8156,7 +8161,7 @@ function d3Preload() {
 }
 function d3Tray() {
   let tray = D3.tray || document.getElementById('tray3d');
-  if (!tray) { tray = D3.tray = document.createElement('div'); tray.id = 'tray3d'; tray.className = 'tray3d'; tray.innerHTML = '<div class="d3floor" id="d3floor"></div><span class="d3tot"></span>'; }
+  if (!tray) { tray = D3.tray = document.createElement('div'); tray.id = 'tray3d'; tray.className = 'tray3d'; tray.innerHTML = '<div class="d3floor" id="d3floor"></div><div class="d3wall"></div><span class="d3tot"></span>'; }
   return tray;
 }
 // the library reports the result a moment before the last wobble ends: wait until the dice are still
@@ -8210,6 +8215,66 @@ function d3Notation(all) {
   const order = groups.flatMap(g => g.idx);
   return { text: groups.map(g => g.idx.length + 'd' + g.s).join('+') + '@' + order.map(i => Math.max(1, Math.min(+all[i].s, +all[i].v || 1))).join(','), order };
 }
+function d3Opacity(m, o) { [].concat(m.material || []).forEach(x => { x.transparent = true; x.opacity = o; }); }
+function d3Fade(b, entry, notKept = []) {
+  try { const ds = boxDice(entry); (D3.meshes || []).forEach(x => { const d = ds.find(y => y.k === x.k); d3Opacity(x.m, (d && d.drop) || notKept.includes(x.m) ? 0.3 : 1); }); b.renderer.render(b.scene, b.camera); } catch (e) { }
+}
+function d3Total(tray, entry) { const t = tray.querySelector('.d3tot'); if (t) t.innerHTML = esc(String(entry.total)) + (entry.crit ? '<small>nat 20</small>' : entry.fumble ? '<small>nat 1</small>' : ''); }
+// after a split reroll: every die back in the dice list (so the next throw clears them), the divider out
+function d3Unsplit(b, tray) {
+  if (D3.meshes) b.diceList = D3.meshes.map(x => x.m).filter(m => b.scene.children.includes(m));
+  if (D3.wall) { try { b.world.removeBody(D3.wall); } catch (e) { } D3.wall = null; }
+  D3.split = false; tray.classList.remove('split');
+}
+// throws during a split reroll start from the right-hand edge and head left, into the right half of the box
+function d3HookThrow(b) {
+  if (b.__gsThrow) return; b.__gsThrow = true;
+  const gnv = b.getNotationVectors.bind(b);
+  b.getNotationVectors = (...a) => {
+    const r = gnv(...a);
+    try { if (D3.split && r && r.vectors) { const cw = b.display.containerWidth; r.vectors.forEach(v => { v.pos.x = cw * (0.6 + Math.random() * 0.3); if (v.velocity.x > 0) v.velocity.x *= -0.6; }); } } catch (e) { }
+    return r;
+  };
+}
+const d3Ease = t => 1 - Math.pow(1 - t, 3);
+// a reroll in the 3D box: the dice that stay slide into the left half, a divider drops in, and only the rerolled dice
+// are thrown, into the right half. Resolves when they've settled (false when the box can't show it).
+async function d3Reroll(entry, changes) {
+  const b = D3.box, tray = D3.tray, box = $('#dicefx');
+  if (!b || !tray || !D3.meshes || D3.entry !== entry || DICE.entry !== entry || !box || box.hidden || !tray.isConnected) return false;
+  const rr = changes.filter(c => D3_SIDES.includes(+c.x.d.s)); if (!rr.length) return false;
+  const rrK = rr.map(c => c.x.k), kept = D3.meshes.filter(x => !rrK.includes(x.k)), old = D3.meshes.filter(x => rrK.includes(x.k));
+  try {
+    const cw = b.display.containerWidth, ch = b.display.containerHeight;
+    tray.classList.remove('landed', 'crit', 'fum'); tray.classList.add('split'); D3.split = true; d3HookThrow(b);
+    // the divider: a copy of one of the box's walls, standing in the middle
+    const lw = b.box_body && b.box_body.rightWall; // the library's "rightWall" faces +x, so a copy at x=0 keeps the new dice in the right half
+    if (lw && !D3.wall) { const W = new lw.constructor({ mass: 0, shape: lw.shapes[0], material: lw.material }); W.quaternion.copy(lw.quaternion); W.position.set(0, 0, 0); b.world.addBody(W); D3.wall = W; }
+    // slide the kept dice into a neat group in the left half
+    const n = kept.length, rows = n > 3 ? 2 : 1, cols = Math.ceil(n / rows);
+    const moves = kept.map((x, i) => { const r = Math.floor(i / cols), c = i % cols, p = x.m.position;
+      return { x, from: { x: p.x, y: p.y }, to: { x: -cw * 0.85 + (cw * 0.7) * (cols === 1 ? 0.5 : c / (cols - 1)), y: rows === 1 ? 0 : (r === 0 ? ch * 0.35 : -ch * 0.35) } }; });
+    old.forEach(x => d3Opacity(x.m, 0.25));
+    await new Promise(res => { const t0 = performance.now(); const step = () => { const t = Math.min(1, (performance.now() - t0) / 450), e = d3Ease(t);
+      moves.forEach(M => { const X = M.from.x + (M.to.x - M.from.x) * e, Y = M.from.y + (M.to.y - M.from.y) * e; M.x.m.position.x = X; M.x.m.position.y = Y; if (M.x.m.body) { M.x.m.body.position.x = X; M.x.m.body.position.y = Y; } });
+      b.renderer.render(b.scene, b.camera); if (t < 1) requestAnimationFrame(step); else res(); }; requestAnimationFrame(step); });
+    if (DICE.entry !== entry) return true;
+    // throw only the rerolled dice; the old ones are cleared by the throw, the kept ones stay put
+    b.diceList = old.map(x => x.m);
+    const list = rr.map(c => ({ s: c.x.d.s, v: c.to, k: c.x.k })), N = d3Notation(list);
+    const res = await Promise.race([b.roll(N.text), new Promise(r => setTimeout(() => r('slow'), 9000))]);
+    if (DICE.entry !== entry) return true;
+    if (res !== 'slow') await d3Still(b);
+    const fresh = (b.diceList || []).map((m, j) => ({ k: list[N.order[j]].k, m }));
+    D3.meshes = kept.concat(fresh);
+    const notKept = fresh.filter(x => { const c = rr.find(y => y.x.k === x.k); return c && c.kept !== c.to; }).map(x => x.m);
+    d3Fade(b, entry, notKept);
+    d3Total(tray, entry); tray.classList.add('landed');
+    if (entry.crit) tray.classList.add('crit'); else if (entry.fumble) tray.classList.add('fum');
+    try { if (navigator.vibrate) navigator.vibrate(25); } catch (e) { }
+    return true;
+  } catch (e) { return false; }
+}
 async function roll3d(entry, all) {
   const box = $('#dicefx');
   const tray = d3Tray();
@@ -8220,15 +8285,16 @@ async function roll3d(entry, all) {
     all = all.filter(d => D3_SIDES.includes(+d.s));
     const b = await d3Box(tray), N = d3Notation(all);
     if (DICE.entry !== entry) return true;
+    d3Unsplit(b, tray); D3.meshes = null;
     const done = b.roll(N.text);
     const res = await Promise.race([done, new Promise(r => setTimeout(() => r('slow'), 9000))]);
     if (DICE.entry !== entry) return true;
     if (res !== 'slow') await d3Still(b);
     if (DICE.entry !== entry) return true;
+    D3.meshes = (b.diceList || []).map((m, j) => ({ k: all[N.order[j]] && all[N.order[j]].k, m })); D3.entry = entry;
     // dropped dice (advantage, disadvantage, keep highest…) go see-through
-    try { (b.diceList || []).forEach((m, j) => { const d = all[N.order[j]]; if (!d || !d.drop) return; const mats = [].concat(m.material || []); mats.forEach(x => { x.transparent = true; x.opacity = 0.3; }); });
-      b.renderer.render(b.scene, b.camera); } catch (e) { }
-    const t = tray.querySelector('.d3tot'); t.innerHTML = esc(String(entry.total)) + (entry.crit ? '<small>nat 20</small>' : entry.fumble ? '<small>nat 1</small>' : '');
+    d3Fade(b, entry);
+    d3Total(tray, entry);
     tray.classList.add('landed');
     if (entry.crit) tray.classList.add('crit'); else if (entry.fumble) tray.classList.add('fum');
     try { if (navigator.vibrate) navigator.vibrate(entry.crit ? [30, 40, 60] : 25); } catch (e) { }

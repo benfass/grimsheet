@@ -664,3 +664,9 @@ Every change goes to a **test extension** first; players only get it after it's 
 - **Dice surfaces**: each set paints its own surface on a canvas (`d3Paint`: plain, swirl, crystal veins, malachite bands, brushed metal, wood grain; optional stars and gold flakes), a different piece for each face, in place of the library's flat colours and stock textures. `d3Dress` hooks the library's dice factory to use them.
 - **Finish**: every die uses a physically based material with its set's roughness and metalness and reflects a small painted "room" (`d3EnvCanvas`, equirect), so gemstone and resin sets look glossy and metal sets look like metal. The canvas renders at the screen's pixel ratio (up to 2×) for sharp numbers.
 - **Sets**: Ivory & ink, Dwarven gold, Black nickel & sapphire, Obsidian & gold, Amethyst, Malachite, Galaxy resin (was Dark star), Dragon's blood (was Dragon scale), Glacier, Carved walnut, My Owlbear colour. The library's texture images are no longer used or shipped.
+
+## Rerolls in the 3D box (1.57.1)
+- A reroll (Heroic Inspiration, Lucky, Great Weapon Fighting, a picked die…) on a roll whose dice are in the 3D box splits the box: the dice that stay slide into a neat group in the left half, a wooden divider drops into the middle, the rerolled dice fade, and only the rerolled dice are thrown again, from the right-hand edge into the right half, landing on their new numbers.
+- The divider is a physics wall too (a copy of one of the box's walls at the centre), and the kept dice stay where they are as obstacles.
+- The new total, the flat dice row, the roll bar, the toast and the reroll announcement to the table all wait until the rerolled dice have settled. A new die whose result isn't used ("use the higher" kept the old one) and dropped dice are see-through.
+- The next roll clears everything and removes the divider. d4s (not in the box) and rolls without the 3D box update at once as before.
