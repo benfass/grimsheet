@@ -3696,11 +3696,11 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.52.0';
+const APP_VERSION = '1.53.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
-function saveSettings() { try { localStorage.setItem(SETKEY, JSON.stringify(SETTINGS)); } catch (e) { } }
+function saveSettings() { try { localStorage.setItem(SETKEY, JSON.stringify(SETTINGS)); } catch (e) { } try { if (typeof dmPublishTable === 'function' && IN_OBR && OBRX.ready) dmPublishTable(); } catch (e) { } }
 const DICE_MS = { quick: 450, normal: 850, dramatic: 1400 };
 document.documentElement.classList.toggle('compact', !!SETTINGS.compact);
 // Owlbear panel sizes (width × height in pixels)
@@ -4048,6 +4048,173 @@ function showPausedForTest(OBR) {
   d.innerHTML = '<div style="max-width:420px;text-align:center;line-height:1.5"><div style="font-size:1.3rem;font-weight:700;margin-bottom:8px">Grimsheet is paused in this room</div><div class="muted">Grimsheet TEST is running here, so the main Grimsheet steps aside to keep the two from overlapping. Use Grimsheet TEST from the toolbar. When Grimsheet TEST is turned off for this room, this panel comes back by itself.</div></div>';
   document.body.appendChild(d);
 }
+/* ---------- DMs: a main DM and co-DMs ----------
+   Owlbear can have several GMs, and the main DM can make a player a co-DM. Every DM gets the DM tools and they
+   run ONE shared encounter: each change is sent to the other DMs as small path-level edits (newest edit of a
+   value wins, the same on every device), and a DM opening the panel asks the others for what they have.
+   The table's settings (names on tokens, conditions, monster HP for players, turn order) are the main DM's,
+   kept in the room so every DM's Grimsheet writes the same thing onto the tokens. */
+const DMKEY = 'com.grimsheet-test/dms', CH_DMSYNC = 'com.grimsheet-test/dmsync', SYNCKEY = 'grimsheet.dmsync.v1';
+const TABLE_KEYS = ['nameText', 'nameColorMon', 'nameColorPc', 'namePos', 'nameSize', 'condLabels', 'monHp', 'monShare', 'obrTracker'];
+const dmsMd = () => (OBRX.roomMd || {})[DMKEY] || {};
+const isCoId = id => !!(dmsMd().co || {})[id];
+const effRole = (real, id) => (real === 'GM' || isCoId(id) ? 'GM' : real);
+const isMainDM = () => IN_OBR && OBRX.ready && dmsMd().main === OBRX.me.id;
+const amCoDM = () => IN_OBR && OBRX.ready && OBRX.me.role === 'GM' && !!dmsMd().main && dmsMd().main !== OBRX.me.id;
+const tableSettings = () => { const t = {}; for (const k of TABLE_KEYS) if (SETTINGS[k] !== undefined) t[k] = SETTINGS[k]; return t; };
+// the other DMs in the room right now (Owlbear GMs and co-DMs)
+const dmPeers = () => (OBRX.players || []).filter(p => p.id !== OBRX.me.id && (p.realRole === 'GM' || isCoId(p.id)));
+function dmSet(patch) {
+  const v = Object.assign({}, dmsMd(), patch, { at: Date.now() });
+  OBRX.roomMd = Object.assign({}, OBRX.roomMd, { [DMKEY]: v });
+  return OBRX.api.room.setMetadata({ [DMKEY]: v }).catch(() => toast('Couldn\'t save the DM settings to the room.'));
+}
+let dmClaimT = null;
+// an Owlbear GM becomes the main DM when the room has none (or the main DM isn't here)
+function dmClaimSoon() { clearTimeout(dmClaimT); dmClaimT = setTimeout(dmClaim, 2500); }
+function dmClaim() {
+  if (!IN_OBR || !OBRX.ready || OBRX.realRole !== 'GM') return;
+  const m = dmsMd(), here = id => id === OBRX.me.id || (OBRX.players || []).some(p => p.id === id);
+  if (m.main && here(m.main)) return;
+  const otherGM = (OBRX.players || []).filter(p => p.realRole === 'GM').map(p => p.id).sort()[0];
+  if (!m.main && otherGM && otherGM < OBRX.me.id) return;   // two GMs at once: the lower id claims, so they don't race
+  dmSet({ main: OBRX.me.id, mainName: OBRX.me.name, table: tableSettings() });
+}
+// the main DM's table settings go to the room; co-DMs take them
+function dmPublishTable() { if (isMainDM() && JSON.stringify(tableSettings()) !== JSON.stringify(dmsMd().table || {})) dmSet({ table: tableSettings() }); }
+function dmApplyTable() {
+  if (!amCoDM()) return; const t = dmsMd().table; if (!t) return;
+  let ch = false;
+  for (const k of TABLE_KEYS) { if (t[k] !== undefined ? SETTINGS[k] !== t[k] : SETTINGS[k] !== undefined) { if (t[k] === undefined) delete SETTINGS[k]; else SETTINGS[k] = t[k]; ch = true; } }
+  if (ch) { saveSettings(); try { syncCondLabels(); syncMonTokens(); } catch (e) { } if (ui.modal && ui.modal.type === 'settings') renderModal(); }
+}
+// settings a co-DM can't change (they follow the main DM)
+const TABLE_ACTS = ['setnametext', 'namecolreset', 'setcondlabels', 'setmonhp', 'setmonshare', 'setobrtracker', 'settracker'];
+function tableLocked() { if (amCoDM()) { toast('The main DM (' + (dmsMd().mainName || 'the GM') + ') sets this for the table.'); return true; } return false; }
+// when a change makes someone a DM or not, their panel starts again with the right tools
+function dmRoleCheck() {
+  if (!IN_OBR || !OBRX.ready) return;
+  const r = effRole(OBRX.realRole, OBRX.me.id);
+  if (r !== OBRX.me.role) { toast(r === 'GM' ? 'You\'re a co-DM now.' : 'You\'re no longer a co-DM.'); setTimeout(() => location.reload(), 900); }
+}
+function dmRoomChanged() { dmRoleCheck(); dmApplyTable(); }
+
+/* ---- shared encounter between DMs ---- */
+// documents kept in step: the room's encounters, and the attack/save queue the DM confirms
+const SYNC_DOCS = {
+  enc: { get: () => encs(), put: v => { ENCS = v; const all = readJSON(ENCKEY) || {}; all[roomKey()] = v; writeJSON(ENCKEY, all); }, done: () => { try { if (encView()) renderGrid(); publishInit(); syncMonTokens(); syncCondLabels(); if (gmMode()) renderTop(); } catch (e) { } } },
+  atk: { get: () => ({ q: readAtkQ() }), put: v => writeJSON(atkKey(), (v.q || []).slice(0, 30)), done: () => { try { renderAtkQueue(); } catch (e) { } } },
+};
+let SYNC = null, syncApplying = false;
+function syncState(doc) { if (!SYNC) { const a = readJSON(SYNCKEY) || {}; SYNC = a[roomKey()] || {}; } if (!SYNC[doc]) SYNC[doc] = { base: clone(SYNC_DOCS[doc].get()), stamps: {} }; return SYNC[doc]; }
+function syncSave() { const a = readJSON(SYNCKEY) || {}; a[roomKey()] = SYNC; writeJSON(SYNCKEY, a); }
+const dmSyncOn = () => IN_OBR && OBRX.ready && OBRX.me.role === 'GM';
+const jObj = x => !!x && typeof x === 'object' && !Array.isArray(x);
+const idKey = x => jObj(x) && (typeof x.id === 'string' || typeof x.id === 'number') ? String(x.id) : null;
+const idArr = a => Array.isArray(a) && a.every(x => idKey(x) != null) && new Set(a.map(idKey)).size === a.length;
+const segP = segs => segs.map(encodeURIComponent).join('/');
+// the edits that turn a into b: { p: path, v: value } or { p, x: 1 } for a removal. Arrays of things with ids are
+// compared by id (plus their order), so two DMs adding monsters at once both keep theirs.
+function jdiff(a, b, segs = [], out = []) {
+  if (a === b) return out;
+  if (jObj(a) && jObj(b)) {
+    for (const k of Object.keys(a)) if (!(k in b)) out.push({ p: segP(segs.concat('k:' + k)), x: 1 });
+    for (const k of Object.keys(b)) jdiff(a[k], b[k], segs.concat('k:' + k), out);
+    return out;
+  }
+  if (Array.isArray(a) && Array.isArray(b) && idArr(a) && idArr(b) && (a.length || b.length) && (a.concat(b).length ? true : false) && a.concat(b).every(x => idKey(x) != null)) {
+    const am = new Map(a.map(x => [idKey(x), x])), bm = new Map(b.map(x => [idKey(x), x]));
+    for (const [k] of am) if (!bm.has(k)) out.push({ p: segP(segs.concat('i:' + k)), x: 1 });
+    for (const [k, v] of bm) { if (!am.has(k)) out.push({ p: segP(segs.concat('i:' + k)), v: clone(v) }); else jdiff(am.get(k), v, segs.concat('i:' + k), out); }
+    const ao = a.map(idKey).filter(k => bm.has(k)), bo = b.map(idKey);
+    if (JSON.stringify(ao) !== JSON.stringify(bo.filter(k => am.has(k))) || (b.length > 1 && JSON.stringify(a.map(idKey)) !== JSON.stringify(bo))) out.push({ p: segP(segs.concat('o')), v: bo });
+    return out;
+  }
+  if (JSON.stringify(a) !== JSON.stringify(b)) out.push(b === undefined ? { p: segP(segs), x: 1 } : { p: segP(segs), v: clone(b) });
+  return out;
+}
+function japply(root, op) {
+  const segs = op.p.split('/').map(decodeURIComponent);
+  let o = root;
+  for (let i = 0; i < segs.length - 1; i++) {
+    const s = segs[i], nx = segs[i + 1], mk = () => (nx[0] === 'i' || nx === 'o' ? [] : {});
+    if (s[0] === 'k') { const k = s.slice(2); if (!o[k] || typeof o[k] !== 'object') { if (op.x) return; o[k] = mk(); } o = o[k]; }
+    else if (s[0] === 'i') { const k = s.slice(2); let it = Array.isArray(o) ? o.find(x => idKey(x) === k) : null; if (!it) { if (op.x || !Array.isArray(o)) return; it = { id: isNaN(+k) || String(+k) !== k ? k : +k }; o.push(it); } o = it; }
+  }
+  const last = segs[segs.length - 1];
+  if (last === 'o') { if (!Array.isArray(o)) return; const ord = op.v || [], pos = k => { const i = ord.indexOf(k); return i < 0 ? 1e9 : i; }; o.sort((x, y) => pos(idKey(x)) - pos(idKey(y))); return; }
+  if (last[0] === 'k') { const k = last.slice(2); if (op.x) delete o[k]; else o[k] = clone(op.v); return; }
+  if (last[0] === 'i' && Array.isArray(o)) { const k = last.slice(2), i = o.findIndex(x => idKey(x) === k); if (op.x) { if (i >= 0) o.splice(i, 1); } else if (i >= 0) o[i] = clone(op.v); else o.push(clone(op.v)); }
+}
+const newer = (a, b) => !!a && (!b || a[0] > b[0] || (a[0] === b[0] && String(a[1]) > String(b[1])));
+// for a whole snapshot: the newest stamp on this value, anything inside it, or anything it's inside
+function stampAround(stamps, p) { let best = stampOf(stamps, p); for (const [k, s] of Object.entries(stamps)) if (k.startsWith(p + '/') && newer(s, best)) best = s; return best; }
+function stampOf(stamps, p) { let best = null; const segs = p.split('/'); for (let i = 1; i <= segs.length; i++) { const s = stamps[segs.slice(0, i).join('/')]; if (newer(s, best)) best = s; } return best; }
+// a change made here: work out the edits, stamp them and send them to the other DMs
+function syncLocal(doc) {
+  if (syncApplying || !dmSyncOn()) return;
+  const st = syncState(doc), cur = clone(SYNC_DOCS[doc].get()), ops = jdiff(st.base, cur);
+  if (!ops.length) return;
+  const t = Date.now(); for (const op of ops) st.stamps[op.p] = [t, DEV_ID];
+  st.base = cur; syncSave();
+  if (dmPeers().length) dmSend({ type: 'ops', doc, ops, t, dev: DEV_ID });
+}
+// edits from another DM: each one is used if it's newer than what this device has for that value
+function syncIn(doc, ops, stamp, theirStamps, fromMain) {
+  if (!SYNC_DOCS[doc]) return false;
+  const st = syncState(doc), live = SYNC_DOCS[doc].get(); let ch = false;
+  for (const op of ops) {
+    // a snapshot: newest wins; where neither side has ever stamped it, the main DM's copy wins
+    const s = theirStamps ? stampAround(theirStamps, op.p) : stamp, mine = theirStamps ? stampAround(st.stamps, op.p) : stampOf(st.stamps, op.p);
+    if (!newer(s, mine) && !(theirStamps && !s && !mine && fromMain)) continue;
+    japply(live, op); japply(st.base, op); if (s) st.stamps[op.p] = s; ch = true;
+  }
+  if (theirStamps) for (const [p, s] of Object.entries(theirStamps)) if (newer(s, st.stamps[p])) st.stamps[p] = s;
+  if (ch) { syncApplying = true; try { SYNC_DOCS[doc].put(live); } finally { syncApplying = false; } syncSave(); SYNC_DOCS[doc].done(); }
+  else syncSave();
+  return ch;
+}
+const dmParts = {};
+async function dmSend(d) {
+  if (!IN_OBR || !OBRX.ready) return;
+  const json = JSON.stringify(d);
+  if (json.length < 12000) return OBRX.api.broadcast.sendMessage(CH_DMSYNC, d, { destination: 'REMOTE' }).catch(() => { });
+  const data = await packJSON(d), id = uid(), n = Math.ceil(data.length / 12000);
+  for (let i = 0; i < n; i++) await OBRX.api.broadcast.sendMessage(CH_DMSYNC, { type: 'z', id, part: i, parts: n, data: data.slice(i * 12000, (i + 1) * 12000), dev: DEV_ID }, { destination: 'REMOTE' }).catch(() => { });
+}
+async function dmReceive(d) {
+  if (!d || OBRX.me.role !== 'GM' || d.dev === DEV_ID) return;
+  if (d.type === 'z') {
+    const b = dmParts[d.id] = dmParts[d.id] || { parts: [], n: 0, at: Date.now() };
+    if (b.parts[d.part] == null) { b.parts[d.part] = d.data; b.n++; } if (b.n < d.parts) return;
+    delete dmParts[d.id]; try { d = await unpackJSON(b.parts.join('')); } catch (e) { return; }
+  }
+  if (d.type === 'ops') syncIn(d.doc, d.ops, [d.t, d.dev]);
+  else if (d.type === 'hello') { for (const doc of Object.keys(SYNC_DOCS)) { syncLocal(doc); const st = syncState(doc); dmSend({ type: 'snap', doc, state: SYNC_DOCS[doc].get(), stamps: st.stamps, dev: DEV_ID, main: isMainDM() }); } }
+  else if (d.type === 'snap') { const st = syncState(d.doc); syncIn(d.doc, jdiff(st.base, d.state), null, d.stamps || {}, !!d.main); }
+}
+// opening the panel as a DM: catch up with the other DMs
+function dmSettingsHtml() {
+  const m = dmsMd(), main = isMainDM(), others = (OBRX.players || []).filter(p => p.id !== OBRX.me.id);
+  const row = p => {
+    const gm = p.realRole === 'GM', co = isCoId(p.id), isMain = m.main === p.id;
+    const tag = isMain ? '<span class="chip">main DM</span>' : gm ? '<span class="chip">Owlbear GM · co-DM</span>' : co ? '<span class="chip">co-DM</span>' : '<span class="muted" style="font-size:.85rem">player</span>';
+    const btns = main && !isMain ? `${gm ? '' : `<button class="btn small" data-act="codm" data-v="${esc(p.id)}">${co ? 'Remove co-DM' : 'Make co-DM'}</button>`}${gm || co ? `<button class="btn small ghost" data-act="dmmain" data-v="${esc(p.id)}">Make main DM</button>` : ''}` : '';
+    return `<div class="inline" style="justify-content:space-between;gap:8px;padding:4px 0;border-top:1px solid var(--line)"><span><b>${esc(p.name)}</b> ${tag}</span><span class="inline" style="gap:6px">${btns}</span></div>`;
+  };
+  const head = main ? '<b>You\'re the main DM.</b> Co-DMs get the DM tools and run the same encounter with you, live. The table settings below (names, conditions, monster HP, turn order) are yours and apply for everyone.'
+    : `<b>${esc(m.mainName || 'Another DM')}</b> is the main DM; you're a co-DM. You share one encounter, and the table settings below follow the main DM's.`;
+  return `<div class="sub-h" style="margin-top:14px">DMs</div><div class="setrow" style="display:block"><div class="muted" style="margin-bottom:6px">${head}</div>
+    ${others.length ? others.map(row).join('') : '<div class="muted" style="font-size:.88rem">Nobody else is in the room right now.</div>'}
+    ${!main && OBRX.realRole === 'GM' ? '<div style="margin-top:8px"><button class="btn small" data-act="dmmain" data-v="' + esc(OBRX.me.id) + '">Become the main DM</button></div>' : ''}
+    <div class="muted" style="font-size:.82rem;margin-top:6px">A co-DM who is a player in Owlbear needs Owlbear's permission to change other people's tokens (Owlbear's room settings), so HP bars and names on monster tokens can be updated from their side.</div></div>`;
+}
+function dmStart() {
+  if (OBRX.me.role !== 'GM') return;
+  for (const doc of Object.keys(SYNC_DOCS)) syncLocal(doc);
+  if (dmPeers().length) dmSend({ type: 'hello', dev: DEV_ID });
+}
+
 // ---- one device keeps the tokens up to date ----
 // If the same person has Grimsheet open on two devices (a phone in the background, say), each would write its own
 // view onto the tokens and they'd fight, making names and bars flash. So one device "drives": the one last used.
@@ -4092,9 +4259,10 @@ async function startOwlbear() {
       const wasPaused = testHere();
       setInterval(() => { if (testHere() !== wasPaused) location.reload(); }, 5000);
       if (wasPaused) { showPausedForTest(OBR); return; }
-      const refreshMe = async () => { OBRX.me = { id: OBR.player.id || await OBR.player.getId(), name: await OBR.player.getName(), role: await OBR.player.getRole() }; };
+      try { OBRX.roomMd = (await OBR.room.getMetadata()) || {}; } catch (e) { OBRX.roomMd = {}; }
+      const refreshMe = async () => { const id = OBR.player.id || await OBR.player.getId(); OBRX.realRole = await OBR.player.getRole(); OBRX.me = { id, name: await OBR.player.getName(), role: effRole(OBRX.realRole, id) }; };
       await refreshMe(); OBRX.ready = true;
-      OBR.player.onChange(p => { OBRX.me.name = p.name; OBRX.me.role = p.role; });
+      OBR.player.onChange(p => { OBRX.me.name = p.name; if (p.role !== OBRX.realRole) { OBRX.realRole = p.role; dmRoleCheck(); dmClaimSoon(); } });
       const applyTheme = t => { if (t && t.mode) document.documentElement.setAttribute('data-theme', t.mode === 'DARK' ? 'dark' : 'light'); };
       try { applyTheme(await OBR.theme.getTheme()); OBR.theme.onChange(applyTheme); } catch (e) { }
       OBRX.room = OBR.room && OBR.room.id ? OBR.room.id : 'room';
@@ -4109,8 +4277,9 @@ async function startOwlbear() {
         if (d.type === 'pasteFor') takePending();
         if (d.type === 'focus') { SETTINGS.view = 'encounter'; saveSettings(); ui.monFocus = d.inst; { const f = findMon(d.inst); if (f) ui.encSel = f.e.id; } render(); const n = document.querySelector(`[data-inst="${d.inst}"]`); if (n && n.scrollIntoView) n.scrollIntoView({ block: 'center' }); }
       });
-      try { const md = await OBR.room.getMetadata(); OBRX.init = md && md[INITKEY]; OBRX.roomMd = md || {}; OBR.room.onMetadataChange(md => { OBRX.init = md && md[INITKEY]; OBRX.roomMd = md || {}; driveCheck(); refreshInitView(); }); } catch (e) { }
+      try { const md = await OBR.room.getMetadata(); OBRX.init = md && md[INITKEY]; OBRX.roomMd = md || {}; OBR.room.onMetadataChange(md => { OBRX.init = md && md[INITKEY]; OBRX.roomMd = md || {}; driveCheck(); dmRoomChanged(); refreshInitView(); }); } catch (e) { }
       driveStart();
+      OBR.broadcast.onMessage(CH_DMSYNC, ev => dmReceive(ev.data)); dmApplyTable(); setTimeout(dmStart, 1500); dmClaimSoon();
       OBR.player.onChange(p => onSelection(p.selection));
       OBR.player.onChange(p => { if (OBRX.me.role !== 'GM' || !p.selection) return; const sel = p.selection; const inst = Object.keys(OBRX.monTokens).find(k => OBRX.monTokens[k].some(it => sel.includes(it.id))); if (inst && inst !== ui.monFocus) { ui.monFocus = inst; if (encView()) { renderGrid(); const n = document.querySelector(`[data-inst="${inst}"]`); if (n && n.scrollIntoView) n.scrollIntoView({ block: 'nearest' }); } } });
       writeCatalog(); ENCS = null; enc(); render();
@@ -4121,7 +4290,7 @@ async function startOwlbear() {
         OBR.scene.onReadyChange(() => refreshLinks());
         refreshLinks();
       } catch (e) { }
-      const setParty = players => { OBRX.players = (players || []).map(p => ({ id: p.id, name: p.name, role: p.role })); OBRX.party = (players || []).map(p => ({ id: p.id, name: p.name, role: p.role, s: p.metadata && p.metadata[META] })).filter(p => p.s); refreshParty(); syncPcTokens(); syncCondLabels(); if (gmMode()) { renderTop(); if (gmView() === 'party') renderGrid(); } };
+      const setParty = players => { OBRX.players = (players || []).map(p => ({ id: p.id, name: p.name, role: effRole(p.role, p.id), realRole: p.role })); OBRX.party = (players || []).map(p => ({ id: p.id, name: p.name, role: effRole(p.role, p.id), realRole: p.role, s: p.metadata && p.metadata[META] })).filter(p => p.s); dmClaimSoon(); refreshParty(); syncPcTokens(); syncCondLabels(); if (gmMode()) { renderTop(); if (gmView() === 'party') renderGrid(); } };
       setParty(await OBR.party.getPlayers()); OBR.party.onChange(setParty);
       if (gmMode()) clearMyStatus();
       publishStatus(); renderAtkQueue(); paintTarget(); checkMyTurn(); setTimeout(notesHello, 800); setTimeout(() => { if (bgAlive()) return; if (hbIsGM()) hbSend({ type: 'list', items: hbVisible(hb()).map(x => [x.id, x.updated]) }); else hbHello(); }, 900); render();
@@ -4377,7 +4546,7 @@ async function receiveGm(d) {
     toast(d.owner + ' (' + d.name + ') rolled ' + d.total + ' for initiative.');
     return;
   }
-  if (d.type === 'endTurn') { if (OBRX.me.role !== 'GM' || gmSeen.has(d.id)) return; gmSeen.add(d.id); gmEndTurn(d); return; }
+  if (d.type === 'endTurn') { if (OBRX.me.role !== 'GM' || gmSeen.has(d.id) || !drives()) return; gmSeen.add(d.id); gmEndTurn(d); return; }
   if (d.type === 'askInit') { if (OBRX.me.role !== 'GM' && !bgAlive()) { OBRX.api.notification.show(d.from + ' asks for initiative. Tap INIT in your Combat module.', 'INFO').catch(() => { }); } if (OBRX.me.role !== 'GM') toast(d.from + ' asks for initiative. Tap INIT in Combat.'); return; }
   if (d.type === 'atk') {
     if (OBRX.me.role !== 'GM') return;
@@ -4509,6 +4678,7 @@ function allMons() { return Object.values(encs().list).flatMap(e => e.mons); }
 function findMon(inst) { for (const e of Object.values(encs().list)) { const m = e.mons.find(x => x.id === inst); if (m) return { e, m }; } return null; }
 function saveEnc(opts = {}) {
   const all = readJSON(ENCKEY) || {}; all[roomKey()] = encs(); writeJSON(ENCKEY, all);
+  try { syncLocal('enc'); } catch (e) { }
   try { encHistRecord(); } catch (e) { }
   if (!opts.quiet) { publishInit(); syncMonTokens(); }
   syncCondLabels();
@@ -5206,7 +5376,7 @@ function encView() { return isGM() && !ui.viewing && (SETTINGS.view === 'encount
 const atkKey = () => 'grimsheet.attacks.' + (OBRX.room || 'room');
 ui.target = null; ui.lastAtk = null; OBRX.tokCache = {};
 function readAtkQ() { const q = readJSON(atkKey()); return Array.isArray(q) ? q : []; }
-function writeAtkQ(q) { writeJSON(atkKey(), q.slice(0, 30)); }
+function writeAtkQ(q) { writeJSON(atkKey(), q.slice(0, 30)); try { syncLocal('atk'); } catch (e) { } }
 // same merge as GS.mergeAttack in shared.js (the background page uses that one)
 // same as GS.sumDamage in shared.js: damage from several sources (weapon + Divine Smite) on one card
 function sumDamage(parts) {
@@ -5483,7 +5653,7 @@ function rollCardDamage(id) {
 const AUTO_OK = new Map();
 let autoBusy = false;
 function autoApplyDamage() {
-  if (!SETTINGS.autoDmg || autoBusy || !IN_OBR || !OBRX.ready || OBRX.me.role !== 'GM') return;
+  if (!SETTINGS.autoDmg || autoBusy || !IN_OBR || !OBRX.ready || OBRX.me.role !== 'GM' || !drives()) return;
   const now = Date.now(); for (const [k, t] of AUTO_OK) if (now - t > 120e3) AUTO_OK.delete(k);
   const c = readAtkQ().find(x => x.kind !== 'area' && x.dmg && !x.save && (x.verdict === 'hit' || x.verdict === 'crit' || (!x.atk && AUTO_OK.has(x.id))));
   if (!c) return;
@@ -9082,7 +9252,8 @@ function settingsHtml() {
       <div class="seg" role="group" aria-label="Share rolls">${[['all', 'Everyone'], ['gm', 'GM only'], ['off', 'Off']].map(([v, l]) => `<button data-act="setshare" data-v="${v}" class="${SETTINGS.share === v ? 'on' : ''}">${l}</button>`).join('')}</div></div>
     ${IN_OBR ? `<div class="setrow"><div class="grow"><b>HP bars on tokens</b><div class="muted">Draws an HP bar and AC on linked tokens, on your screen only. Players see monster HP only as the GM allows. If Stat Bubbles is in the room, Grimsheet leaves the bars to it.</div></div>
       <button class="switch ${SETTINGS.tokenBars !== false ? 'on' : ''}" data-act="settokenbars" aria-pressed="${SETTINGS.tokenBars !== false}"><i></i>${SETTINGS.tokenBars !== false ? 'On' : 'Off'}</button></div>` : ''}
-    ${isGM() ? `<div class="sub-h" style="margin-top:14px">Encounters (GM)</div>
+    ${IN_OBR && OBRX.ready && OBRX.me.role === 'GM' ? dmSettingsHtml() : ''}
+    ${isGM() ? `<div class="sub-h" style="margin-top:14px">Encounters (GM)</div>${amCoDM() ? `<div class="banner" style="margin:4px 0 8px">Monster HP for players, monster rolls, conditions and names on tokens, and Owlbear's initiative tracker follow the main DM (${esc(dmsMd().mainName || 'the GM')}).</div>` : ''}
     <div class="setrow" style="flex-wrap:wrap"><div class="grow" style="min-width:220px"><b>Monster HP for players</b><div class="muted">What players see on monster tokens' HP bars and in the turn order.</div></div>
       <div class="seg" role="group" aria-label="Monster HP for players">${[['hidden', 'Hidden'], ['status', 'Healthy / Bloodied'], ['exact', 'Exact']].map(([v, l]) => `<button data-act="setmonhp" data-v="${v}" class="${(SETTINGS.monHp || 'hidden') === v ? 'on' : ''}">${l}</button>`).join('')}</div></div>
     <div class="setrow"><div class="grow"><b>Share monster rolls</b><div class="muted">Off keeps monster attacks and damage on your screen only.</div></div>
@@ -9394,7 +9565,9 @@ document.addEventListener('click', ev => {
     case 'prepopen': openPrep(); break;
     case 'touroff': SETTINGS.tourOffer = false; saveSettings(); renderBanner(); toast('Tours are in Settings whenever you want them.'); break;
     case 'setview': SETTINGS.view = v; saveSettings(); render(); window.scrollTo(0, 0); break;
-    case 'setmonhp': SETTINGS.monHp = v; saveSettings(); syncMonTokens(); publishInit(); renderModal(); break;
+    case 'codm': { const m = dmsMd(), co = Object.assign({}, m.co || {}), p = (OBRX.players || []).find(x => x.id === v); if (!isMainDM()) break; if (co[v]) delete co[v]; else co[v] = p ? p.name : 'Co-DM'; dmSet({ co }).then(() => renderModal()); toast(co[v] ? (p ? p.name : 'They') + ' is a co-DM now.' : (p ? p.name : 'They') + ' is no longer a co-DM.'); break; }
+    case 'dmmain': { const p = v === OBRX.me.id ? OBRX.me : (OBRX.players || []).find(x => x.id === v); if (!p) break; const co = Object.assign({}, dmsMd().co || {}); if (isMainDM() && OBRX.realRole !== 'GM') co[OBRX.me.id] = OBRX.me.name; delete co[v]; dmSet({ main: v, mainName: p.name, co, table: v === OBRX.me.id ? tableSettings() : dmsMd().table }).then(() => renderModal()); toast(p.name + ' is the main DM now.'); break; }
+    case 'setmonhp': if (tableLocked()) { renderModal(); break; } SETTINGS.monHp = v; saveSettings(); syncMonTokens(); publishInit(); renderModal(); break;
     case 'area': { const e = f && f.e; if (!e) break; if (e.spell && +e.spell.level > 0 && !el.dataset.lvl && !ui.viewing) { ui.areaAfterCast = e.id; castMenu(el, e, c); } else placeEntryArea(e, +el.dataset.lvl || 0); break; }
     case 'monarea': { const m = enc().mons.find(x => x.id === id); if (m) placeMonsterArea(m, v); break; }
     case 'arearoll': updAtk(id, x => { (x.targets || []).forEach(t => { if (!(x.res && x.res[t.id])) rollMonSave(x, t); }); }); break;
@@ -9471,13 +9644,13 @@ document.addEventListener('click', ev => {
     case 'atksave': rollQueuedSave(id); break;
     case 'atkrolldmg': rollCardDamage(id); break;
     case 'setautodmg': SETTINGS.autoDmg = !SETTINGS.autoDmg; saveSettings(); renderModal(); renderAtkQueue(); break;
-    case 'setmonshare': SETTINGS.monShare = !SETTINGS.monShare; saveSettings(); renderModal(); break;
-    case 'setnametext': SETTINGS.nameText = SETTINGS.nameText === false; saveSettings(); syncCondLabels(); renderModal(); break;
-    case 'namecolreset': delete SETTINGS.nameColorMon; delete SETTINGS.nameColorPc; saveSettings(); syncCondLabels(); renderModal(); break;
+    case 'setmonshare': if (tableLocked()) { renderModal(); break; } SETTINGS.monShare = !SETTINGS.monShare; saveSettings(); renderModal(); break;
+    case 'setnametext': if (tableLocked()) { renderModal(); break; } SETTINGS.nameText = SETTINGS.nameText === false; saveSettings(); syncCondLabels(); renderModal(); break;
+    case 'namecolreset': if (tableLocked()) { renderModal(); break; } delete SETTINGS.nameColorMon; delete SETTINGS.nameColorPc; saveSettings(); syncCondLabels(); renderModal(); break;
     case 'testcopymain': if (window.__gsCopyMain && confirm('Replace this test version\'s characters and settings with a copy of your main Grimsheet\'s? Your main Grimsheet is not changed.')) { const n = window.__gsCopyMain(); toast('Copied ' + n + ' saved items. Reloading…'); setTimeout(() => location.reload(), 600); } break;
     case 'settokenbars': SETTINGS.tokenBars = SETTINGS.tokenBars === false; saveSettings(); renderModal(); break;
-    case 'setcondlabels': SETTINGS.condLabels = SETTINGS.condLabels === false; saveSettings(); syncCondLabels(); renderModal(); break;
-    case 'setobrtracker': SETTINGS.obrTracker = SETTINGS.obrTracker === false; saveSettings(); publishInit(); renderModal(); break;
+    case 'setcondlabels': if (tableLocked()) { renderModal(); break; } SETTINGS.condLabels = SETTINGS.condLabels === false; saveSettings(); syncCondLabels(); renderModal(); break;
+    case 'setobrtracker': if (tableLocked()) { renderModal(); break; } SETTINGS.obrTracker = SETTINGS.obrTracker === false; saveSettings(); publishInit(); renderModal(); break;
     case 'addmon': openModal('addmon', { tab: 'list', q: '' }); break;
     case 'amtab': ui.modal.tab = v; renderModal(); break;
     case 'amback': ui.modal.many = null; renderModal(); break;
@@ -9769,8 +9942,8 @@ function doImport(lib) {
 document.addEventListener('change', ev => {
   const t = ev.target;
   if (t.dataset.cw != null && cwInput(t)) return;
-  if (t.dataset.namesize) { SETTINGS.nameSize = +t.value || 1; saveSettings(); syncCondLabels(); return; }
-  if (t.dataset.namepos) { SETTINGS.namePos = t.value === 'TOP' ? 'TOP' : 'BOTTOM'; saveSettings(); syncCondLabels(); return; }
+  if (t.dataset.namesize) { if (tableLocked()) { renderModal(); return; } SETTINGS.nameSize = +t.value || 1; saveSettings(); syncCondLabels(); return; }
+  if (t.dataset.namepos) { if (tableLocked()) { renderModal(); return; } SETTINGS.namePos = t.value === 'TOP' ? 'TOP' : 'BOTTOM'; saveSettings(); syncCondLabels(); return; }
   if (t.dataset.prep != null && prepInput(t)) return;
   if (t.dataset.encname) { const x = encs().list[t.dataset.encname]; if (x) { x.name = t.value.trim() || x.name; saveEnc({ quiet: true }); } ui.encRen = null; setTimeout(renderGrid, 0); return; }
   if (t.dataset.campname) { const cc = camp(); cc.name = t.value.trim(); cc.nameAt = Date.now(); saveCamp(cc); ui.campName = false; sendNotes({ type: 'name', name: cc.name, at: cc.nameAt }); setTimeout(renderGrid, 0); return; }
@@ -9834,7 +10007,7 @@ document.addEventListener('change', ev => {
   if (t.dataset.clsname && ui.modal && ui.modal.found) { const d = ui.modal.found[+t.dataset.clsname]; if (d && t.value.trim()) { d.name = t.value.trim(); if (d.addon) d.subs.forEach(sb => { sb.name = d.name; }); else d.id = 'cls:' + clsNorm(d.name).replace(/[^a-z0-9]+/g, '-'); } return; }
   if (t.dataset.clsparent && ui.modal && ui.modal.found) { const d = ui.modal.found[+t.dataset.clsparent]; if (d) { d.parent = t.value; d.warnings = d.warnings.filter(w => !/^Which class|was guessed/.test(w)); renderModal(); } return; }
   if (t.dataset.clshd && ui.modal && ui.modal.found) { const d = ui.modal.found[+t.dataset.clshd]; if (d) d.hd = Math.max(4, Math.min(20, parseInt(t.value, 10) || d.hd)); return; }
-  if (t.dataset.namecolor) { SETTINGS[t.dataset.namecolor === 'mon' ? 'nameColorMon' : 'nameColorPc'] = t.value; saveSettings(); syncCondLabels(); return; }
+  if (t.dataset.namecolor) { if (tableLocked()) { renderModal(); return; } SETTINGS[t.dataset.namecolor === 'mon' ? 'nameColorMon' : 'nameColorPc'] = t.value; saveSettings(); syncCondLabels(); return; }
   if (t.dataset.amf && ui.modal && ui.modal.parsed) { const k = t.dataset.amf; ui.modal.parsed[k] = ['ac', 'hp', 'init'].includes(k) ? Math.round(+t.value || 0) : t.value.trim(); return; }
   if (t.id === 'pdf-file' && t.files && t.files[0]) { readPdf(t.files[0]); return; }
   if (t.id === 'imp-file' && t.files && t.files[0]) { const r = new FileReader(); r.onload = () => { $('#imp-text').value = r.result; }; r.readAsText(t.files[0]); return; }
