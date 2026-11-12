@@ -658,3 +658,9 @@ Every change goes to a **test extension** first; players only get it after it's 
 - **Totals wait for the dice**: the library reports the result a moment before the last wobble ends; Grimsheet now waits until every die is still (or 1.5 s) before showing the total, the flat dice row, the roll bar's result and sharing.
 - **Dice sets** (Settings → 3D dice), modelled on popular premium dice: Ivory & ink (default), Dwarven gold, Black nickel & sapphire, Obsidian & gold, Amethyst, Malachite, Dark star, Dragon scale, Glacier, Carved walnut, and My Owlbear colour.
 - **d4s** stay in the flat row only (the library can't reliably make a d4 land on a set number); a roll with d4s and other dice throws the others into the tray.
+
+## Wooden dice box and painted dice (1.57.0)
+- **Tray**: replaces the suede hexagon with a wooden dice box seen from above (SVG, `d3TraySvg`): walnut walls with wood grain, mitred corners and brass pins, an oak plank floor with a soft inner shadow. Dice roll on the whole floor (`#d3floor`, inset 20px).
+- **Dice surfaces**: each set paints its own surface on a canvas (`d3Paint`: plain, swirl, crystal veins, malachite bands, brushed metal, wood grain; optional stars and gold flakes), a different piece for each face, in place of the library's flat colours and stock textures. `d3Dress` hooks the library's dice factory to use them.
+- **Finish**: every die uses a physically based material with its set's roughness and metalness and reflects a small painted "room" (`d3EnvCanvas`, equirect), so gemstone and resin sets look glossy and metal sets look like metal. The canvas renders at the screen's pixel ratio (up to 2×) for sharp numbers.
+- **Sets**: Ivory & ink, Dwarven gold, Black nickel & sapphire, Obsidian & gold, Amethyst, Malachite, Galaxy resin (was Dark star), Dragon's blood (was Dragon scale), Glacier, Carved walnut, My Owlbear colour. The library's texture images are no longer used or shipped.

@@ -414,11 +414,11 @@ select.ed-inline{width:auto}
 .tot.new{animation:pop .25s ease-out}
 @media (prefers-reduced-motion:reduce){.tot.new{animation:none}.switch i,.switch i::after{transition:none}}
 /* dice animation: lands just above the roll tray */
-.tray3d{position:relative;width:min(560px,100%);height:190px;filter:drop-shadow(0 10px 18px rgba(0,0,0,.28))}
+.tray3d{position:relative;width:min(540px,100%);height:200px;filter:drop-shadow(0 10px 18px rgba(0,0,0,.28))}
 .tray3d>svg{position:absolute;inset:0;width:100%;height:100%;display:block}
-.tray3d .d3floor{position:absolute;top:30px;bottom:30px;left:var(--d3cut,70px);right:var(--d3cut,70px)}
+.tray3d .d3floor{position:absolute;top:20px;bottom:20px;left:20px;right:20px;overflow:hidden;border-radius:3px}
 .tray3d canvas{display:block}
-.tray3d .d3tot{position:absolute;right:calc(var(--d3cut,70px) * .18);top:50%;margin-top:-17px;z-index:2;font-family:var(--f-mono);font-weight:700;font-size:1.35rem;color:#fff;background:rgba(0,0,0,.45);border-radius:10px;padding:2px 10px;opacity:0;transform:scale(.7);transition:opacity .2s,transform .25s}
+.tray3d .d3tot{position:absolute;right:26px;top:-14px;z-index:2;box-shadow:0 2px 6px rgba(0,0,0,.35);font-family:var(--f-mono);font-weight:700;font-size:1.2rem;color:#fff8e6;background:#3a220f;border:1px solid #c9a24a;border-radius:10px;padding:2px 10px;opacity:0;transform:scale(.7);transition:opacity .2s,transform .25s}
 .tray3d .d3tot small{display:block;font-size:.62rem;font-weight:500;opacity:.85;text-align:center;margin-top:-3px}
 .tray3d.landed .d3tot{opacity:1;transform:none}
 .tray3d.crit{filter:drop-shadow(0 0 3px var(--gold)) drop-shadow(0 0 14px var(--gold))}
@@ -3713,7 +3713,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.56.1';
+const APP_VERSION = '1.57.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, dice3d: !navigator.webdriver, diceSound: true, diceSet: 'ivory', diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -8049,33 +8049,96 @@ const D3 = { box: null, el: null, w: 0, loading: null, failed: false, busy: fals
 // d4s don't reliably land on a set number in the library, so they (and d2, d3, d100) stay in the flat row only
 const D3_SIDES = [6, 8, 10, 12, 20];
 const D3_GRAV = { quick: 900, normal: 500, dramatic: 300 };
-// dice sets modelled on popular premium dice (metal, gemstone, resin with gold ink, wood); textures from the library
+// dice sets modelled on popular premium dice (metal, gemstone, swirled resin with gold ink, wood). Each set paints its
+// own surface (tex) and has its own finish (rough / metal / env = how much it reflects the room)
 const D3_SETS = {
-  ivory: { label: 'Ivory & ink', foreground: '#1a1a1a', background: '#efe6d0', outline: 'none', texture: 'none', material: 'plastic' },
-  gold: { label: 'Dwarven gold', foreground: '#3a2604', background: '#f0c255', outline: 'none', texture: 'metal', material: 'plastic' },
-  sapphire: { label: 'Black nickel & sapphire', foreground: '#5fb0ff', background: '#5b606b', outline: '#06152b', texture: 'metal', material: 'plastic' },
-  obsidian: { label: 'Obsidian & gold', foreground: '#e2b649', background: '#151515', outline: '#000000', texture: 'none', material: 'glass' },
-  amethyst: { label: 'Amethyst', foreground: '#f3d27a', background: '#c58bff', outline: '#2a0f40', texture: 'glitter', material: 'glass' },
-  malachite: { label: 'Malachite', foreground: '#f5ead0', background: '#1f8a5f', outline: '#06281b', texture: 'marble', material: 'glass' },
-  darkstar: { label: 'Dark star', foreground: '#f0cf72', background: '#2a3478', outline: '#000000', texture: 'stars', material: 'glass' },
-  dragon: { label: 'Dragon scale', foreground: '#ffd56b', background: '#e0384f', outline: '#3a0008', texture: 'dragon', material: 'plastic' },
-  glacier: { label: 'Glacier', foreground: '#0c2c4d', background: '#a9dcff', outline: '#ffffff', texture: 'ice', material: 'glass' },
-  wood: { label: 'Carved walnut', foreground: '#f6e7c6', background: '#6b4423', outline: '#2a1606', texture: 'wood', material: 'wood' },
-  mine: { label: 'My Owlbear colour', texture: 'none', material: 'plastic' },
+  ivory: { label: 'Ivory & ink', fg: '#1c1a17', outline: 'none', tex: ['plain', ['#f1e8d2', '#d9c9a3']], rough: 0.36, metal: 0, env: 0.45 },
+  gold: { label: 'Dwarven gold', fg: '#2a1a02', outline: 'none', tex: ['brushed', ['#f2c14e', '#fff0b0', '#b8862a']], rough: 0.34, metal: 0.55, env: 1.5 },
+  sapphire: { label: 'Black nickel & sapphire', fg: '#7cc4ff', outline: '#04101f', tex: ['brushed', ['#6d727d', '#a9afba', '#33363d']], rough: 0.3, metal: 0.6, env: 1.4 },
+  obsidian: { label: 'Obsidian & gold', fg: '#e9bd4f', outline: '#000000', tex: ['swirl', ['#0b0b0d', '#1c1c22', '#2c2833']], rough: 0.06, metal: 0, env: 1 },
+  amethyst: { label: 'Amethyst', fg: '#f8e19a', outline: '#2a0f40', tex: ['crystal', ['#6a2fb0', '#a56be6', '#3d1670', '#d9b8ff']], rough: 0.1, metal: 0, env: 0.9 },
+  malachite: { label: 'Malachite', fg: '#f7edcf', outline: '#06281b', tex: ['bands', ['#0f5b3f', '#1f8a5f', '#46b98a', '#0a3d2b']], rough: 0.18, metal: 0, env: 0.7 },
+  darkstar: { label: 'Galaxy resin', fg: '#f3d27a', outline: '#05061a', tex: ['swirl', ['#0d1036', '#3a1d7a', '#1456a8', '#7a2a8f'], { stars: 70, flakes: 14 }], rough: 0.1, metal: 0, env: 0.8 },
+  dragon: { label: 'Dragon’s blood', fg: '#ffd978', outline: '#2b0006', tex: ['swirl', ['#5a0610', '#b3122a', '#1a0306', '#e03a3a'], { flakes: 10 }], rough: 0.12, metal: 0, env: 0.8 },
+  glacier: { label: 'Glacier', fg: '#0c2c4d', outline: '#ffffff', tex: ['swirl', ['#bfe6ff', '#eaf7ff', '#7cc0ee', '#ffffff']], rough: 0.1, metal: 0, env: 0.9 },
+  wood: { label: 'Carved walnut', fg: '#f6e7c6', outline: '#2a1606', tex: ['grain', ['#6b4423', '#3d2512']], rough: 0.65, metal: 0, env: 0.15 },
+  mine: { label: 'My Owlbear colour', tex: ['plain', []], rough: 0.36, metal: 0, env: 0.45 },
 };
-// a hexagonal suede dice tray with stitched leather walls and snap tabs, drawn to the tray's size
-function d3TraySvg(w, h, cut) {
-  const hex = j => { const i = j + 8; return `${cut - i * 0.55 + 4},${i} ${w - cut + i * 0.55 - 4},${i} ${w - i},${h / 2} ${w - cut + i * 0.55 - 4},${h - i} ${cut - i * 0.55 + 4},${h - i} ${i},${h / 2}`; };
-  const tabs = [[cut, 8], [w - cut, 8], [w - 8, h / 2], [w - cut, h - 8], [cut, h - 8], [8, h / 2]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="6" fill="#7a4a26"/><circle cx="${x}" cy="${y}" r="2.2" fill="#c9a27a"/>`).join('');
+const d3Rng = seed => () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
+// paints one face-sized piece of a set's surface; each face of a die gets a different piece (seed)
+function d3Paint(kind, col, opt, seed) {
+  const S = 256, cv = document.createElement('canvas'); cv.width = cv.height = S; const c = cv.getContext('2d'), R = d3Rng(seed * 7919 + 13);
+  const blob = (x, y, r, color, a) => { const g = c.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, color); g.addColorStop(1, 'rgba(0,0,0,0)'); c.globalAlpha = a; c.fillStyle = g; c.beginPath(); c.arc(x, y, r, 0, 7); c.fill(); c.globalAlpha = 1; };
+  c.fillStyle = col[0]; c.fillRect(0, 0, S, S);
+  if (kind === 'plain') { for (let i = 0; i < 10; i++) blob(R() * S, R() * S, S * (0.2 + R() * 0.3), col[1] || col[0], 0.18); }
+  else if (kind === 'swirl' || kind === 'crystal') {
+    for (let i = 0; i < (kind === 'swirl' ? 26 : 14); i++) blob(R() * S, R() * S, S * (0.12 + R() * 0.38), col[1 + Math.floor(R() * (col.length - 1))], 0.3 + R() * 0.4);
+    c.lineCap = 'round';
+    for (let i = 0; i < 9; i++) { c.globalAlpha = 0.1 + R() * 0.16; c.strokeStyle = col[1 + Math.floor(R() * (col.length - 1))]; c.lineWidth = 4 + R() * 18; c.beginPath(); c.moveTo(R() * S, R() * S); c.bezierCurveTo(R() * S, R() * S, R() * S, R() * S, R() * S, R() * S); c.stroke(); }
+    if (kind === 'crystal') for (let i = 0; i < 7; i++) { c.globalAlpha = 0.18 + R() * 0.25; c.strokeStyle = '#ffffff'; c.lineWidth = 0.6 + R() * 1.4; let x = R() * S, y = R() * S, a = R() * 6.3; c.beginPath(); c.moveTo(x, y); for (let k = 0; k < 9; k++) { a += (R() - 0.5) * 1.3; x += Math.cos(a) * S * 0.07; y += Math.sin(a) * S * 0.07; c.lineTo(x, y); } c.stroke(); }
+    c.globalAlpha = 1;
+    for (let i = 0; i < (opt && opt.stars || 0); i++) { c.globalAlpha = 0.4 + R() * 0.6; c.fillStyle = '#ffffff'; c.beginPath(); c.arc(R() * S, R() * S, 0.5 + R() * 1.1, 0, 7); c.fill(); }
+    for (let i = 0; i < (opt && opt.flakes || 0); i++) { c.save(); c.translate(R() * S, R() * S); c.rotate(R() * 6.3); c.globalAlpha = 0.75 + R() * 0.25; c.fillStyle = R() < 0.5 ? '#f6d77a' : '#c99a2e'; const w = 2 + R() * 7, h = 1.5 + R() * 5; c.beginPath(); c.moveTo(-w, 0); c.lineTo(0, -h); c.lineTo(w, R() * h); c.lineTo(0, h); c.fill(); c.restore(); }
+  } else if (kind === 'brushed') {
+    const g = c.createLinearGradient(0, 0, S, S); g.addColorStop(0, col[1]); g.addColorStop(0.45, col[0]); g.addColorStop(1, col[2]); c.globalAlpha = 0.55; c.fillStyle = g; c.fillRect(0, 0, S, S);
+    for (let i = 0; i < 520; i++) { c.globalAlpha = 0.05 + R() * 0.13; c.strokeStyle = R() < 0.5 ? col[1] : col[2]; c.lineWidth = 0.5 + R(); const y = R() * S; c.beginPath(); c.moveTo(-5, y); c.lineTo(S + 5, y + (R() - 0.5) * 3); c.stroke(); }
+  } else if (kind === 'bands') {
+    const cx = S * (R() * 1.4 - 0.2), cy = S * (R() * 1.4 - 0.2), k1 = 3 + Math.floor(R() * 4), p1 = R() * 6.3; let i = 0;
+    for (let r = S * 1.7; r > 3; r -= 4 + R() * 11, i++) { c.fillStyle = col[(i + Math.floor(R() * 2)) % col.length]; c.beginPath(); for (let t = 0; t <= 6.4; t += 0.12) { const rr = r * (1 + 0.07 * Math.sin(k1 * t + p1) + 0.03 * Math.sin(9 * t + r)); c.lineTo(cx + Math.cos(t) * rr, cy + Math.sin(t) * rr); } c.fill(); }
+  } else if (kind === 'grain') {
+    for (let i = 0; i < 90; i++) { c.globalAlpha = 0.12 + R() * 0.3; c.strokeStyle = col[1]; c.lineWidth = 0.5 + R() * 1.8; const y = R() * S, a = 2 + R() * 5, f = 0.01 + R() * 0.02, ph = R() * 6; c.beginPath(); for (let x = -4; x <= S + 4; x += 8) c.lineTo(x, y + Math.sin(x * f + ph) * a); c.stroke(); }
+    blob(R() * S, R() * S, S * 0.4, '#a9743f', 0.22);
+  }
+  c.globalAlpha = 1; return cv;
+}
+// what the shiny dice reflect: a dim warm room with a bright soft light overhead and a window to one side
+function d3EnvCanvas() {
+  const cv = document.createElement('canvas'); cv.width = 512; cv.height = 256; const c = cv.getContext('2d');
+  const g = c.createLinearGradient(0, 0, 0, 256); g.addColorStop(0, '#f4f1ea'); g.addColorStop(0.22, '#8c8479'); g.addColorStop(0.5, '#3a332c'); g.addColorStop(0.72, '#5a4028'); g.addColorStop(1, '#2a1c10'); c.fillStyle = g; c.fillRect(0, 0, 512, 256);
+  c.fillStyle = '#ffffff'; c.globalAlpha = 0.95; c.fillRect(60, 18, 130, 46); c.fillRect(300, 30, 90, 30); c.globalAlpha = 0.6; c.fillRect(430, 80, 40, 70); c.fillRect(8, 90, 26, 50); c.globalAlpha = 1;
+  return cv;
+}
+// gives the dice box this set's painted surface and finish (the library only knows flat colours and its own textures)
+function d3Dress(b, key, set, base) {
+  const F = b.DiceFactory; if (!F || F.__gs === key) return; F.__gs = key;
+  const [kind, cols, opt] = set.tex, col = cols.length ? cols : [base, base], vars = []; let cur = 0;
+  const tex = { name: 'gs-' + key, composite: 'source-over', material: 'glass', get texture() { return vars[cur] || (vars[cur] = d3Paint(kind, col, opt, cur + 1)); } };
+  const smi = F.__smi || (F.__smi = F.setMaterialInfo), ctm = F.__ctm || (F.__ctm = F.createTextMaterial), cm = F.__cm || (F.__cm = F.createMaterials);
+  F.materials_cache = {};
+  F.setMaterialInfo = function (...a) { const r = smi.apply(this, a); this.dice_texture = tex; this.dice_texture_rand = tex; this.dice_material = 'glass'; this.dice_material_rand = 'glass'; return r; };
+  F.createTextMaterial = function (e, t, n, ...rest) { cur = (n || 0) % 12; return ctm.call(this, e, t, n, ...rest); };
+  F.createMaterials = function (...a) {
+    const ms = cm.apply(this, a);
+    try {
+      ms.forEach(m => {
+        if (!m || m.roughness === undefined) return;
+        if (!D3.env && m.map) { D3.env = new m.map.constructor(d3EnvCanvas()); D3.env.mapping = 303; D3.env.needsUpdate = true; }
+        m.roughness = set.rough; m.metalness = set.metal; if (D3.env) { m.envMap = D3.env; m.envMapIntensity = set.env; }
+        if (m.color && m.color.set) m.color.set(0xffffff); m.needsUpdate = true;
+      });
+    } catch (e) { }
+    return ms;
+  };
+}
+// a wooden dice box seen from above: walnut walls with mitred corners and brass corner pins, an oak floor
+function d3TraySvg(w, h) {
+  const W = 20, x1 = W, y1 = W, x2 = w - W, y2 = h - W;
+  const pin = (x, y) => `<circle cx="${x}" cy="${y}" r="3.2" fill="#c9a24a" stroke="#6b4a12" stroke-width=".8"/><circle cx="${x - 0.8}" cy="${y - 0.8}" r="1" fill="#fff3c4" opacity=".8"/>`;
   return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true"><defs>
-    <filter id="d3suede" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="3" seed="7"/><feColorMatrix values="0 0 0 0 .55  0 0 0 0 .34  0 0 0 0 .19  0 0 0 .55 0"/><feComposite in2="SourceGraphic" operator="in"/><feBlend in="SourceGraphic" mode="multiply"/></filter>
-    <radialGradient id="d3gfloor" cx="50%" cy="45%" r="65%"><stop offset="0" stop-color="#d49a63"/><stop offset="1" stop-color="#b97c48"/></radialGradient>
-    <linearGradient id="d3wall" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c88c58"/><stop offset=".5" stop-color="#a86d3e"/><stop offset="1" stop-color="#93592f"/></linearGradient></defs>
-    <polygon points="${hex(0)}" fill="url(#d3wall)" stroke="#6e4120" stroke-width="2"/>
-    <polygon points="${hex(7)}" fill="none" stroke="#f1d8b4" stroke-opacity=".75" stroke-width="1.3" stroke-dasharray="5 4"/>
-    <polygon points="${hex(16)}" fill="#8f5a32" opacity=".55"/>
-    <polygon points="${hex(20)}" fill="url(#d3gfloor)" filter="url(#d3suede)"/>
-    <polygon points="${hex(20)}" fill="none" stroke="#6e4120" stroke-opacity=".35" stroke-width="3"/>${tabs}</svg>`;
+    <filter id="d3gw" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency=".008 .22" numOctaves="4" seed="11"/><feColorMatrix values="0 0 0 0 .16  0 0 0 0 .08  0 0 0 0 .03  0 0 0 1.5 -.42"/><feComposite in2="SourceGraphic" operator="in"/><feBlend in="SourceGraphic" mode="multiply"/></filter>
+    <filter id="d3gf" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency=".006 .16" numOctaves="4" seed="4"/><feColorMatrix values="0 0 0 0 .42  0 0 0 0 .26  0 0 0 0 .1  0 0 0 1.3 -.38"/><feComposite in2="SourceGraphic" operator="in"/><feBlend in="SourceGraphic" mode="multiply"/></filter>
+    <filter id="d3gs"><feGaussianBlur stdDeviation="5"/></filter>
+    <linearGradient id="d3wv" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8a5a34"/><stop offset=".12" stop-color="#6e4526"/><stop offset=".88" stop-color="#5d3920"/><stop offset="1" stop-color="#40260f"/></linearGradient>
+    <clipPath id="d3cf"><rect x="${x1}" y="${y1}" width="${x2 - x1}" height="${y2 - y1}" rx="3"/></clipPath></defs>
+    <rect x="0" y="0" width="${w}" height="${h}" rx="9" fill="url(#d3wv)" filter="url(#d3gw)"/>
+    <rect x=".8" y=".8" width="${w - 1.6}" height="${h - 1.6}" rx="8.5" fill="none" stroke="#2c1808" stroke-width="1.6"/>
+    <rect x="3.5" y="3.5" width="${w - 7}" height="${h - 7}" rx="6.5" fill="none" stroke="#c08a58" stroke-opacity=".5" stroke-width="1"/>
+    <path d="M2,2L${x1},${y1}M${w - 2},2L${x2},${y1}M${w - 2},${h - 2}L${x2},${y2}M2,${h - 2}L${x1},${y2}" stroke="#2c1808" stroke-opacity=".7" stroke-width="1.2"/>
+    <rect x="${x1 - 5}" y="${y1 - 5}" width="${x2 - x1 + 10}" height="${y2 - y1 + 10}" rx="5" fill="#3a220f"/>
+    <rect x="${x1}" y="${y1}" width="${x2 - x1}" height="${y2 - y1}" rx="3" fill="#d2a469" filter="url(#d3gf)"/>
+    <g clip-path="url(#d3cf)"><path d="M${x1},${y1 + (y2 - y1) / 3}H${x2}M${x1},${y1 + (y2 - y1) * 2 / 3}H${x2}" stroke="#6b4a26" stroke-opacity=".45" stroke-width="1"/>
+    <rect x="${x1 - 6}" y="${y1 - 6}" width="${x2 - x1 + 12}" height="${y2 - y1 + 12}" fill="none" stroke="#000" stroke-opacity=".55" stroke-width="16" filter="url(#d3gs)"/></g>
+    ${pin(10, 10)}${pin(w - 10, 10)}${pin(w - 10, h - 10)}${pin(10, h - 10)}</svg>`;
 }
 // load the dice and their textures soon after start, so the first roll doesn't wait
 function d3Preload() {
@@ -8116,25 +8179,29 @@ function dice3dWanted(all) {
 }
 function d3Colors() {
   const k = D3_SETS[SETTINGS.diceSet] ? SETTINGS.diceSet : 'ivory', set = D3_SETS[k];
-  if (k !== 'mine') return Object.assign({ name: 'gs-' + k }, set, { label: undefined });
-  const bg = (IN_OBR && OBRX.me && OBRX.me.color) || '#efe6d0';
-  const m = bg.replace('#', '').match(/^([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i), lum = m ? (0.299 * parseInt(m[1], 16) + 0.587 * parseInt(m[2], 16) + 0.114 * parseInt(m[3], 16)) / 255 : 0.3;
-  return { name: 'gs-mine-' + bg, foreground: lum > 0.6 ? '#1a1a1a' : '#ffffff', background: bg, outline: lum > 0.6 ? '#ffffff' : '#000000', texture: 'none', material: 'plastic' };
+  let bg = set.tex[1][0], fg = set.fg, outline = set.outline;
+  if (k === 'mine') {
+    bg = (IN_OBR && OBRX.me && OBRX.me.color) || '#efe6d0';
+    const m = bg.replace('#', '').match(/^([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i), lum = m ? (0.299 * parseInt(m[1], 16) + 0.587 * parseInt(m[2], 16) + 0.114 * parseInt(m[3], 16)) / 255 : 0.3;
+    fg = lum > 0.6 ? '#1a1a1a' : '#ffffff'; outline = lum > 0.6 ? '#ffffff' : '#000000';
+  }
+  return { key: k, set, col: { name: 'gs-' + k + (k === 'mine' ? bg : ''), foreground: fg, background: bg, outline, edge: bg, texture: 'none', material: 'plastic' } };
 }
 async function d3Box(el) {
   if (!D3.loading) D3.loading = (window['dice-box-threejs'] ? Promise.resolve() : loadScript(DICE3D + 'dist/dice-box-threejs.umd.js')).catch(e => { D3.failed = true; throw e; });
   await D3.loading;
-  const w = el.clientWidth, h = el.clientHeight || 190, col = d3Colors(), key = JSON.stringify(col) + SETTINGS.diceSpeed + SETTINGS.diceSound;
+  const w = el.clientWidth, h = el.clientHeight || 190, CS = d3Colors(), col = CS.col, key = JSON.stringify(col) + SETTINGS.diceSpeed + SETTINGS.diceSound;
   if (D3.box && D3.el === el && Math.abs(D3.w - w) < 4 && D3.color === key) return D3.box;
-  const cut = Math.round(Math.min(90, h * 0.36)); el.style.setProperty('--d3cut', cut + 'px');
-  el.querySelectorAll('svg').forEach(x => x.remove()); el.insertAdjacentHTML('afterbegin', d3TraySvg(w, h, cut));
+  el.querySelectorAll('svg').forEach(x => x.remove()); el.insertAdjacentHTML('afterbegin', d3TraySvg(w, h));
   el.querySelectorAll('canvas').forEach(c => c.remove());
   const M = window['dice-box-threejs'], Box = M.default || M;
   const b = new Box('#d3floor', { assetPath: DICE3D + 'public/', sounds: !!SETTINGS.diceSound, volume: 45, sound_dieMaterial: 'plastic', theme_surface: 'green-felt',
-    theme_customColorset: col, theme_material: col.material, shadows: true, light_intensity: 0.9, baseScale: 62, strength: 1.1,
+    theme_customColorset: col, theme_material: 'plastic', shadows: true, light_intensity: 0.9, baseScale: 60, strength: 1.1,
     gravity_multiplier: D3_GRAV[SETTINGS.diceSpeed] || D3_GRAV.normal });
   await b.initialize();
   try { b.renderer.setClearColor(0x000000, 0); } catch (e) { }
+  try { const fl = document.getElementById('d3floor'), pr = Math.min(2, window.devicePixelRatio || 1); if (pr > 1) { b.renderer.setPixelRatio(pr); b.renderer.setSize(fl.clientWidth, fl.clientHeight); } } catch (e) { }
+  try { d3Dress(b, col.name, CS.set, col.background); } catch (e) { }
   Object.assign(D3, { box: b, el, w, color: key }); return b;
 }
 // "1d20+2d6@17,3,5": same-sided dice grouped in the order they first appear, values in that order
