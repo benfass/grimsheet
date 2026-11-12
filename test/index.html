@@ -3696,7 +3696,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.53.0';
+const APP_VERSION = '1.54.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
@@ -4279,6 +4279,7 @@ async function startOwlbear() {
       });
       try { const md = await OBR.room.getMetadata(); OBRX.init = md && md[INITKEY]; OBRX.roomMd = md || {}; OBR.room.onMetadataChange(md => { OBRX.init = md && md[INITKEY]; OBRX.roomMd = md || {}; driveCheck(); dmRoomChanged(); refreshInitView(); }); } catch (e) { }
       driveStart();
+      setTimeout(paintGlow, 1200);
       OBR.broadcast.onMessage(CH_DMSYNC, ev => dmReceive(ev.data)); dmApplyTable(); setTimeout(dmStart, 1500); dmClaimSoon();
       OBR.player.onChange(p => onSelection(p.selection));
       OBR.player.onChange(p => { if (OBRX.me.role !== 'GM' || !p.selection) return; const sel = p.selection; const inst = Object.keys(OBRX.monTokens).find(k => OBRX.monTokens[k].some(it => sel.includes(it.id))); if (inst && inst !== ui.monFocus) { ui.monFocus = inst; if (encView()) { renderGrid(); const n = document.querySelector(`[data-inst="${inst}"]`); if (n && n.scrollIntoView) n.scrollIntoView({ block: 'nearest' }); } } });
@@ -5374,7 +5375,7 @@ function withDefenses(byType, total, def, mult = 1) {
 // distance and range, the GM sees hit or miss against the target's AC and confirms the damage.
 function encView() { return isGM() && !ui.viewing && (SETTINGS.view === 'encounter' || (gmMode() && gmView() === 'encounter')); }
 const atkKey = () => 'grimsheet.attacks.' + (OBRX.room || 'room');
-ui.target = null; ui.lastAtk = null; OBRX.tokCache = {};
+ui.target = null; ui.lastAtk = null; OBRX.tokCache = {}; setTimeout(paintGlow, 0);
 function readAtkQ() { const q = readJSON(atkKey()); return Array.isArray(q) ? q : []; }
 function writeAtkQ(q) { writeJSON(atkKey(), q.slice(0, 30)); try { syncLocal('atk'); } catch (e) { } }
 // same merge as GS.mergeAttack in shared.js (the background page uses that one)
@@ -5441,7 +5442,38 @@ function targetChipHtml() {
   return t ? `<button class="btn tgt on" data-act="tgtpick" title="Attacks and damage go against this token. Select another token on the map to change it.">${ICON.target}<span class="tg-n">${esc(t.name)}</span>${t.dist ? `<span class="tg-d">${esc(t.dist)}</span>` : ''}</button><button class="ico" data-act="tgtclear" title="Clear target" aria-label="Clear target">✕</button>`
     : `<button class="btn tgt" data-act="tgtpick" title="Select a token on the map, or pick one here, and your attacks go against it">${ICON.target}<span class="tg-n">No target</span></button>`;
 }
-function paintTarget() { const n = document.getElementById('tgtwrap'); if (n) n.innerHTML = targetChipHtml(); document.querySelectorAll('.tgtmini').forEach(b => { b.outerHTML = tgtMini(); }); }
+// the token you're targeting gets a soft grey glow: drawn as local items, so only you see it. Soft grey rings
+// behind the token (glow) plus a thin dark-and-light ring around it, so it reads on dark, light and busy maps.
+const TGLOW = 'com.grimsheet-test/tglow';
+let glowFor = null, glowBusy = false, glowAgain = false;
+async function paintGlow() {
+  if (!IN_OBR || !OBRX.ready || !OBRX.api.scene || !OBRX.api.scene.local) return;
+  if (glowBusy) { glowAgain = true; return; }
+  glowBusy = true;
+  try {
+    const want = ui.target && ui.target.id || null;
+    if (want === glowFor) return;
+    try { const old = await OBRX.api.scene.local.getItems(i => !!(i.metadata && i.metadata[TGLOW])); if (old.length) await OBRX.api.scene.local.deleteItems(old.map(i => i.id)); } catch (e) { }
+    glowFor = null;
+    const B = window.OwlbearBuild; if (!want || !B) return;
+    let bd, dpi = 150; try { bd = await OBRX.api.scene.items.getItemBounds([want]); dpi = await OBRX.api.scene.grid.getDpi(); } catch (e) { return; }
+    const r = Math.max(bd.width, bd.height) / 2, g = Math.max(dpi * 0.15, r * 0.4), c = bd.center;
+    const common = x => x.attachedTo(want).locked(true).disableHit(true).disableAttachmentBehavior(['ROTATION', 'LOCKED', 'COPY']).metadata({ [TGLOW]: { for: want } }).name('Target');
+    const circle = (rad, fill, fo, stroke, so, sw, layer) => common(B.buildShape().shapeType('CIRCLE').width(rad * 2).height(rad * 2).position({ x: c.x, y: c.y }).fillColor(fill).fillOpacity(fo).strokeColor(stroke).strokeOpacity(so).strokeWidth(sw)).layer(layer).build();
+    const items = [], w = Math.max(2, dpi * 0.022);
+    // the glow: four mid-grey discs behind the token, stacking to strongest close to it, with a soft dark edge so it
+    // still shows on snow, parchment and grey stone (checked on dark, light, green, blue, red and brown maps)
+    items.push(circle(r + g, '#000000', 0, '#3a3a3a', 0.55, w, 'PROP'));
+    [1, 0.75, 0.5, 0.25].forEach(k => items.push(circle(r + g * k, '#9a9a9a', 0.3, '#000000', 0, 0, 'PROP')));
+    // the ring: dark outside, light inside, so one of them always stands out from the map
+    items.push(circle(r + w * 1.6, '#000000', 0, '#202020', 0.75, w, 'ATTACHMENT'));
+    items.push(circle(r + w * 0.6, '#000000', 0, '#e8e8e8', 0.95, w, 'ATTACHMENT'));
+    let z = Date.now(); items.forEach(it => { it.zIndex = z++; });
+    await OBRX.api.scene.local.addItems(items); glowFor = want;
+  } catch (e) { }
+  finally { glowBusy = false; if (glowAgain) { glowAgain = false; paintGlow(); } }
+}
+function paintTarget() { const n = document.getElementById('tgtwrap'); if (n) n.innerHTML = targetChipHtml(); document.querySelectorAll('.tgtmini').forEach(b => { b.outerHTML = tgtMini(); }); paintGlow(); }
 async function openTargetPicker() {
   openModal('targets', { loading: true });
   let items = [];
