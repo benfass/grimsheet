@@ -32,7 +32,7 @@ window.GRIMSHEET_TEST = true;
 /* Layout: sticky toolbar over a reflowing grid of modules (1 col on phones, 2-3 on desktop); a fixed roll tray along the bottom. */
 :root{
   --bg:#E8EDEB; --surface:#FAFCFB; --sunk:#EEF3F1; --ink:#17201E; --muted:#596764; --line:#D0DAD6;
-  --accent:#1C6D61; --accent-soft:#D3E8E2; --on-accent:#FFFFFF; --d3-felt:#1f4a3f; --d3-felt-hi:#2c6455; --d3-rim:#5b3b24;
+  --accent:#1C6D61; --accent-soft:#D3E8E2; --on-accent:#FFFFFF;
   --gold:#956A10; --gold-soft:#F3E5C2; --danger:#A63232; --danger-soft:#F5DADA; --ok:#2A7849;
   --shadow:0 1px 2px rgba(20,40,36,.06),0 4px 14px rgba(20,40,36,.06);
   --f-display:"Alegreya SC","Palatino Linotype",Georgia,serif;
@@ -414,14 +414,16 @@ select.ed-inline{width:auto}
 .tot.new{animation:pop .25s ease-out}
 @media (prefers-reduced-motion:reduce){.tot.new{animation:none}.switch i,.switch i::after{transition:none}}
 /* dice animation: lands just above the roll tray */
-.tray3d{position:relative;width:min(560px,100%);height:180px;border-radius:16px;overflow:hidden;background:radial-gradient(ellipse at 50% 35%,var(--d3-felt-hi),var(--d3-felt) 70%);border:6px solid var(--d3-rim);box-shadow:inset 0 3px 14px rgba(0,0,0,.45),0 10px 30px rgba(0,0,0,.25);transition:box-shadow .3s}
+.tray3d{position:relative;width:min(560px,100%);height:190px;filter:drop-shadow(0 10px 18px rgba(0,0,0,.28))}
+.tray3d>svg{position:absolute;inset:0;width:100%;height:100%;display:block}
+.tray3d .d3floor{position:absolute;top:30px;bottom:30px;left:var(--d3cut,70px);right:var(--d3cut,70px)}
 .tray3d canvas{display:block}
-.tray3d .d3tot{position:absolute;right:10px;top:8px;font-family:var(--f-mono);font-weight:700;font-size:1.35rem;color:#fff;background:rgba(0,0,0,.45);border-radius:10px;padding:2px 10px;opacity:0;transform:scale(.7);transition:opacity .2s,transform .25s}
-.tray3d .d3tot small{font-size:.7rem;font-weight:500;opacity:.8;margin-left:4px}
+.tray3d .d3tot{position:absolute;right:calc(var(--d3cut,70px) * .18);top:50%;margin-top:-17px;z-index:2;font-family:var(--f-mono);font-weight:700;font-size:1.35rem;color:#fff;background:rgba(0,0,0,.45);border-radius:10px;padding:2px 10px;opacity:0;transform:scale(.7);transition:opacity .2s,transform .25s}
+.tray3d .d3tot small{display:block;font-size:.62rem;font-weight:500;opacity:.85;text-align:center;margin-top:-3px}
 .tray3d.landed .d3tot{opacity:1;transform:none}
-.tray3d.crit{box-shadow:inset 0 3px 14px rgba(0,0,0,.45),0 0 0 3px var(--gold),0 0 28px 6px var(--gold)}
+.tray3d.crit{filter:drop-shadow(0 0 3px var(--gold)) drop-shadow(0 0 14px var(--gold))}
 .tray3d.fum{animation:fumflash .7s ease-out}
-@keyframes fumflash{0%,40%{box-shadow:inset 0 0 40px 10px var(--danger),0 0 0 3px var(--danger)}100%{box-shadow:inset 0 3px 14px rgba(0,0,0,.45),0 0 0 3px var(--danger)}}
+@keyframes fumflash{0%,40%{filter:drop-shadow(0 0 4px var(--danger)) drop-shadow(0 0 18px var(--danger))}100%{filter:drop-shadow(0 0 2px var(--danger)) drop-shadow(0 10px 18px rgba(0,0,0,.28))}}
 .dicefx.d3 .shelf{margin-top:6px;padding:6px 10px 16px}
 .dicefx.d3 .shelf.wait{visibility:hidden;height:0;padding:0;border:0;margin:0;overflow:hidden}
 .dicefx.d3 .die{width:40px;height:40px;animation:none}
@@ -3711,10 +3713,10 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.56.0';
+const APP_VERSION = '1.56.1';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
-const SETTINGS = Object.assign({ diceAnim: !REDUCED, dice3d: !navigator.webdriver, diceSound: true, diceColor: '', diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
+const SETTINGS = Object.assign({ diceAnim: !REDUCED, dice3d: !navigator.webdriver, diceSound: true, diceSet: 'ivory', diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
 function saveSettings() { try { localStorage.setItem(SETKEY, JSON.stringify(SETTINGS)); } catch (e) { } try { if (typeof dmPublishTable === 'function' && IN_OBR && OBRX.ready) dmPublishTable(); } catch (e) { } }
 const DICE_MS = { quick: 450, normal: 850, dramatic: 1400 };
 document.documentElement.classList.toggle('compact', !!SETTINGS.compact);
@@ -8044,31 +8046,95 @@ function stopDice() { DICE.timers.forEach(t => clearInterval(t) || clearTimeout(
    dice are made to land on them, so history, rerolls and what the GM sees stay exactly the same ---- */
 const DICE3D = 'vendor/dice/';
 const D3 = { box: null, el: null, w: 0, loading: null, failed: false, busy: false, color: '' };
-const D3_SIDES = [4, 6, 8, 10, 12, 20];
+// d4s don't reliably land on a set number in the library, so they (and d2, d3, d100) stay in the flat row only
+const D3_SIDES = [6, 8, 10, 12, 20];
 const D3_GRAV = { quick: 900, normal: 500, dramatic: 300 };
+// dice sets modelled on popular premium dice (metal, gemstone, resin with gold ink, wood); textures from the library
+const D3_SETS = {
+  ivory: { label: 'Ivory & ink', foreground: '#1a1a1a', background: '#efe6d0', outline: 'none', texture: 'none', material: 'plastic' },
+  gold: { label: 'Dwarven gold', foreground: '#3a2604', background: '#f0c255', outline: 'none', texture: 'metal', material: 'plastic' },
+  sapphire: { label: 'Black nickel & sapphire', foreground: '#5fb0ff', background: '#5b606b', outline: '#06152b', texture: 'metal', material: 'plastic' },
+  obsidian: { label: 'Obsidian & gold', foreground: '#e2b649', background: '#151515', outline: '#000000', texture: 'none', material: 'glass' },
+  amethyst: { label: 'Amethyst', foreground: '#f3d27a', background: '#c58bff', outline: '#2a0f40', texture: 'glitter', material: 'glass' },
+  malachite: { label: 'Malachite', foreground: '#f5ead0', background: '#1f8a5f', outline: '#06281b', texture: 'marble', material: 'glass' },
+  darkstar: { label: 'Dark star', foreground: '#f0cf72', background: '#2a3478', outline: '#000000', texture: 'stars', material: 'glass' },
+  dragon: { label: 'Dragon scale', foreground: '#ffd56b', background: '#e0384f', outline: '#3a0008', texture: 'dragon', material: 'plastic' },
+  glacier: { label: 'Glacier', foreground: '#0c2c4d', background: '#a9dcff', outline: '#ffffff', texture: 'ice', material: 'glass' },
+  wood: { label: 'Carved walnut', foreground: '#f6e7c6', background: '#6b4423', outline: '#2a1606', texture: 'wood', material: 'wood' },
+  mine: { label: 'My Owlbear colour', texture: 'none', material: 'plastic' },
+};
+// a hexagonal suede dice tray with stitched leather walls and snap tabs, drawn to the tray's size
+function d3TraySvg(w, h, cut) {
+  const hex = j => { const i = j + 8; return `${cut - i * 0.55 + 4},${i} ${w - cut + i * 0.55 - 4},${i} ${w - i},${h / 2} ${w - cut + i * 0.55 - 4},${h - i} ${cut - i * 0.55 + 4},${h - i} ${i},${h / 2}`; };
+  const tabs = [[cut, 8], [w - cut, 8], [w - 8, h / 2], [w - cut, h - 8], [cut, h - 8], [8, h / 2]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="6" fill="#7a4a26"/><circle cx="${x}" cy="${y}" r="2.2" fill="#c9a27a"/>`).join('');
+  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true"><defs>
+    <filter id="d3suede" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="3" seed="7"/><feColorMatrix values="0 0 0 0 .55  0 0 0 0 .34  0 0 0 0 .19  0 0 0 .55 0"/><feComposite in2="SourceGraphic" operator="in"/><feBlend in="SourceGraphic" mode="multiply"/></filter>
+    <radialGradient id="d3gfloor" cx="50%" cy="45%" r="65%"><stop offset="0" stop-color="#d49a63"/><stop offset="1" stop-color="#b97c48"/></radialGradient>
+    <linearGradient id="d3wall" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c88c58"/><stop offset=".5" stop-color="#a86d3e"/><stop offset="1" stop-color="#93592f"/></linearGradient></defs>
+    <polygon points="${hex(0)}" fill="url(#d3wall)" stroke="#6e4120" stroke-width="2"/>
+    <polygon points="${hex(7)}" fill="none" stroke="#f1d8b4" stroke-opacity=".75" stroke-width="1.3" stroke-dasharray="5 4"/>
+    <polygon points="${hex(16)}" fill="#8f5a32" opacity=".55"/>
+    <polygon points="${hex(20)}" fill="url(#d3gfloor)" filter="url(#d3suede)"/>
+    <polygon points="${hex(20)}" fill="none" stroke="#6e4120" stroke-opacity=".35" stroke-width="3"/>${tabs}</svg>`;
+}
+// load the dice and their textures soon after start, so the first roll doesn't wait
+function d3Preload() {
+  if (!SETTINGS.diceAnim || !SETTINGS.dice3d || D3.failed || REDUCED || D3.warm) return;
+  try { const c = document.createElement('canvas'); if (!(c.getContext('webgl2') || c.getContext('webgl'))) { D3.failed = true; return; } } catch (e) { D3.failed = true; return; }
+  const box = $('#dicefx'); if (!box) return;
+  D3.warm = (async () => {
+    const wasHidden = box.hidden, tray = d3Tray();
+    if (wasHidden) { box.style.visibility = 'hidden'; box.hidden = false; }
+    box.insertBefore(tray, box.firstChild);
+    try { const b = await d3Box(tray); const snd = b.sounds; b.sounds = false; await Promise.race([b.roll('1d6+1d8+1d10+1d12+1d20@2,2,2,2,2'), new Promise(r => setTimeout(r, 8000))]); b.sounds = snd; try { b.clearDice && b.clearDice(); } catch (e) { } }
+    catch (e) { }
+    if (wasHidden && !DICE.entry) { box.hidden = true; } box.style.visibility = '';
+  })();
+}
+function d3Tray() {
+  let tray = D3.tray || document.getElementById('tray3d');
+  if (!tray) { tray = D3.tray = document.createElement('div'); tray.id = 'tray3d'; tray.className = 'tray3d'; tray.innerHTML = '<div class="d3floor" id="d3floor"></div><span class="d3tot"></span>'; }
+  return tray;
+}
+// the library reports the result a moment before the last wobble ends: wait until the dice are still
+function d3Still(b) {
+  return new Promise(res => {
+    const t0 = performance.now(); let last = '', same = 0;
+    const tick = () => {
+      let sig = ''; try { (b.diceList || []).forEach(m => { const p = m.position, q = m.quaternion; sig += [p.x, p.y, p.z, q.x, q.y, q.z, q.w].map(v => v.toFixed(2)).join(','); }); } catch (e) { }
+      same = sig === last ? same + 1 : 0; last = sig;
+      if (same >= 6 || performance.now() - t0 > 1500) res(); else requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+}
 function dice3dWanted(all) {
-  if (!SETTINGS.dice3d || D3.failed || REDUCED || !all.length || all.length > 15) return false;
-  if (!all.every(d => D3_SIDES.includes(+d.s))) return false;
+  const n3 = all.filter(d => D3_SIDES.includes(+d.s)).length;
+  if (!SETTINGS.dice3d || D3.failed || REDUCED || !n3 || n3 > 15) return false;
   try { const c = document.createElement('canvas'); if (!(c.getContext('webgl2') || c.getContext('webgl'))) { D3.failed = true; return false; } } catch (e) { D3.failed = true; return false; }
   return true;
 }
 function d3Colors() {
-  const bg = SETTINGS.diceColor || (IN_OBR && OBRX.me && OBRX.me.color) || '#efe6d0';
+  const k = D3_SETS[SETTINGS.diceSet] ? SETTINGS.diceSet : 'ivory', set = D3_SETS[k];
+  if (k !== 'mine') return Object.assign({ name: 'gs-' + k }, set, { label: undefined });
+  const bg = (IN_OBR && OBRX.me && OBRX.me.color) || '#efe6d0';
   const m = bg.replace('#', '').match(/^([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i), lum = m ? (0.299 * parseInt(m[1], 16) + 0.587 * parseInt(m[2], 16) + 0.114 * parseInt(m[3], 16)) / 255 : 0.3;
-  return { name: 'grimsheet', foreground: lum > 0.6 ? '#1a1a1a' : '#ffffff', background: bg, outline: lum > 0.6 ? '#ffffff' : '#000000', texture: 'none', material: 'plastic' };
+  return { name: 'gs-mine-' + bg, foreground: lum > 0.6 ? '#1a1a1a' : '#ffffff', background: bg, outline: lum > 0.6 ? '#ffffff' : '#000000', texture: 'none', material: 'plastic' };
 }
 async function d3Box(el) {
   if (!D3.loading) D3.loading = (window['dice-box-threejs'] ? Promise.resolve() : loadScript(DICE3D + 'dist/dice-box-threejs.umd.js')).catch(e => { D3.failed = true; throw e; });
   await D3.loading;
-  const w = el.clientWidth, col = d3Colors(), key = JSON.stringify(col) + SETTINGS.diceSpeed + SETTINGS.diceSound;
+  const w = el.clientWidth, h = el.clientHeight || 190, col = d3Colors(), key = JSON.stringify(col) + SETTINGS.diceSpeed + SETTINGS.diceSound;
   if (D3.box && D3.el === el && Math.abs(D3.w - w) < 4 && D3.color === key) return D3.box;
+  const cut = Math.round(Math.min(90, h * 0.36)); el.style.setProperty('--d3cut', cut + 'px');
+  el.querySelectorAll('svg').forEach(x => x.remove()); el.insertAdjacentHTML('afterbegin', d3TraySvg(w, h, cut));
   el.querySelectorAll('canvas').forEach(c => c.remove());
   const M = window['dice-box-threejs'], Box = M.default || M;
-  const b = new Box('#' + el.id, { assetPath: DICE3D + 'public/', sounds: !!SETTINGS.diceSound, volume: 45, sound_dieMaterial: 'plastic', theme_surface: 'green-felt',
-    theme_customColorset: col, theme_material: 'plastic', shadows: true, light_intensity: 0.85, baseScale: 66, strength: 1.1,
+  const b = new Box('#d3floor', { assetPath: DICE3D + 'public/', sounds: !!SETTINGS.diceSound, volume: 45, sound_dieMaterial: 'plastic', theme_surface: 'green-felt',
+    theme_customColorset: col, theme_material: col.material, shadows: true, light_intensity: 0.9, baseScale: 62, strength: 1.1,
     gravity_multiplier: D3_GRAV[SETTINGS.diceSpeed] || D3_GRAV.normal });
   await b.initialize();
-  try { b.renderer.setClearColor(0x000000, 0); if (b.desk) b.desk.visible = false; } catch (e) { }
+  try { b.renderer.setClearColor(0x000000, 0); } catch (e) { }
   Object.assign(D3, { box: b, el, w, color: key }); return b;
 }
 // "1d20+2d6@17,3,5": same-sided dice grouped in the order they first appear, values in that order
@@ -8079,14 +8145,18 @@ function d3Notation(all) {
 }
 async function roll3d(entry, all) {
   const box = $('#dicefx');
-  let tray = document.getElementById('tray3d');
-  if (!tray) { tray = document.createElement('div'); tray.id = 'tray3d'; tray.className = 'tray3d'; tray.innerHTML = '<span class="d3tot"></span>'; }
+  const tray = d3Tray();
   box.insertBefore(tray, box.firstChild); tray.classList.remove('landed', 'crit', 'fum');
   try {
+    if (D3.warm) await Promise.race([D3.warm, new Promise(r => setTimeout(r, 3000))]);
+    box.style.visibility = ''; box.hidden = false;
+    all = all.filter(d => D3_SIDES.includes(+d.s));
     const b = await d3Box(tray), N = d3Notation(all);
     if (DICE.entry !== entry) return true;
     const done = b.roll(N.text);
     const res = await Promise.race([done, new Promise(r => setTimeout(() => r('slow'), 9000))]);
+    if (DICE.entry !== entry) return true;
+    if (res !== 'slow') await d3Still(b);
     if (DICE.entry !== entry) return true;
     // dropped dice (advantage, disadvantage, keep highest…) go see-through
     try { (b.diceList || []).forEach((m, j) => { const d = all[N.order[j]]; if (!d || !d.drop) return; const mats = [].concat(m.material || []); mats.forEach(x => { x.transparent = true; x.opacity = 0.3; }); });
@@ -9387,10 +9457,10 @@ function settingsHtml() {
     ${tourSettingsHtml()}
     <div class="setrow"><div class="grow"><b>Dice animation</b><div class="muted">Show the dice tumbling and landing on each roll. The total appears when they land.${REDUCED ? ' Your device asks for reduced motion, so this starts off.' : ''}</div></div>
       <button class="switch ${SETTINGS.diceAnim ? 'on' : ''}" data-act="setanim" aria-pressed="${SETTINGS.diceAnim}"><i></i>${SETTINGS.diceAnim ? 'On' : 'Off'}</button></div>
-    <div class="setrow" ${SETTINGS.diceAnim ? '' : 'style="opacity:.5"'}><div class="grow"><b>Dice style</b><div class="muted">3D: real dice thrown into a dice tray. Flat: the simple dice. Rolls with dice the tray doesn't have (d2, d3, d100) or more than 15 dice use the flat ones.</div></div>
+    <div class="setrow" ${SETTINGS.diceAnim ? '' : 'style="opacity:.5"'}><div class="grow"><b>Dice style</b><div class="muted">3D: real dice thrown into a dice tray. Flat: the simple dice. d4s (and d2, d3, d100) show in the row of flat dice under the tray; more than 15 dice use the flat ones only.</div></div>
       <div class="seg" role="group" aria-label="Dice style">${[['3d', '3D tray'], ['flat', 'Flat']].map(([v, l]) => `<button data-act="setd3" data-v="${v}" class="${(SETTINGS.dice3d ? '3d' : 'flat') === v ? 'on' : ''}" ${SETTINGS.diceAnim ? '' : 'disabled'}>${l}</button>`).join('')}</div></div>
-    <div class="setrow" ${SETTINGS.diceAnim && SETTINGS.dice3d ? '' : 'style="opacity:.5"'}><div class="grow"><b>3D dice</b><div class="muted">Their colour (by default your Owlbear player colour, or ivory) and the sound of them landing.</div></div>
-      <input type="color" id="set-dicecol" value="${esc(SETTINGS.diceColor || '#efe6d0')}" aria-label="Dice colour" ${SETTINGS.diceAnim && SETTINGS.dice3d ? '' : 'disabled'}>${SETTINGS.diceColor ? `<button class="btn small ghost" data-act="setdicecol" data-v="">Default</button>` : ''}
+    <div class="setrow" style="flex-wrap:wrap;${SETTINGS.diceAnim && SETTINGS.dice3d ? '' : 'opacity:.5'}"><div class="grow" style="min-width:220px"><b>3D dice</b><div class="muted">Pick a set, and whether they clatter when they land.</div></div>
+      <select id="set-diceset" aria-label="Dice set" ${SETTINGS.diceAnim && SETTINGS.dice3d ? '' : 'disabled'}>${Object.entries(D3_SETS).map(([k, x]) => `<option value="${k}" ${(SETTINGS.diceSet || 'ivory') === k ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}</select>
       <button class="switch ${SETTINGS.diceSound ? 'on' : ''}" data-act="setdicesnd" aria-pressed="${!!SETTINGS.diceSound}" ${SETTINGS.diceAnim && SETTINGS.dice3d ? '' : 'disabled'}><i></i>${SETTINGS.diceSound ? 'Sound' : 'Silent'}</button>
       <button class="btn small" data-act="settest" ${SETTINGS.diceAnim ? '' : 'disabled'}>Try it</button></div>
     <div class="setrow" ${SETTINGS.diceAnim ? '' : 'style="opacity:.5"'}><div class="grow"><b>Animation speed</b><div class="muted">How long the dice take to land.</div></div>
@@ -9715,9 +9785,8 @@ document.addEventListener('click', ev => {
     case 'pdfopen': openModal('pdf', { stage: 'pick' }); break;
     case 'setanim': SETTINGS.diceAnim = !SETTINGS.diceAnim; saveSettings(); if (!SETTINGS.diceAnim) { stopDice(); const b = $('#dicefx'); b.hidden = true; renderTray(); } renderModal(); break;
     case 'setspeed': SETTINGS.diceSpeed = v; saveSettings(); renderModal(); break;
-    case 'setd3': SETTINGS.dice3d = v === '3d'; saveSettings(); renderModal(); break;
+    case 'setd3': SETTINGS.dice3d = v === '3d'; saveSettings(); renderModal(); if (SETTINGS.dice3d) setTimeout(d3Preload, 100); break;
     case 'setdicesnd': SETTINGS.diceSound = !SETTINGS.diceSound; saveSettings(); renderModal(); break;
-    case 'setdicecol': SETTINGS.diceColor = v || ''; saveSettings(); renderModal(); break;
     case 'setshare': SETTINGS.share = v; saveSettings(); renderModal(); break;
     case 'tour': tourStart(v); break;
     case 'hpmaxedit': if (ui.viewing) break; ui.hpMaxEdit = true; renderGrid(); setTimeout(() => { const f = $('#f-hpmax'); if (f) { f.focus(); f.select(); } }, 0); break;
@@ -10103,7 +10172,7 @@ function doImport(lib) {
 }
 
 document.addEventListener('change', ev => {
-  if (ev.target && ev.target.id === 'set-dicecol') { SETTINGS.diceColor = ev.target.value; saveSettings(); renderModal(); return; }
+  if (ev.target && ev.target.id === 'set-diceset') { SETTINGS.diceSet = ev.target.value; saveSettings(); renderModal(); return; }
   const t = ev.target;
   if (t.dataset.cw != null && cwInput(t)) return;
   if (t.dataset.namesize) { if (tableLocked()) { renderModal(); return; } SETTINGS.nameSize = +t.value || 1; saveSettings(); syncCondLabels(); return; }
@@ -10346,6 +10415,7 @@ function startResize(handle, ev) {
 if (IN_OBR) startOwlbear();
 window.GrimsheetImport = { build: p => PDFIMPORT.build(p, { E, SRD, blankChar, newEntry, normalize, ctxFor }) };
 render();
+setTimeout(() => { try { d3Preload(); } catch (e) { } }, 1500);
 })();
 </script>
 </body>

@@ -651,3 +651,10 @@ Every change goes to a **test extension** first; players only get it after it's 
 - **Settings** (Dice animation section): Dice style 3D tray / Flat (3D by default); dice colour (default: Owlbear player colour, else ivory) and sound on/off; "Try it" rolls a test roll. Animation speed sets the tray's gravity (quick / normal / dramatic).
 - **Falls back to the flat dice** when animation is off, the device asks for reduced motion, WebGL isn't available or the library can't load, the roll has a die the tray doesn't have (d2, d3, d100) or more than 15 dice, or the dice haven't settled after 9 s.
 - Automated browsers (`navigator.webdriver`) default to flat dice so the test suite's timings hold; the 3D tray has its own test (`d3test.js`, with and without WebGL).
+
+## Dice tray 2 (1.56.1)
+- **Tray**: a hexagonal light-brown suede tray with raised leather walls, cream stitching and snap tabs, drawn as SVG to the tray's size (`d3TraySvg`). The dice roll on the inner floor (`#d3floor`, between the pointed ends), and cast shadows on it. The total sits in the right-hand point of the hexagon.
+- **Preloaded**: 1.5 s after the panel opens (and when 3D dice are switched on), the dice library, textures and sounds load and a silent warm-up throw runs out of sight, so the first real roll starts at once.
+- **Totals wait for the dice**: the library reports the result a moment before the last wobble ends; Grimsheet now waits until every die is still (or 1.5 s) before showing the total, the flat dice row, the roll bar's result and sharing.
+- **Dice sets** (Settings → 3D dice), modelled on popular premium dice: Ivory & ink (default), Dwarven gold, Black nickel & sapphire, Obsidian & gold, Amethyst, Malachite, Dark star, Dragon scale, Glacier, Carved walnut, and My Owlbear colour.
+- **d4s** stay in the flat row only (the library can't reliably make a d4 land on a set number); a roll with d4s and other dice throws the others into the tray.
