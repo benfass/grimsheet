@@ -393,6 +393,26 @@ select.ed-inline{width:auto}
 .tot.new{animation:pop .25s ease-out}
 @media (prefers-reduced-motion:reduce){.tot.new{animation:none}.switch i,.switch i::after{transition:none}}
 /* dice animation: lands just above the roll tray */
+.tray3d{position:relative;width:min(540px,100%);height:200px;filter:drop-shadow(0 10px 18px rgba(0,0,0,.28))}
+.tray3d>svg{position:absolute;inset:0;width:100%;height:100%;display:block}
+.tray3d .d3floor{position:absolute;top:20px;bottom:20px;left:20px;right:20px;overflow:hidden;border-radius:3px}
+.tray3d canvas{display:block}
+.tray3d .d3x{pointer-events:auto;position:absolute;left:-8px;top:-8px;z-index:3;width:26px;height:26px;border-radius:50%;border:1px solid #c9a24a;background:#3a220f;color:#fff8e6;font-size:.8rem;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.35);padding:0}
+.tray3d .d3x:hover{background:#5d3920}
+@media (pointer:coarse){.tray3d .d3x{width:32px;height:32px;left:-10px;top:-10px}}
+.tray3d .d3wall{position:absolute;top:14px;bottom:14px;left:calc(50% - 5px);width:10px;border-radius:3px;background:linear-gradient(90deg,#3d2512,#7a4d2a 40%,#5d3920 70%,#2c1808);box-shadow:3px 0 8px rgba(0,0,0,.45),-3px 0 8px rgba(0,0,0,.3);opacity:0;transform:translateY(-14px);transition:opacity .25s,transform .3s;z-index:1;pointer-events:none}
+.tray3d.split .d3wall{opacity:1;transform:none}
+.dicefx.d3 .shelf.rolling .die{opacity:.45}
+.tray3d .d3tot{position:absolute;right:26px;top:-14px;z-index:2;box-shadow:0 2px 6px rgba(0,0,0,.35);font-family:var(--f-mono);font-weight:700;font-size:1.2rem;color:#fff8e6;background:#3a220f;border:1px solid #c9a24a;border-radius:10px;padding:2px 10px;opacity:0;transform:scale(.7);transition:opacity .2s,transform .25s}
+.tray3d .d3tot small{display:block;font-size:.62rem;font-weight:500;opacity:.85;text-align:center;margin-top:-3px}
+.tray3d.landed .d3tot{opacity:1;transform:none}
+.tray3d.crit{filter:drop-shadow(0 0 3px var(--gold)) drop-shadow(0 0 14px var(--gold))}
+.tray3d.fum{animation:fumflash .7s ease-out}
+@keyframes fumflash{0%,40%{filter:drop-shadow(0 0 4px var(--danger)) drop-shadow(0 0 18px var(--danger))}100%{filter:drop-shadow(0 0 2px var(--danger)) drop-shadow(0 10px 18px rgba(0,0,0,.28))}}
+.dicefx.d3 .shelf{margin-bottom:18px;padding:6px 10px}
+.dicefx.d3 .shelf.wait{visibility:hidden;height:0;padding:0;border:0;margin:0;overflow:hidden}
+.dicefx.d3 .die{width:40px;height:40px;animation:none}
+.dicefx.d3 .die b{font-size:.92rem}
 .dicefx{position:fixed;left:0;right:0;bottom:calc(74px + env(safe-area-inset-bottom,0px));z-index:44;max-width:1500px;margin:0 auto;pointer-events:none;transition:opacity .35s}
 .dicefx .shelf{display:inline-flex;flex-wrap:wrap;gap:12px;align-items:center;max-width:100%;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:10px 14px 20px;box-shadow:0 10px 30px rgba(0,0,0,.16)}
 .dicefx .shelf.live{pointer-events:auto}
@@ -3678,10 +3698,13 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.55.0';
+const APP_VERSION = '1.57.3';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
-const SETTINGS = Object.assign({ diceAnim: !REDUCED, diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
+// phones (touch screen, short side under 600px) get the flat dice by default: the 3D box takes too much of a small screen
+const IS_PHONE = (() => { try { return matchMedia('(pointer:coarse)').matches && Math.min(screen.width, screen.height) < 600; } catch (e) { return false; } })();
+const SETTINGS = Object.assign({ diceAnim: !REDUCED, dice3d: !navigator.webdriver && !IS_PHONE, diceSound: true, diceSet: 'ivory', diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
+if (IS_PHONE && !SETTINGS.d3phone) { SETTINGS.d3phone = 1; SETTINGS.dice3d = false; try { localStorage.setItem(SETKEY, JSON.stringify(SETTINGS)); } catch (e) { } }
 function saveSettings() { try { localStorage.setItem(SETKEY, JSON.stringify(SETTINGS)); } catch (e) { } try { if (typeof dmPublishTable === 'function' && IN_OBR && OBRX.ready) dmPublishTable(); } catch (e) { } }
 const DICE_MS = { quick: 450, normal: 850, dramatic: 1400 };
 document.documentElement.classList.toggle('compact', !!SETTINGS.compact);
@@ -7847,6 +7870,13 @@ function rrDiceOf(entry, r) {
     if (r.on === 'damage' && (isD20 || entry.kind !== 'dmg')) return;
     // only parts that are a plain sum of dice can be recomputed safely
     if (!isD20 && Math.abs(p.value) !== p.dice.reduce((a, d) => a + d.v, 0)) return;
+    if (isD20 && p.dice.length > 1) {
+      // advantage / disadvantage: reroll the lower d20. With advantage that's the dropped die (the only way up); with
+      // disadvantage it's the die that counts. Rerolling the higher die can only make the result worse.
+      let lo = 0; p.dice.forEach((d, j) => { if (d.v < p.dice[lo].v) lo = j; });
+      const d = p.dice[lo]; if (!(r.dice === 'low' && d.v > r.low)) out.push({ pi, j: lo, k: pi + ':' + lo, d, p });
+      return;
+    }
     p.dice.forEach((d, j) => { if (d.drop || (r.dice === 'low' && d.v > r.low)) return; out.push({ pi, j, k: pi + ':' + j, d, p }); });
   });
   if (r.on === 'd20' && r.dice === 'one') return out.slice(0, 1);
@@ -7919,9 +7949,11 @@ function doReroll(entry, S, dice) {
   if (S.e && S.left != null) { S.e.counter.used = (+S.e.counter.used || 0) + 1; save(); renderGrid(); }
   if (S.insp) { C().inspiration = false; save(); renderGrid(); publishStatus(); }
   if (S.mon && S.left != null) { S.mon.uses[S.ref] = (S.mon.uses[S.ref] || 0) + 1; saveEnc({ quiet: true }); if (encView()) renderGrid(); }
-  renderTray(true); paintDiceBox(entry, changes.map(c => c.x.k));
-  announceReroll(entry, S, text, before);
-  toast(`${S.name}: ${text}. ${before} → ${entry.total}.`);
+  const finish = () => { renderTray(true); paintDiceBox(entry, changes.map(c => c.x.k)); announceReroll(entry, S, text, before); toast(`${S.name}: ${text}. ${before} → ${entry.total}.`); };
+  let p = null; try { if (SETTINGS.diceAnim && SETTINGS.dice3d) p = d3Reroll(entry, changes); } catch (e) { p = null; }
+  if (!p) { finish(); return; }
+  const sh = document.querySelector('#dicefx .shelf'); if (sh) sh.classList.add('rolling');
+  p.then(() => { if (sh) sh.classList.remove('rolling'); finish(); }, () => { if (sh) sh.classList.remove('rolling'); finish(); });
 }
 // keep the table honest: rerolls of shared rolls are always announced (GM only when sharing is off)
 function announceReroll(entry, S, text, before) {
@@ -8007,6 +8039,260 @@ const DIE_SHAPE = {
 const dieSvg = s => `<svg viewBox="0 0 40 40" aria-hidden="true">${DIE_SHAPE[s] || '<circle cx="20" cy="20" r="17"/>'}</svg>`;
 const DICE = { timers: [], hideT: 0 };
 function stopDice() { DICE.timers.forEach(t => clearInterval(t) || clearTimeout(t)); DICE.timers = []; clearTimeout(DICE.hideT); }
+/* ---- 3D dice tray: real 3D dice (dice-box-threejs) thrown into a tray; Grimsheet decides the numbers and the
+   dice are made to land on them, so history, rerolls and what the GM sees stay exactly the same ---- */
+const DICE3D = 'vendor/dice/';
+const D3 = { box: null, el: null, w: 0, loading: null, failed: false, busy: false, color: '' };
+// d4s don't reliably land on a set number in the library, so they (and d2, d3, d100) stay in the flat row only
+const D3_SIDES = [6, 8, 10, 12, 20];
+const D3_GRAV = { quick: 900, normal: 500, dramatic: 300 };
+// dice sets modelled on popular premium dice (metal, gemstone, swirled resin with gold ink, wood). Each set paints its
+// own surface (tex) and has its own finish (rough / metal / env = how much it reflects the room)
+const D3_SETS = {
+  ivory: { label: 'Ivory & ink', fg: '#1c1a17', outline: 'none', tex: ['plain', ['#f1e8d2', '#d9c9a3']], rough: 0.36, metal: 0, env: 0.45 },
+  gold: { label: 'Dwarven gold', fg: '#2a1a02', outline: 'none', tex: ['brushed', ['#f2c14e', '#fff0b0', '#b8862a']], rough: 0.34, metal: 0.55, env: 1.5 },
+  sapphire: { label: 'Black nickel & sapphire', fg: '#7cc4ff', outline: '#04101f', tex: ['brushed', ['#6d727d', '#a9afba', '#33363d']], rough: 0.3, metal: 0.6, env: 1.4 },
+  obsidian: { label: 'Obsidian & gold', fg: '#e9bd4f', outline: '#000000', tex: ['swirl', ['#0b0b0d', '#1c1c22', '#2c2833']], rough: 0.06, metal: 0, env: 1 },
+  amethyst: { label: 'Amethyst', fg: '#f8e19a', outline: '#2a0f40', tex: ['crystal', ['#6a2fb0', '#a56be6', '#3d1670', '#d9b8ff']], rough: 0.1, metal: 0, env: 0.9 },
+  malachite: { label: 'Malachite', fg: '#f7edcf', outline: '#06281b', tex: ['bands', ['#0f5b3f', '#1f8a5f', '#46b98a', '#0a3d2b']], rough: 0.18, metal: 0, env: 0.7 },
+  darkstar: { label: 'Galaxy resin', fg: '#f3d27a', outline: '#05061a', tex: ['swirl', ['#0d1036', '#3a1d7a', '#1456a8', '#7a2a8f'], { stars: 70, flakes: 14 }], rough: 0.1, metal: 0, env: 0.8 },
+  dragon: { label: 'Dragon’s blood', fg: '#ffd978', outline: '#2b0006', tex: ['swirl', ['#5a0610', '#b3122a', '#1a0306', '#e03a3a'], { flakes: 10 }], rough: 0.12, metal: 0, env: 0.8 },
+  glacier: { label: 'Glacier', fg: '#0c2c4d', outline: '#ffffff', tex: ['swirl', ['#bfe6ff', '#eaf7ff', '#7cc0ee', '#ffffff']], rough: 0.1, metal: 0, env: 0.9 },
+  wood: { label: 'Carved walnut', fg: '#f6e7c6', outline: '#2a1606', tex: ['grain', ['#6b4423', '#3d2512']], rough: 0.65, metal: 0, env: 0.15 },
+  mine: { label: 'My Owlbear colour', tex: ['plain', []], rough: 0.36, metal: 0, env: 0.45 },
+};
+const d3Rng = seed => () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
+// paints one face-sized piece of a set's surface; each face of a die gets a different piece (seed)
+function d3Paint(kind, col, opt, seed) {
+  const S = 256, cv = document.createElement('canvas'); cv.width = cv.height = S; const c = cv.getContext('2d'), R = d3Rng(seed * 7919 + 13);
+  const blob = (x, y, r, color, a) => { const g = c.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, color); g.addColorStop(1, 'rgba(0,0,0,0)'); c.globalAlpha = a; c.fillStyle = g; c.beginPath(); c.arc(x, y, r, 0, 7); c.fill(); c.globalAlpha = 1; };
+  c.fillStyle = col[0]; c.fillRect(0, 0, S, S);
+  if (kind === 'plain') { for (let i = 0; i < 10; i++) blob(R() * S, R() * S, S * (0.2 + R() * 0.3), col[1] || col[0], 0.18); }
+  else if (kind === 'swirl' || kind === 'crystal') {
+    for (let i = 0; i < (kind === 'swirl' ? 26 : 14); i++) blob(R() * S, R() * S, S * (0.12 + R() * 0.38), col[1 + Math.floor(R() * (col.length - 1))], 0.3 + R() * 0.4);
+    c.lineCap = 'round';
+    for (let i = 0; i < 9; i++) { c.globalAlpha = 0.1 + R() * 0.16; c.strokeStyle = col[1 + Math.floor(R() * (col.length - 1))]; c.lineWidth = 4 + R() * 18; c.beginPath(); c.moveTo(R() * S, R() * S); c.bezierCurveTo(R() * S, R() * S, R() * S, R() * S, R() * S, R() * S); c.stroke(); }
+    if (kind === 'crystal') for (let i = 0; i < 7; i++) { c.globalAlpha = 0.18 + R() * 0.25; c.strokeStyle = '#ffffff'; c.lineWidth = 0.6 + R() * 1.4; let x = R() * S, y = R() * S, a = R() * 6.3; c.beginPath(); c.moveTo(x, y); for (let k = 0; k < 9; k++) { a += (R() - 0.5) * 1.3; x += Math.cos(a) * S * 0.07; y += Math.sin(a) * S * 0.07; c.lineTo(x, y); } c.stroke(); }
+    c.globalAlpha = 1;
+    for (let i = 0; i < (opt && opt.stars || 0); i++) { c.globalAlpha = 0.4 + R() * 0.6; c.fillStyle = '#ffffff'; c.beginPath(); c.arc(R() * S, R() * S, 0.5 + R() * 1.1, 0, 7); c.fill(); }
+    for (let i = 0; i < (opt && opt.flakes || 0); i++) { c.save(); c.translate(R() * S, R() * S); c.rotate(R() * 6.3); c.globalAlpha = 0.75 + R() * 0.25; c.fillStyle = R() < 0.5 ? '#f6d77a' : '#c99a2e'; const w = 2 + R() * 7, h = 1.5 + R() * 5; c.beginPath(); c.moveTo(-w, 0); c.lineTo(0, -h); c.lineTo(w, R() * h); c.lineTo(0, h); c.fill(); c.restore(); }
+  } else if (kind === 'brushed') {
+    const g = c.createLinearGradient(0, 0, S, S); g.addColorStop(0, col[1]); g.addColorStop(0.45, col[0]); g.addColorStop(1, col[2]); c.globalAlpha = 0.55; c.fillStyle = g; c.fillRect(0, 0, S, S);
+    for (let i = 0; i < 520; i++) { c.globalAlpha = 0.05 + R() * 0.13; c.strokeStyle = R() < 0.5 ? col[1] : col[2]; c.lineWidth = 0.5 + R(); const y = R() * S; c.beginPath(); c.moveTo(-5, y); c.lineTo(S + 5, y + (R() - 0.5) * 3); c.stroke(); }
+  } else if (kind === 'bands') {
+    const cx = S * (R() * 1.4 - 0.2), cy = S * (R() * 1.4 - 0.2), k1 = 3 + Math.floor(R() * 4), p1 = R() * 6.3; let i = 0;
+    for (let r = S * 1.7; r > 3; r -= 4 + R() * 11, i++) { c.fillStyle = col[(i + Math.floor(R() * 2)) % col.length]; c.beginPath(); for (let t = 0; t <= 6.4; t += 0.12) { const rr = r * (1 + 0.07 * Math.sin(k1 * t + p1) + 0.03 * Math.sin(9 * t + r)); c.lineTo(cx + Math.cos(t) * rr, cy + Math.sin(t) * rr); } c.fill(); }
+  } else if (kind === 'grain') {
+    for (let i = 0; i < 90; i++) { c.globalAlpha = 0.12 + R() * 0.3; c.strokeStyle = col[1]; c.lineWidth = 0.5 + R() * 1.8; const y = R() * S, a = 2 + R() * 5, f = 0.01 + R() * 0.02, ph = R() * 6; c.beginPath(); for (let x = -4; x <= S + 4; x += 8) c.lineTo(x, y + Math.sin(x * f + ph) * a); c.stroke(); }
+    blob(R() * S, R() * S, S * 0.4, '#a9743f', 0.22);
+  }
+  c.globalAlpha = 1; return cv;
+}
+// what the shiny dice reflect: a dim warm room with a bright soft light overhead and a window to one side
+function d3EnvCanvas() {
+  const cv = document.createElement('canvas'); cv.width = 512; cv.height = 256; const c = cv.getContext('2d');
+  const g = c.createLinearGradient(0, 0, 0, 256); g.addColorStop(0, '#f4f1ea'); g.addColorStop(0.22, '#8c8479'); g.addColorStop(0.5, '#3a332c'); g.addColorStop(0.72, '#5a4028'); g.addColorStop(1, '#2a1c10'); c.fillStyle = g; c.fillRect(0, 0, 512, 256);
+  c.fillStyle = '#ffffff'; c.globalAlpha = 0.95; c.fillRect(60, 18, 130, 46); c.fillRect(300, 30, 90, 30); c.globalAlpha = 0.6; c.fillRect(430, 80, 40, 70); c.fillRect(8, 90, 26, 50); c.globalAlpha = 1;
+  return cv;
+}
+// gives the dice box this set's painted surface and finish (the library only knows flat colours and its own textures)
+function d3Dress(b, key, set, base) {
+  const F = b.DiceFactory; if (!F || F.__gs === key) return; F.__gs = key;
+  const [kind, cols, opt] = set.tex, col = cols.length ? cols : [base, base], vars = []; let cur = 0;
+  const tex = { name: 'gs-' + key, composite: 'source-over', material: 'glass', get texture() { return vars[cur] || (vars[cur] = d3Paint(kind, col, opt, cur + 1)); } };
+  const smi = F.__smi || (F.__smi = F.setMaterialInfo), ctm = F.__ctm || (F.__ctm = F.createTextMaterial), cm = F.__cm || (F.__cm = F.createMaterials);
+  F.materials_cache = {};
+  F.setMaterialInfo = function (...a) { const r = smi.apply(this, a); this.dice_texture = tex; this.dice_texture_rand = tex; this.dice_material = 'glass'; this.dice_material_rand = 'glass'; return r; };
+  F.createTextMaterial = function (e, t, n, ...rest) { cur = (n || 0) % 12; return ctm.call(this, e, t, n, ...rest); };
+  F.createMaterials = function (...a) {
+    const ms = cm.apply(this, a);
+    try {
+      ms.forEach(m => {
+        if (!m || m.roughness === undefined) return;
+        if (!D3.env && m.map) { D3.env = new m.map.constructor(d3EnvCanvas()); D3.env.mapping = 303; D3.env.needsUpdate = true; }
+        m.roughness = set.rough; m.metalness = set.metal; if (D3.env) { m.envMap = D3.env; m.envMapIntensity = set.env; }
+        if (m.color && m.color.set) m.color.set(0xffffff); m.needsUpdate = true;
+      });
+    } catch (e) { }
+    return ms;
+  };
+}
+// a wooden dice box seen from above: walnut walls with mitred corners and brass corner pins, an oak floor
+function d3TraySvg(w, h) {
+  const W = 20, x1 = W, y1 = W, x2 = w - W, y2 = h - W;
+  const pin = (x, y) => `<circle cx="${x}" cy="${y}" r="3.2" fill="#c9a24a" stroke="#6b4a12" stroke-width=".8"/><circle cx="${x - 0.8}" cy="${y - 0.8}" r="1" fill="#fff3c4" opacity=".8"/>`;
+  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true"><defs>
+    <filter id="d3gw" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency=".008 .22" numOctaves="4" seed="11"/><feColorMatrix values="0 0 0 0 .16  0 0 0 0 .08  0 0 0 0 .03  0 0 0 1.5 -.42"/><feComposite in2="SourceGraphic" operator="in"/><feBlend in="SourceGraphic" mode="multiply"/></filter>
+    <filter id="d3gf" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency=".006 .16" numOctaves="4" seed="4"/><feColorMatrix values="0 0 0 0 .42  0 0 0 0 .26  0 0 0 0 .1  0 0 0 1.3 -.38"/><feComposite in2="SourceGraphic" operator="in"/><feBlend in="SourceGraphic" mode="multiply"/></filter>
+    <filter id="d3gs"><feGaussianBlur stdDeviation="5"/></filter>
+    <linearGradient id="d3wv" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8a5a34"/><stop offset=".12" stop-color="#6e4526"/><stop offset=".88" stop-color="#5d3920"/><stop offset="1" stop-color="#40260f"/></linearGradient>
+    <clipPath id="d3cf"><rect x="${x1}" y="${y1}" width="${x2 - x1}" height="${y2 - y1}" rx="3"/></clipPath></defs>
+    <rect x="0" y="0" width="${w}" height="${h}" rx="9" fill="url(#d3wv)" filter="url(#d3gw)"/>
+    <rect x=".8" y=".8" width="${w - 1.6}" height="${h - 1.6}" rx="8.5" fill="none" stroke="#2c1808" stroke-width="1.6"/>
+    <rect x="3.5" y="3.5" width="${w - 7}" height="${h - 7}" rx="6.5" fill="none" stroke="#c08a58" stroke-opacity=".5" stroke-width="1"/>
+    <path d="M2,2L${x1},${y1}M${w - 2},2L${x2},${y1}M${w - 2},${h - 2}L${x2},${y2}M2,${h - 2}L${x1},${y2}" stroke="#2c1808" stroke-opacity=".7" stroke-width="1.2"/>
+    <rect x="${x1 - 5}" y="${y1 - 5}" width="${x2 - x1 + 10}" height="${y2 - y1 + 10}" rx="5" fill="#3a220f"/>
+    <rect x="${x1}" y="${y1}" width="${x2 - x1}" height="${y2 - y1}" rx="3" fill="#d2a469" filter="url(#d3gf)"/>
+    <g clip-path="url(#d3cf)"><path d="M${x1},${y1 + (y2 - y1) / 3}H${x2}M${x1},${y1 + (y2 - y1) * 2 / 3}H${x2}" stroke="#6b4a26" stroke-opacity=".45" stroke-width="1"/>
+    <rect x="${x1 - 6}" y="${y1 - 6}" width="${x2 - x1 + 12}" height="${y2 - y1 + 12}" fill="none" stroke="#000" stroke-opacity=".55" stroke-width="16" filter="url(#d3gs)"/></g>
+    ${pin(10, 10)}${pin(w - 10, 10)}${pin(w - 10, h - 10)}${pin(10, h - 10)}</svg>`;
+}
+// load the dice and their textures soon after start, so the first roll doesn't wait
+function d3Preload() {
+  if (!SETTINGS.diceAnim || !SETTINGS.dice3d || D3.failed || REDUCED || D3.warm) return;
+  try { const c = document.createElement('canvas'); if (!(c.getContext('webgl2') || c.getContext('webgl'))) { D3.failed = true; return; } } catch (e) { D3.failed = true; return; }
+  const box = $('#dicefx'); if (!box) return;
+  D3.warm = (async () => {
+    const wasHidden = box.hidden, tray = d3Tray();
+    if (wasHidden) { box.style.visibility = 'hidden'; box.hidden = false; }
+    box.appendChild(tray);
+    try { const b = await d3Box(tray); const snd = b.sounds; b.sounds = false; await Promise.race([b.roll('1d6+1d8+1d10+1d12+1d20@2,2,2,2,2'), new Promise(r => setTimeout(r, 8000))]); b.sounds = snd; try { b.clearDice && b.clearDice(); } catch (e) { } }
+    catch (e) { }
+    if (wasHidden && !DICE.entry) { box.hidden = true; } box.style.visibility = '';
+  })();
+}
+function d3Tray() {
+  let tray = D3.tray || document.getElementById('tray3d');
+  if (!tray) { tray = D3.tray = document.createElement('div'); tray.id = 'tray3d'; tray.className = 'tray3d'; tray.innerHTML = '<div class="d3floor" id="d3floor"></div><div class="d3wall"></div><span class="d3tot"></span><button class="d3x" data-act="dicehide" title="Close the dice box" aria-label="Close the dice box">✕</button>'; }
+  return tray;
+}
+// the library reports the result a moment before the last wobble ends: wait until the dice are still
+function d3Still(b) {
+  return new Promise(res => {
+    const t0 = performance.now(); let last = '', same = 0;
+    const tick = () => {
+      let sig = ''; try { (b.diceList || []).forEach(m => { const p = m.position, q = m.quaternion; sig += [p.x, p.y, p.z, q.x, q.y, q.z, q.w].map(v => v.toFixed(2)).join(','); }); } catch (e) { }
+      same = sig === last ? same + 1 : 0; last = sig;
+      if (same >= 6 || performance.now() - t0 > 1500) res(); else requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+}
+function dice3dWanted(all) {
+  const n3 = all.filter(d => D3_SIDES.includes(+d.s)).length;
+  if (!SETTINGS.dice3d || D3.failed || REDUCED || !n3 || n3 > 15) return false;
+  try { const c = document.createElement('canvas'); if (!(c.getContext('webgl2') || c.getContext('webgl'))) { D3.failed = true; return false; } } catch (e) { D3.failed = true; return false; }
+  return true;
+}
+function d3Colors() {
+  const k = D3_SETS[SETTINGS.diceSet] ? SETTINGS.diceSet : 'ivory', set = D3_SETS[k];
+  let bg = set.tex[1][0], fg = set.fg, outline = set.outline;
+  if (k === 'mine') {
+    bg = (IN_OBR && OBRX.me && OBRX.me.color) || '#efe6d0';
+    const m = bg.replace('#', '').match(/^([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i), lum = m ? (0.299 * parseInt(m[1], 16) + 0.587 * parseInt(m[2], 16) + 0.114 * parseInt(m[3], 16)) / 255 : 0.3;
+    fg = lum > 0.6 ? '#1a1a1a' : '#ffffff'; outline = lum > 0.6 ? '#ffffff' : '#000000';
+  }
+  return { key: k, set, col: { name: 'gs-' + k + (k === 'mine' ? bg : ''), foreground: fg, background: bg, outline, edge: bg, texture: 'none', material: 'plastic' } };
+}
+async function d3Box(el) {
+  if (!D3.loading) D3.loading = (window['dice-box-threejs'] ? Promise.resolve() : loadScript(DICE3D + 'dist/dice-box-threejs.umd.js')).catch(e => { D3.failed = true; throw e; });
+  await D3.loading;
+  const w = el.clientWidth, h = el.clientHeight || 190, CS = d3Colors(), col = CS.col, key = JSON.stringify(col) + SETTINGS.diceSpeed + SETTINGS.diceSound;
+  if (D3.box && D3.el === el && Math.abs(D3.w - w) < 4 && D3.color === key) return D3.box;
+  el.querySelectorAll('svg').forEach(x => x.remove()); el.insertAdjacentHTML('afterbegin', d3TraySvg(w, h));
+  el.querySelectorAll('canvas').forEach(c => c.remove());
+  const M = window['dice-box-threejs'], Box = M.default || M;
+  const b = new Box('#d3floor', { assetPath: DICE3D + 'public/', sounds: !!SETTINGS.diceSound, volume: 45, sound_dieMaterial: 'plastic', theme_surface: 'green-felt',
+    theme_customColorset: col, theme_material: 'plastic', shadows: true, light_intensity: 0.9, baseScale: 60, strength: 1.1,
+    gravity_multiplier: D3_GRAV[SETTINGS.diceSpeed] || D3_GRAV.normal });
+  await b.initialize();
+  try { b.renderer.setClearColor(0x000000, 0); } catch (e) { }
+  try { const fl = document.getElementById('d3floor'), pr = Math.min(2, window.devicePixelRatio || 1); if (pr > 1) { b.renderer.setPixelRatio(pr); b.renderer.setSize(fl.clientWidth, fl.clientHeight); } } catch (e) { }
+  try { d3Dress(b, col.name, CS.set, col.background); } catch (e) { }
+  Object.assign(D3, { box: b, el, w, color: key }); return b;
+}
+// "1d20+2d6@17,3,5": same-sided dice grouped in the order they first appear, values in that order
+function d3Notation(all) {
+  const groups = []; all.forEach((d, i) => { let g = groups.find(x => x.s === +d.s); if (!g) groups.push(g = { s: +d.s, idx: [] }); g.idx.push(i); });
+  const order = groups.flatMap(g => g.idx);
+  return { text: groups.map(g => g.idx.length + 'd' + g.s).join('+') + '@' + order.map(i => Math.max(1, Math.min(+all[i].s, +all[i].v || 1))).join(','), order };
+}
+function d3Opacity(m, o) { [].concat(m.material || []).forEach(x => { x.transparent = true; x.opacity = o; }); }
+function d3Fade(b, entry, notKept = []) {
+  try { const ds = boxDice(entry); (D3.meshes || []).forEach(x => { const d = ds.find(y => y.k === x.k); d3Opacity(x.m, (d && d.drop) || notKept.includes(x.m) ? 0.3 : 1); }); b.renderer.render(b.scene, b.camera); } catch (e) { }
+}
+function d3Total(tray, entry) { const t = tray.querySelector('.d3tot'); if (t) t.innerHTML = esc(String(entry.total)) + (entry.crit ? '<small>nat 20</small>' : entry.fumble ? '<small>nat 1</small>' : ''); }
+// after a split reroll: every die back in the dice list (so the next throw clears them), the divider out
+function d3Unsplit(b, tray) {
+  if (D3.meshes) b.diceList = D3.meshes.map(x => x.m).filter(m => b.scene.children.includes(m));
+  if (D3.wall) { try { b.world.removeBody(D3.wall); } catch (e) { } D3.wall = null; }
+  D3.split = false; tray.classList.remove('split');
+}
+// throws during a split reroll start from the right-hand edge and head left, into the right half of the box
+function d3HookThrow(b) {
+  if (b.__gsThrow) return; b.__gsThrow = true;
+  const gnv = b.getNotationVectors.bind(b);
+  b.getNotationVectors = (...a) => {
+    const r = gnv(...a);
+    try { if (D3.split && r && r.vectors) { const cw = b.display.containerWidth; r.vectors.forEach(v => { v.pos.x = cw * (0.6 + Math.random() * 0.3); if (v.velocity.x > 0) v.velocity.x *= -0.6; }); } } catch (e) { }
+    return r;
+  };
+}
+const d3Ease = t => 1 - Math.pow(1 - t, 3);
+// a reroll in the 3D box: the dice that stay slide into the left half, a divider drops in, and only the rerolled dice
+// are thrown, into the right half. Resolves when they've settled (false when the box can't show it).
+async function d3Reroll(entry, changes) {
+  const b = D3.box, tray = D3.tray, box = $('#dicefx');
+  if (!b || !tray || !D3.meshes || D3.entry !== entry || DICE.entry !== entry || !box || box.hidden || !tray.isConnected) return false;
+  const rr = changes.filter(c => D3_SIDES.includes(+c.x.d.s)); if (!rr.length) return false;
+  const rrK = rr.map(c => c.x.k), kept = D3.meshes.filter(x => !rrK.includes(x.k)), old = D3.meshes.filter(x => rrK.includes(x.k));
+  try {
+    const cw = b.display.containerWidth, ch = b.display.containerHeight;
+    tray.classList.remove('landed', 'crit', 'fum'); tray.classList.add('split'); D3.split = true; d3HookThrow(b);
+    // the divider: a copy of one of the box's walls, standing in the middle
+    const lw = b.box_body && b.box_body.rightWall; // the library's "rightWall" faces +x, so a copy at x=0 keeps the new dice in the right half
+    if (lw && !D3.wall) { const W = new lw.constructor({ mass: 0, shape: lw.shapes[0], material: lw.material }); W.quaternion.copy(lw.quaternion); W.position.set(0, 0, 0); b.world.addBody(W); D3.wall = W; }
+    // slide the kept dice into a neat group in the left half
+    const n = kept.length, rows = n > 3 ? 2 : 1, cols = Math.ceil(n / rows);
+    const moves = kept.map((x, i) => { const r = Math.floor(i / cols), c = i % cols, p = x.m.position;
+      return { x, from: { x: p.x, y: p.y }, to: { x: -cw * 0.85 + (cw * 0.7) * (cols === 1 ? 0.5 : c / (cols - 1)), y: rows === 1 ? 0 : (r === 0 ? ch * 0.35 : -ch * 0.35) } }; });
+    old.forEach(x => d3Opacity(x.m, 0.25));
+    await new Promise(res => { const t0 = performance.now(); const step = () => { const t = Math.min(1, (performance.now() - t0) / 450), e = d3Ease(t);
+      moves.forEach(M => { const X = M.from.x + (M.to.x - M.from.x) * e, Y = M.from.y + (M.to.y - M.from.y) * e; M.x.m.position.x = X; M.x.m.position.y = Y; if (M.x.m.body) { M.x.m.body.position.x = X; M.x.m.body.position.y = Y; } });
+      b.renderer.render(b.scene, b.camera); if (t < 1) requestAnimationFrame(step); else res(); }; requestAnimationFrame(step); });
+    if (DICE.entry !== entry) return true;
+    // throw only the rerolled dice; the old ones are cleared by the throw, the kept ones stay put
+    b.diceList = old.map(x => x.m);
+    const list = rr.map(c => ({ s: c.x.d.s, v: c.to, k: c.x.k })), N = d3Notation(list);
+    const res = await Promise.race([b.roll(N.text), new Promise(r => setTimeout(() => r('slow'), 9000))]);
+    if (DICE.entry !== entry) return true;
+    if (res !== 'slow') await d3Still(b);
+    const fresh = (b.diceList || []).map((m, j) => ({ k: list[N.order[j]].k, m }));
+    D3.meshes = kept.concat(fresh);
+    const notKept = fresh.filter(x => { const c = rr.find(y => y.x.k === x.k); return c && c.kept !== c.to; }).map(x => x.m);
+    d3Fade(b, entry, notKept);
+    d3Total(tray, entry); tray.classList.add('landed');
+    if (entry.crit) tray.classList.add('crit'); else if (entry.fumble) tray.classList.add('fum');
+    try { if (navigator.vibrate) navigator.vibrate(25); } catch (e) { }
+    return true;
+  } catch (e) { return false; }
+}
+async function roll3d(entry, all) {
+  const box = $('#dicefx');
+  const tray = d3Tray();
+  box.appendChild(tray); tray.classList.remove('landed', 'crit', 'fum');
+  try {
+    if (D3.warm) await Promise.race([D3.warm, new Promise(r => setTimeout(r, 3000))]);
+    box.style.visibility = ''; box.hidden = false;
+    all = all.filter(d => D3_SIDES.includes(+d.s));
+    const b = await d3Box(tray), N = d3Notation(all);
+    if (DICE.entry !== entry) return true;
+    d3Unsplit(b, tray); D3.meshes = null;
+    const done = b.roll(N.text);
+    const res = await Promise.race([done, new Promise(r => setTimeout(() => r('slow'), 9000))]);
+    if (DICE.entry !== entry) return true;
+    if (res !== 'slow') await d3Still(b);
+    if (DICE.entry !== entry) return true;
+    D3.meshes = (b.diceList || []).map((m, j) => ({ k: all[N.order[j]] && all[N.order[j]].k, m })); D3.entry = entry;
+    // dropped dice (advantage, disadvantage, keep highest…) go see-through
+    d3Fade(b, entry);
+    d3Total(tray, entry);
+    tray.classList.add('landed');
+    if (entry.crit) tray.classList.add('crit'); else if (entry.fumble) tray.classList.add('fum');
+    try { if (navigator.vibrate) navigator.vibrate(entry.crit ? [30, 40, 60] : 25); } catch (e) { }
+    return true;
+  } catch (e) { tray.remove(); return false; }
+}
 function animateDice(entry) {
   stopDice();
   const ms = DICE_MS[SETTINGS.diceSpeed] || DICE_MS.normal;
@@ -8017,6 +8303,24 @@ function animateDice(entry) {
   box.innerHTML = '<div class="shelf">' + shown.map((d, i) => dieHtml(d, tone, i, ms)).join('') + (more > 0 ? `<span class="die-more">+${more} more</span>` : '') + '</div>';
   box.hidden = false; box.classList.remove('out');
   renderTray(false, true);
+  const land3 = () => {
+    shown.forEach((d, i) => { const el = box.querySelectorAll('.die')[i]; if (!el) return; el.classList.add('landed');
+      if (d.s === 20 && !d.drop && entry.crit && d.v >= 2) el.classList.add('crit');
+      if (d.s === 20 && !d.drop && d.v === 1 && entry.fumble) el.classList.add('fum'); });
+    renderTray(true); shareRoll(entry); entry.onLand && entry.onLand(entry);
+    diceBoxControls(entry);
+  };
+  box.classList.remove('d3');
+  if (dice3dWanted(all)) {
+    box.classList.add('d3'); const shelf = box.querySelector('.shelf'); shelf.classList.add('wait');
+    box.querySelectorAll('.die b').forEach((n, i) => { n.textContent = shown[i].v; });
+    roll3d(entry, all).then(ok => {
+      if (DICE.entry !== entry) return;
+      if (!ok) { box.classList.remove('d3'); shelf.classList.remove('wait'); land3(); return; }
+      shelf.classList.remove('wait'); land3();
+    });
+    return;
+  }
   const nums = [...box.querySelectorAll('.die b')];
   const spin = setInterval(() => nums.forEach((n, i) => { n.textContent = 1 + Math.floor(Math.random() * shown[i].s); }), 60);
   DICE.timers.push(spin);
@@ -9278,6 +9582,12 @@ function settingsHtml() {
     ${tourSettingsHtml()}
     <div class="setrow"><div class="grow"><b>Dice animation</b><div class="muted">Show the dice tumbling and landing on each roll. The total appears when they land.${REDUCED ? ' Your device asks for reduced motion, so this starts off.' : ''}</div></div>
       <button class="switch ${SETTINGS.diceAnim ? 'on' : ''}" data-act="setanim" aria-pressed="${SETTINGS.diceAnim}"><i></i>${SETTINGS.diceAnim ? 'On' : 'Off'}</button></div>
+    <div class="setrow" ${SETTINGS.diceAnim ? '' : 'style="opacity:.5"'}><div class="grow"><b>Dice style</b><div class="muted">3D: real dice thrown into a dice box (✕ on its corner closes it). Flat: the simple dice, the default on phones. d4s (and d2, d3, d100) show in the row of flat dice under the tray; more than 15 dice use the flat ones only.</div></div>
+      <div class="seg" role="group" aria-label="Dice style">${[['3d', '3D tray'], ['flat', 'Flat']].map(([v, l]) => `<button data-act="setd3" data-v="${v}" class="${(SETTINGS.dice3d ? '3d' : 'flat') === v ? 'on' : ''}" ${SETTINGS.diceAnim ? '' : 'disabled'}>${l}</button>`).join('')}</div></div>
+    <div class="setrow" style="flex-wrap:wrap;${SETTINGS.diceAnim && SETTINGS.dice3d ? '' : 'opacity:.5'}"><div class="grow" style="min-width:220px"><b>3D dice</b><div class="muted">Pick a set, and whether they clatter when they land.</div></div>
+      <select id="set-diceset" aria-label="Dice set" ${SETTINGS.diceAnim && SETTINGS.dice3d ? '' : 'disabled'}>${Object.entries(D3_SETS).map(([k, x]) => `<option value="${k}" ${(SETTINGS.diceSet || 'ivory') === k ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}</select>
+      <button class="switch ${SETTINGS.diceSound ? 'on' : ''}" data-act="setdicesnd" aria-pressed="${!!SETTINGS.diceSound}" ${SETTINGS.diceAnim && SETTINGS.dice3d ? '' : 'disabled'}><i></i>${SETTINGS.diceSound ? 'Sound' : 'Silent'}</button>
+      <button class="btn small" data-act="settest" ${SETTINGS.diceAnim ? '' : 'disabled'}>Try it</button></div>
     <div class="setrow" ${SETTINGS.diceAnim ? '' : 'style="opacity:.5"'}><div class="grow"><b>Animation speed</b><div class="muted">How long the dice take to land.</div></div>
       <div class="seg" role="group" aria-label="Animation speed">${[['quick', 'Quick'], ['normal', 'Normal'], ['dramatic', 'Dramatic']].map(([v, l]) => `<button data-act="setspeed" data-v="${v}" class="${sp === v ? 'on' : ''}" ${SETTINGS.diceAnim ? '' : 'disabled'}>${l}</button>`).join('')}</div></div>
     <div class="setrow" ${SETTINGS.diceAnim ? '' : 'style="opacity:.5"'}><div class="grow"><b>Dice stay on screen</b><div class="muted">Auto keeps them longer when you can reroll. Pointing at the dice keeps them up. The roll bar at the bottom always keeps the reroll buttons.</div></div>
@@ -9600,6 +9910,8 @@ document.addEventListener('click', ev => {
     case 'pdfopen': openModal('pdf', { stage: 'pick' }); break;
     case 'setanim': SETTINGS.diceAnim = !SETTINGS.diceAnim; saveSettings(); if (!SETTINGS.diceAnim) { stopDice(); const b = $('#dicefx'); b.hidden = true; renderTray(); } renderModal(); break;
     case 'setspeed': SETTINGS.diceSpeed = v; saveSettings(); renderModal(); break;
+    case 'setd3': SETTINGS.dice3d = v === '3d'; saveSettings(); renderModal(); if (SETTINGS.dice3d) setTimeout(d3Preload, 100); break;
+    case 'setdicesnd': SETTINGS.diceSound = !SETTINGS.diceSound; saveSettings(); renderModal(); break;
     case 'setshare': SETTINGS.share = v; saveSettings(); renderModal(); break;
     case 'tour': tourStart(v); break;
     case 'hpmaxedit': if (ui.viewing) break; ui.hpMaxEdit = true; renderGrid(); setTimeout(() => { const f = $('#f-hpmax'); if (f) { f.focus(); f.select(); } }, 0); break;
@@ -9985,6 +10297,7 @@ function doImport(lib) {
 }
 
 document.addEventListener('change', ev => {
+  if (ev.target && ev.target.id === 'set-diceset') { SETTINGS.diceSet = ev.target.value; saveSettings(); renderModal(); return; }
   const t = ev.target;
   if (t.dataset.cw != null && cwInput(t)) return;
   if (t.dataset.namesize) { if (tableLocked()) { renderModal(); return; } SETTINGS.nameSize = +t.value || 1; saveSettings(); syncCondLabels(); return; }
@@ -10227,6 +10540,7 @@ function startResize(handle, ev) {
 if (IN_OBR) startOwlbear();
 window.GrimsheetImport = { build: p => PDFIMPORT.build(p, { E, SRD, blankChar, newEntry, normalize, ctxFor }) };
 render();
+setTimeout(() => { try { d3Preload(); } catch (e) { } }, 1500);
 })();
 </script>
 </body>
