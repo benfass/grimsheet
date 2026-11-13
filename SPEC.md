@@ -679,3 +679,6 @@ Every change goes to a **test extension** first; players only get it after it's 
 - **Which d20 a reroll takes**: on an advantage or disadvantage roll, a one-die reroll (Heroic Inspiration, Lucky, a "reroll one d20" feature) now takes the **lower** of the two d20s. With advantage that's the dropped die, the only way the result can go up; with disadvantage it's the die that counts. Before, it took whichever die counted, so advantage rerolled the higher die (it could only get worse).
 - **Dice row position**: with the 3D box, the row of flat dice (numbers and reroll buttons) now sits above the box, and the box stays where it is when the row appears.
 - **Test suite** (tooling, not in the app): tests run two at a time (`runall.sh`), Playwright waits 5 s instead of 30 s for a missing element (`fast.js` preload), and the class-import test waits for the import to finish instead of a fixed 9 s. The suite went from about 10.5 minutes to under 5.
+
+## Single-die reroll (1.57.4)
+- When every die in the 3D box is being rerolled (a single d20, say), the box doesn't split: the die is thrown again across the whole box.
