@@ -670,3 +670,12 @@ Every change goes to a **test extension** first; players only get it after it's 
 - The divider is a physics wall too (a copy of one of the box's walls at the centre), and the kept dice stay where they are as obstacles.
 - The new total, the flat dice row, the roll bar, the toast and the reroll announcement to the table all wait until the rerolled dice have settled. A new die whose result isn't used ("use the higher" kept the old one) and dropped dice are see-through.
 - The next roll clears everything and removes the divider. d4s (not in the box) and rolls without the 3D box update at once as before.
+
+## Dice box on phones, close button (1.57.2)
+- Phones (touch screen whose short side is under 600 px) default to the flat dice; phones that had saved the old 3D default are switched to flat once (`d3phone` marker), and can turn 3D back on in Settings.
+- The dice box has a small ✕ on its top-left corner that closes the dice (same as the ✕ on the dice row); the rest of the box still lets clicks through to the sheet.
+
+## Reroll the lower d20; dice row above the box (1.57.3)
+- **Which d20 a reroll takes**: on an advantage or disadvantage roll, a one-die reroll (Heroic Inspiration, Lucky, a "reroll one d20" feature) now takes the **lower** of the two d20s. With advantage that's the dropped die, the only way the result can go up; with disadvantage it's the die that counts. Before, it took whichever die counted, so advantage rerolled the higher die (it could only get worse).
+- **Dice row position**: with the 3D box, the row of flat dice (numbers and reroll buttons) now sits above the box, and the box stays where it is when the row appears.
+- **Test suite** (tooling, not in the app): tests run two at a time (`runall.sh`), Playwright waits 5 s instead of 30 s for a missing element (`fast.js` preload), and the class-import test waits for the import to finish instead of a fixed 9 s. The suite went from about 10.5 minutes to under 5.

@@ -418,6 +418,9 @@ select.ed-inline{width:auto}
 .tray3d>svg{position:absolute;inset:0;width:100%;height:100%;display:block}
 .tray3d .d3floor{position:absolute;top:20px;bottom:20px;left:20px;right:20px;overflow:hidden;border-radius:3px}
 .tray3d canvas{display:block}
+.tray3d .d3x{pointer-events:auto;position:absolute;left:-8px;top:-8px;z-index:3;width:26px;height:26px;border-radius:50%;border:1px solid #c9a24a;background:#3a220f;color:#fff8e6;font-size:.8rem;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.35);padding:0}
+.tray3d .d3x:hover{background:#5d3920}
+@media (pointer:coarse){.tray3d .d3x{width:32px;height:32px;left:-10px;top:-10px}}
 .tray3d .d3wall{position:absolute;top:14px;bottom:14px;left:calc(50% - 5px);width:10px;border-radius:3px;background:linear-gradient(90deg,#3d2512,#7a4d2a 40%,#5d3920 70%,#2c1808);box-shadow:3px 0 8px rgba(0,0,0,.45),-3px 0 8px rgba(0,0,0,.3);opacity:0;transform:translateY(-14px);transition:opacity .25s,transform .3s;z-index:1;pointer-events:none}
 .tray3d.split .d3wall{opacity:1;transform:none}
 .dicefx.d3 .shelf.rolling .die{opacity:.45}
@@ -427,7 +430,7 @@ select.ed-inline{width:auto}
 .tray3d.crit{filter:drop-shadow(0 0 3px var(--gold)) drop-shadow(0 0 14px var(--gold))}
 .tray3d.fum{animation:fumflash .7s ease-out}
 @keyframes fumflash{0%,40%{filter:drop-shadow(0 0 4px var(--danger)) drop-shadow(0 0 18px var(--danger))}100%{filter:drop-shadow(0 0 2px var(--danger)) drop-shadow(0 10px 18px rgba(0,0,0,.28))}}
-.dicefx.d3 .shelf{margin-top:6px;padding:6px 10px 16px}
+.dicefx.d3 .shelf{margin-bottom:18px;padding:6px 10px}
 .dicefx.d3 .shelf.wait{visibility:hidden;height:0;padding:0;border:0;margin:0;overflow:hidden}
 .dicefx.d3 .die{width:40px;height:40px;animation:none}
 .dicefx.d3 .die b{font-size:.92rem}
@@ -3716,10 +3719,13 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.57.1';
+const APP_VERSION = '1.57.3';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
-const SETTINGS = Object.assign({ diceAnim: !REDUCED, dice3d: !navigator.webdriver, diceSound: true, diceSet: 'ivory', diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
+// phones (touch screen, short side under 600px) get the flat dice by default: the 3D box takes too much of a small screen
+const IS_PHONE = (() => { try { return matchMedia('(pointer:coarse)').matches && Math.min(screen.width, screen.height) < 600; } catch (e) { return false; } })();
+const SETTINGS = Object.assign({ diceAnim: !REDUCED, dice3d: !navigator.webdriver && !IS_PHONE, diceSound: true, diceSet: 'ivory', diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
+if (IS_PHONE && !SETTINGS.d3phone) { SETTINGS.d3phone = 1; SETTINGS.dice3d = false; try { localStorage.setItem(SETKEY, JSON.stringify(SETTINGS)); } catch (e) { } }
 function saveSettings() { try { localStorage.setItem(SETKEY, JSON.stringify(SETTINGS)); } catch (e) { } try { if (typeof dmPublishTable === 'function' && IN_OBR && OBRX.ready) dmPublishTable(); } catch (e) { } }
 const DICE_MS = { quick: 450, normal: 850, dramatic: 1400 };
 document.documentElement.classList.toggle('compact', !!SETTINGS.compact);
@@ -7885,6 +7891,13 @@ function rrDiceOf(entry, r) {
     if (r.on === 'damage' && (isD20 || entry.kind !== 'dmg')) return;
     // only parts that are a plain sum of dice can be recomputed safely
     if (!isD20 && Math.abs(p.value) !== p.dice.reduce((a, d) => a + d.v, 0)) return;
+    if (isD20 && p.dice.length > 1) {
+      // advantage / disadvantage: reroll the lower d20. With advantage that's the dropped die (the only way up); with
+      // disadvantage it's the die that counts. Rerolling the higher die can only make the result worse.
+      let lo = 0; p.dice.forEach((d, j) => { if (d.v < p.dice[lo].v) lo = j; });
+      const d = p.dice[lo]; if (!(r.dice === 'low' && d.v > r.low)) out.push({ pi, j: lo, k: pi + ':' + lo, d, p });
+      return;
+    }
     p.dice.forEach((d, j) => { if (d.drop || (r.dice === 'low' && d.v > r.low)) return; out.push({ pi, j, k: pi + ':' + j, d, p }); });
   });
   if (r.on === 'd20' && r.dice === 'one') return out.slice(0, 1);
@@ -8153,7 +8166,7 @@ function d3Preload() {
   D3.warm = (async () => {
     const wasHidden = box.hidden, tray = d3Tray();
     if (wasHidden) { box.style.visibility = 'hidden'; box.hidden = false; }
-    box.insertBefore(tray, box.firstChild);
+    box.appendChild(tray);
     try { const b = await d3Box(tray); const snd = b.sounds; b.sounds = false; await Promise.race([b.roll('1d6+1d8+1d10+1d12+1d20@2,2,2,2,2'), new Promise(r => setTimeout(r, 8000))]); b.sounds = snd; try { b.clearDice && b.clearDice(); } catch (e) { } }
     catch (e) { }
     if (wasHidden && !DICE.entry) { box.hidden = true; } box.style.visibility = '';
@@ -8161,7 +8174,7 @@ function d3Preload() {
 }
 function d3Tray() {
   let tray = D3.tray || document.getElementById('tray3d');
-  if (!tray) { tray = D3.tray = document.createElement('div'); tray.id = 'tray3d'; tray.className = 'tray3d'; tray.innerHTML = '<div class="d3floor" id="d3floor"></div><div class="d3wall"></div><span class="d3tot"></span>'; }
+  if (!tray) { tray = D3.tray = document.createElement('div'); tray.id = 'tray3d'; tray.className = 'tray3d'; tray.innerHTML = '<div class="d3floor" id="d3floor"></div><div class="d3wall"></div><span class="d3tot"></span><button class="d3x" data-act="dicehide" title="Close the dice box" aria-label="Close the dice box">✕</button>'; }
   return tray;
 }
 // the library reports the result a moment before the last wobble ends: wait until the dice are still
@@ -8278,7 +8291,7 @@ async function d3Reroll(entry, changes) {
 async function roll3d(entry, all) {
   const box = $('#dicefx');
   const tray = d3Tray();
-  box.insertBefore(tray, box.firstChild); tray.classList.remove('landed', 'crit', 'fum');
+  box.appendChild(tray); tray.classList.remove('landed', 'crit', 'fum');
   try {
     if (D3.warm) await Promise.race([D3.warm, new Promise(r => setTimeout(r, 3000))]);
     box.style.visibility = ''; box.hidden = false;
@@ -9590,7 +9603,7 @@ function settingsHtml() {
     ${tourSettingsHtml()}
     <div class="setrow"><div class="grow"><b>Dice animation</b><div class="muted">Show the dice tumbling and landing on each roll. The total appears when they land.${REDUCED ? ' Your device asks for reduced motion, so this starts off.' : ''}</div></div>
       <button class="switch ${SETTINGS.diceAnim ? 'on' : ''}" data-act="setanim" aria-pressed="${SETTINGS.diceAnim}"><i></i>${SETTINGS.diceAnim ? 'On' : 'Off'}</button></div>
-    <div class="setrow" ${SETTINGS.diceAnim ? '' : 'style="opacity:.5"'}><div class="grow"><b>Dice style</b><div class="muted">3D: real dice thrown into a dice tray. Flat: the simple dice. d4s (and d2, d3, d100) show in the row of flat dice under the tray; more than 15 dice use the flat ones only.</div></div>
+    <div class="setrow" ${SETTINGS.diceAnim ? '' : 'style="opacity:.5"'}><div class="grow"><b>Dice style</b><div class="muted">3D: real dice thrown into a dice box (✕ on its corner closes it). Flat: the simple dice, the default on phones. d4s (and d2, d3, d100) show in the row of flat dice under the tray; more than 15 dice use the flat ones only.</div></div>
       <div class="seg" role="group" aria-label="Dice style">${[['3d', '3D tray'], ['flat', 'Flat']].map(([v, l]) => `<button data-act="setd3" data-v="${v}" class="${(SETTINGS.dice3d ? '3d' : 'flat') === v ? 'on' : ''}" ${SETTINGS.diceAnim ? '' : 'disabled'}>${l}</button>`).join('')}</div></div>
     <div class="setrow" style="flex-wrap:wrap;${SETTINGS.diceAnim && SETTINGS.dice3d ? '' : 'opacity:.5'}"><div class="grow" style="min-width:220px"><b>3D dice</b><div class="muted">Pick a set, and whether they clatter when they land.</div></div>
       <select id="set-diceset" aria-label="Dice set" ${SETTINGS.diceAnim && SETTINGS.dice3d ? '' : 'disabled'}>${Object.entries(D3_SETS).map(([k, x]) => `<option value="${k}" ${(SETTINGS.diceSet || 'ivory') === k ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}</select>

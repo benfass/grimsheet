@@ -1,7 +1,7 @@
 /* Grimsheet helpers shared by background.html and gm.html (the panel keeps its own copy). */
 window.GS = (function () {
   const GS = {
-    VERSION: '1.57.1',
+    VERSION: '1.57.3',
     CH_ROLL: 'com.grimsheet-test/roll',
     CH_GM: 'com.grimsheet-test/gm',        // GM ↔ player: hp changes, sheet requests and replies
     CH_LOCAL: 'com.grimsheet-test/local',  // same browser: GM menu → GM panel
