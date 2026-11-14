@@ -713,3 +713,7 @@ Every change goes to a **test extension** first; players only get it after it's 
 ## Panel fits the screen (1.58.2)
 - **Bug**: on a phone held sideways (about 390 px tall) the Owlbear panel asked for its full size (Medium: 760×820), Owlbear cut it off into a thin strip, and it couldn't be scrolled because the page inside thought it had the full height.
 - **Fix**: the panel's requested size is capped to Owlbear's viewport (`OBR.viewport.getWidth/Height`): width at most viewport − 16, height at most viewport − 64 on short screens (− 90 otherwise), at least 280×220. It's checked again every 2.5 s while the panel is visible and when the phone turns, so turning the phone resizes the panel. Settings → Panel size still sets the size wanted on larger screens.
+
+## Short panels (1.58.3)
+- **Bug**: on a phone held sideways, Owlbear gives the panel only about 165 px of height. The header was meant to scroll away on short screens, but that rule sat above the sticky header rule in the stylesheet and lost to it, so the 188 px header and the 63 px roll bar covered the whole panel and nothing else could be reached (not even Settings).
+- **Fix**: the short-screen rules now win (`html .top`), so the header scrolls away with the sheet whenever the panel is under 700 px tall or 560 px wide. Under 420 px the roll bar shrinks to one line (about 45 px: smaller total, breakdown cut to one line, follow-up buttons hidden), and the dice use the flat row instead of the 200 px 3D box.

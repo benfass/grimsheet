@@ -189,6 +189,8 @@ function d3Still(b) {
 }
 function dice3dWanted(all) {
   const n3 = all.filter(d => D3_SIDES.includes(+d.s)).length;
+  // the box is 200 px tall: on a very short panel the flat dice are used instead
+  if (typeof ui !== 'undefined' && window.innerHeight < 420) return false;
   if (!SETTINGS.dice3d || D3.failed || REDUCED || !n3 || n3 > 15) return false;
   try { const c = document.createElement('canvas'); if (!(c.getContext('webgl2') || c.getContext('webgl'))) { D3.failed = true; return false; } } catch (e) { D3.failed = true; return false; }
   return true;

@@ -54,7 +54,6 @@ window.GRIMSHEET_TEST = true;
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:.9375rem;line-height:1.45}
 /* in small panels the toolbar scrolls away instead of staying pinned */
-@media (max-width:560px),(max-height:700px){.top{position:relative;top:auto}.top-in{gap:6px 10px}.tools .btn{padding:4px 9px}}
 html.compact{font-size:13.5px}
 html.compact .grid,html.compact .lrow,html.compact .lcol{gap:9px}
 html.compact .grid{margin-top:9px}
@@ -75,6 +74,19 @@ button{cursor:pointer}
 
 /* toolbar */
 .top{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--surface);border-bottom:1px solid var(--line)}
+/* small or short screens: the header scrolls away with the page (it was meant to since 1.x, but this rule sat above the
+   sticky one and lost to it, so on a phone held sideways the header and the roll bar filled the whole panel) */
+@media (max-width:560px),(max-height:700px){html .top{position:relative;top:auto}html .top-in{gap:6px 10px}html .tools .btn{padding:4px 9px}}
+/* very short panels (a phone held sideways): a one-line roll bar, so the sheet keeps most of the height */
+@media (max-height:420px){
+  html .tray-in{min-height:0;padding-block:3px;gap:8px}
+  html .tray .tot{font-size:1.35rem;min-width:44px}
+  html .tray .ttl{font-size:.9rem;flex-wrap:nowrap;white-space:nowrap;overflow:hidden}
+  html .tray .brk{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:.75rem}
+  html .tray .fu{display:none}
+  html .dicefx{bottom:calc(46px + env(safe-area-inset-bottom,0px))}
+  html .toast{bottom:calc(52px + env(safe-area-inset-bottom,0px))}
+}
 .top-in{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;padding-block:10px;max-width:1500px;margin:0 auto}
 .ident{display:flex;flex-direction:column;min-width:0;flex:1 1 220px}
 .ident .nm{font-family:var(--f-display);font-size:1.45rem;font-weight:700;line-height:1.1;letter-spacing:.01em;text-wrap:balance}
@@ -3788,7 +3800,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.58.2';
+const APP_VERSION = '1.58.3';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 // phones (touch screen, short side under 600px) get the flat dice by default: the 3D box takes too much of a small screen
@@ -8306,6 +8318,8 @@ function d3Still(b) {
 }
 function dice3dWanted(all) {
   const n3 = all.filter(d => D3_SIDES.includes(+d.s)).length;
+  // the box is 200 px tall: on a very short panel the flat dice are used instead
+  if (typeof ui !== 'undefined' && window.innerHeight < 420) return false;
   if (!SETTINGS.dice3d || D3.failed || REDUCED || !n3 || n3 > 15) return false;
   try { const c = document.createElement('canvas'); if (!(c.getContext('webgl2') || c.getContext('webgl'))) { D3.failed = true; return false; } } catch (e) { D3.failed = true; return false; }
   return true;
