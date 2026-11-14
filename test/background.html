@@ -218,6 +218,28 @@ window.GRIMSHEET_TEST = true;
       OBR.notification.show(`${d.who} (${d.char}): ${d.title} = ${d.total}${extra}${d.gmOnly ? ' [GM only]' : ''}`, d.crit ? 'SUCCESS' : d.fumble ? 'WARNING' : 'DEFAULT').catch(() => { });
     });
 
+    /* ---- other players' dice: a small dice box at the bottom right of the map (dice.html), even with Grimsheet closed.
+       The roll goes into a queue in browser storage; the box plays it and closes itself a few seconds later. ---- */
+    const DBOX = 'com.grimsheet-test/dicebox', DQ = 'grimsheet.dicebox.q', DALIVE = 'grimsheet.dicebox.alive';
+    let dOpening = 0, dN = 0;
+    listen('com.grimsheet-test/dice', async ev => {
+      try {
+        const d = ev.data; if (!d || d.v !== 1) return;
+        if (d.gmOnly && me.role !== 'GM') return;
+        const st = S.read('grimsheet.settings.v1') || {};
+        if (st.diceAnim === false || st.watchDice === false || st.dice3d === false) return;
+        try { if (st.diceAnim == null && matchMedia('(prefers-reduced-motion: reduce)').matches) return; } catch (e) { }
+        const al = S.read(DALIVE), open = !!(al && Date.now() - al.at < 1500);
+        if (d.rr && !open) return;
+        const q = (S.read(DQ) || []).filter(x => x && Date.now() - x.at < 10000); q.push({ at: Date.now(), n: S.uid() + (dN++), d }); S.write(DQ, q.slice(-6));
+        if (open || Date.now() - dOpening < 4000) return;
+        dOpening = Date.now();
+        const [w, h] = await Promise.all([OBR.viewport.getWidth(), OBR.viewport.getHeight()]);
+        await OBR.popover.open({ id: DBOX, url: new URL('dice.html', location.href).href, width: 330, height: 215, anchorReference: 'POSITION', anchorPosition: { left: w - 10, top: h - 10 },
+          anchorOrigin: { horizontal: 'RIGHT', vertical: 'BOTTOM' }, transformOrigin: { horizontal: 'RIGHT', vertical: 'BOTTOM' }, disableClickAway: true, hidePaper: true, marginThreshold: 8 });
+      } catch (e) { }
+    });
+
     /* ---- GM requests aimed at this player ---- */
     const done = new Set();
     listen(S.CH_GM, async ev => {

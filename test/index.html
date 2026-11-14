@@ -3788,7 +3788,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.58.0';
+const APP_VERSION = '1.58.1';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 // phones (touch screen, short side under 600px) get the flat dice by default: the 3D box takes too much of a small screen
@@ -4380,7 +4380,6 @@ async function startOwlbear() {
       try { applyTheme(await OBR.theme.getTheme()); OBR.theme.onChange(applyTheme); } catch (e) { }
       OBRX.room = OBR.room && OBR.room.id ? OBR.room.id : 'room';
       OBR.broadcast.onMessage(CH_ROLL, ev => receiveRoll(ev.data));
-      OBR.broadcast.onMessage(CH_DICE, ev => receiveDice(ev.data));
       OBR.broadcast.onMessage(CH_GM, ev => receiveGm(ev.data));
       OBR.broadcast.onMessage(CH_NOTES, ev => notesReceive(ev.data));
       OBR.broadcast.onMessage(CH_HB, ev => hbReceive(ev.data));
@@ -4749,8 +4748,9 @@ function shareRoll(entry) {
   feedPush(Object.assign({ mine: true }, msg));
   OBRX.api.broadcast.sendMessage(CH_ROLL, msg, { destination: 'REMOTE' }).catch(() => toast('Couldn\'t share that roll with the room.'));
 }
-// everyone sees the dice: when your dice are thrown, the room gets the same dice (your dice set, your numbers) to
-// throw in their own dice box. Each screen runs its own tumble; the numbers they land on are yours.
+// everyone sees the dice: when your dice are thrown, the room gets the same dice (your dice set, your numbers). Each
+// player's background page shows them in a small dice box at the bottom right of the map (ext/dice.html), which runs
+// its own tumble and lands on your numbers.
 const diceParts = entry => entry.parts.map(p => ({ label: p.label === 'd20' ? 'd20' : '', neg: !!p.neg, dice: (p.dice || []).map(d => ({ s: d.s, v: d.v, drop: !!d.drop })) }));
 function sendDice(entry) {
   if (!IN_OBR || !OBRX.ready || SETTINGS.share === 'off' || entry.shared || entry.title === 'Test roll' || ui.viewing) return;
@@ -4763,29 +4763,6 @@ function sendDiceReroll(entry, changes) {
   if (!entry.diceSent || !IN_OBR || !OBRX.ready || ui.viewing) return;
   OBRX.api.broadcast.sendMessage(CH_DICE, { v: 1, rr: 1, id: entry.id, total: String(entry.total), crit: !!entry.crit, fumble: !!entry.fumble, gmOnly: SETTINGS.share === 'gm', parts: diceParts(entry),
     changes: changes.map(c => ({ k: c.x.k, s: c.x.d.s, to: c.to, kept: c.kept })) }, { destination: 'REMOTE' }).catch(() => { });
-}
-function receiveDice(d) {
-  try {
-    if (!d || d.v !== 1 || !Array.isArray(d.parts)) return;
-    if (d.gmOnly && OBRX.me.role !== 'GM') return;
-    if (!SETTINGS.diceAnim || SETTINGS.watchDice === false || ui.rrPick || document.hidden) return;
-    const cur = DICE.entry, box = $('#dicefx'), showing = box && !box.hidden && !box.classList.contains('out');
-    const parts = d.parts.slice(0, 40).map(p => ({ label: p.label === 'd20' ? 'd20' : '', neg: !!p.neg, value: 0, dice: (p.dice || []).slice(0, 40).map(x => ({ s: +x.s || 6, v: +x.v || 1, drop: !!x.drop })) }));
-    if (d.rr) {
-      if (!showing || !cur || !cur.spec || cur.spec.id !== d.id || !cur.landed) return;
-      cur.parts = parts; cur.total = String(d.total); cur.crit = !!d.crit; cur.fumble = !!d.fumble;
-      const ch = (d.changes || []).map(c => ({ x: { k: String(c.k), d: { s: +c.s } }, to: +c.to, kept: +c.kept })), ks = ch.map(c => c.x.k);
-      let p = null; try { if (SETTINGS.dice3d) p = d3Reroll(cur, ch); } catch (e) { p = null; }
-      if (p) p.then(() => paintDiceBox(cur, ks), () => paintDiceBox(cur, ks)); else paintDiceBox(cur, ks);
-      return;
-    }
-    if (!parts.some(p => p.dice.length)) return;
-    // your own dice come first: while they're rolling, or while they still offer a reroll, other people's dice wait their turn
-    if (showing && cur && !cur.spec && (!cur.landed || rrSources(cur).length)) return;
-    if (showing && cur && cur.spec && !cur.landed) { DICE.next = d; return; }
-    animateDice({ id: 'spec-' + d.id, spec: { id: d.id, who: String(d.who || 'Someone').slice(0, 40), char: String(d.char || '').slice(0, 40), set: d.set, color: d.color }, title: String(d.title || '').slice(0, 80),
-      kind: d.kind || '', mode: d.mode, total: String(d.total), crit: !!d.crit, fumble: !!d.fumble, parts, fu: [] });
-  } catch (e) { }
 }
 function receiveRoll(d) {
   if (!d || d.v !== 1) return;
@@ -8344,7 +8321,7 @@ async function d3Box(el) {
   el.querySelectorAll('canvas').forEach(c => c.remove());
   const M = window['dice-box-threejs'], Box = M.default || M;
   const b = new Box('#d3floor', { assetPath: DICE3D + 'public/', sounds: !!SETTINGS.diceSound, volume: 45, sound_dieMaterial: 'plastic', theme_surface: 'green-felt',
-    theme_customColorset: col, theme_material: 'plastic', shadows: true, light_intensity: 0.9, baseScale: 60, strength: 1.1,
+    theme_customColorset: col, theme_material: 'plastic', shadows: true, light_intensity: 0.9, baseScale: D3.scale || 60, strength: 1.1,
     gravity_multiplier: D3_GRAV[SETTINGS.diceSpeed] || D3_GRAV.normal });
   await b.initialize();
   try { b.renderer.setClearColor(0x000000, 0); } catch (e) { }
@@ -8462,7 +8439,7 @@ function animateDice(entry) {
   box.innerHTML = (entry.spec ? `<div class="specwho">${esc(entry.spec.who)}${entry.spec.char ? ' (' + esc(entry.spec.char) + ')' : ''}: ${esc(entry.title)}</div>` : '') + '<div class="shelf">' + shown.map((d, i) => dieHtml(d, tone, i, ms)).join('') + (more > 0 ? `<span class="die-more">+${more} more</span>` : '') + '</div>';
   box.hidden = false; box.classList.remove('out');
   if (!entry.spec) renderTray(false, true);
-  const landed = () => { entry.landed = true; if (entry.spec) { if (DICE.next) { const nx = DICE.next; DICE.next = null; DICE.timers.push(setTimeout(() => { if (DICE.entry === entry) receiveDice(nx); }, 1500)); } } else { renderTray(true); shareRoll(entry); entry.onLand && entry.onLand(entry); } diceBoxControls(entry); };
+  const landed = () => { entry.landed = true; if (!entry.spec) { renderTray(true); shareRoll(entry); entry.onLand && entry.onLand(entry); } diceBoxControls(entry); };
   const land3 = () => {
     shown.forEach((d, i) => { const el = box.querySelectorAll('.die')[i]; if (!el) return; el.classList.add('landed');
       if (d.s === 20 && !d.drop && entry.crit && d.v >= 2) el.classList.add('crit');
@@ -9779,7 +9756,7 @@ function settingsHtml() {
       <button class="switch ${SETTINGS.diceAnim ? 'on' : ''}" data-act="setanim" aria-pressed="${SETTINGS.diceAnim}"><i></i>${SETTINGS.diceAnim ? 'On' : 'Off'}</button></div>
     <div class="setrow" ${SETTINGS.diceAnim ? '' : 'style="opacity:.5"'}><div class="grow"><b>Dice style</b><div class="muted">3D: real dice thrown into a dice box (✕ on its corner closes it). Flat: the simple dice, the default on phones. A d100 is thrown as two dice, tens and ones. d2 and d3 show only in the row of flat dice; more than 15 dice use the flat ones only.</div></div>
       <div class="seg" role="group" aria-label="Dice style">${[['3d', '3D tray'], ['flat', 'Flat']].map(([v, l]) => `<button data-act="setd3" data-v="${v}" class="${(SETTINGS.dice3d ? '3d' : 'flat') === v ? 'on' : ''}" ${SETTINGS.diceAnim ? '' : 'disabled'}>${l}</button>`).join('')}</div></div>
-    ${IN_OBR ? `<div class="setrow" ${SETTINGS.diceAnim ? '' : 'style="opacity:.5"'}><div class="grow"><b>Other players' dice</b><div class="muted">When someone shares a roll, their dice roll on your screen too, in their dice set, landing on their numbers. Your own dice always come first.</div></div>
+    ${IN_OBR ? `<div class="setrow" ${SETTINGS.diceAnim ? '' : 'style="opacity:.5"'}><div class="grow"><b>Other players' dice</b><div class="muted">When someone shares a roll, their dice roll in a small dice box at the bottom right of the map, in their dice set, landing on their numbers. It shows even with Grimsheet closed, and goes away by itself.</div></div>
       <button class="switch ${SETTINGS.watchDice !== false ? 'on' : ''}" data-act="setwatch" aria-pressed="${SETTINGS.watchDice !== false}" ${SETTINGS.diceAnim ? '' : 'disabled'}><i></i>${SETTINGS.watchDice !== false ? 'Shown' : 'Hidden'}</button></div>` : ''}
     <div class="setrow" style="flex-wrap:wrap;${SETTINGS.diceAnim && SETTINGS.dice3d ? '' : 'opacity:.5'}"><div class="grow" style="min-width:220px"><b>3D dice</b><div class="muted">Pick a set, and whether they clatter when they land.</div></div>
       <select id="set-diceset" aria-label="Dice set" ${SETTINGS.diceAnim && SETTINGS.dice3d ? '' : 'disabled'}>${Object.entries(D3_SETS).map(([k, x]) => `<option value="${k}" ${(SETTINGS.diceSet || 'ivory') === k ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}</select>
