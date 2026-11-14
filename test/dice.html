@@ -318,12 +318,12 @@ async function roll3d(entry, all) {
   const tray = d3Tray();
   box.appendChild(tray); tray.classList.remove('landed', 'crit', 'fum');
   try {
-    // slow devices: the box gets 3 s to load (1.5 s once it has loaded before) and 6 s to throw; past that this roll
+    // slow devices: the box gets 5 s to load the first time (1.5 s once it has loaded) and 6 s to throw; past that this roll
     // uses the flat dice, and the player is asked whether to switch to them for good
-    if (D3.warm) await d3Within(D3.warm, 3000);
+    if (D3.warm) await d3Within(D3.warm, D3.box ? 1500 : 5000);
     box.style.visibility = ''; box.hidden = false;
     all = all.filter(d => D3_SIDES.includes(+d.s));
-    const b = await d3Within(d3Box(tray), D3.box ? 1500 : 3000), N = d3Notation(all);
+    const b = await d3Within(d3Box(tray), D3.box ? 1500 : 5000), N = d3Notation(all);
     if (b === D3_LATE) { d3Slow(); tray.remove(); return false; }
     if (DICE.entry !== entry) return true;
     d3Unsplit(b, tray); D3.meshes = null;

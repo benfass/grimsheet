@@ -3800,7 +3800,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.58.4';
+const APP_VERSION = '1.58.5';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 // phones (touch screen, short side under 600px) get the flat dice by default: the 3D box takes too much of a small screen
@@ -8447,12 +8447,12 @@ async function roll3d(entry, all) {
   const tray = d3Tray();
   box.appendChild(tray); tray.classList.remove('landed', 'crit', 'fum');
   try {
-    // slow devices: the box gets 3 s to load (1.5 s once it has loaded before) and 6 s to throw; past that this roll
+    // slow devices: the box gets 5 s to load the first time (1.5 s once it has loaded) and 6 s to throw; past that this roll
     // uses the flat dice, and the player is asked whether to switch to them for good
-    if (D3.warm) await d3Within(D3.warm, 3000);
+    if (D3.warm) await d3Within(D3.warm, D3.box ? 1500 : 5000);
     box.style.visibility = ''; box.hidden = false;
     all = all.filter(d => D3_SIDES.includes(+d.s));
-    const b = await d3Within(d3Box(tray), D3.box ? 1500 : 3000), N = d3Notation(all);
+    const b = await d3Within(d3Box(tray), D3.box ? 1500 : 5000), N = d3Notation(all);
     if (b === D3_LATE) { d3Slow(); tray.remove(); return false; }
     if (DICE.entry !== entry) return true;
     d3Unsplit(b, tray); D3.meshes = null;
