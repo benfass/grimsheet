@@ -3800,7 +3800,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.59.0';
+const APP_VERSION = '1.59.1';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 // phones (touch screen, short side under 600px) get the flat dice by default: the 3D box takes too much of a small screen
@@ -4673,7 +4673,7 @@ function reportInit(en) {
   OBRX.api.broadcast.sendMessage(CH_GM, { type: 'init', id: uid(), from: OBRX.me.id, owner: OBRX.me.name, charId: C().id, name: C().name, total: en.total }, { destination: 'REMOTE' }).catch(() => { });
 }
 async function receiveGm(d) {
-  if (d && (d.type === 'give' || d.type === 'giveGot' || d.type === 'giveAck')) { if (d.to === OBRX.me.id) giveMessage(d); return; }
+  if (d && /^give/.test(d.type || '')) { if (d.to === OBRX.me.id) giveMessage(d); return; }
   if (!d || !OBRX.ready) return;
   if (d.type === 'init') {
     if (OBRX.me.role !== 'GM') return;
@@ -4750,13 +4750,23 @@ function giftBannerHtml() {
   if (!IN_OBR || ui.viewing) return '';
   return giftList().map(g => `<div class="banner" style="background:var(--accent-soft)"><span style="flex:1;min-width:200px">🎁 <b>${esc(g.from || 'The DM')}</b> sent you a character: <b>${esc(g.name || 'a sheet')}</b>.</span><button class="btn small primary" data-act="giftyes" data-id="${esc(g.id)}">Add to my characters</button><button class="btn small ghost" data-act="giftno" data-id="${esc(g.id)}">No thanks</button></div>`).join('');
 }
-const giveSendMsg = (x, to) => OBRX.api.broadcast.sendMessage(CH_GM, x, { destination: to === OBRX.me.id ? 'LOCAL' : 'REMOTE' }).catch(() => { });
+const giveSendMsg = (x, to) => OBRX.api.broadcast.sendMessage(CH_GM, x, { destination: to === OBRX.me.id ? 'LOCAL' : 'REMOTE' }).then(() => '', e => String((e && (e.message || e.error && e.error.message)) || e || 'refused').slice(0, 200));
+const giveOut = {}, givePong = {}, giftWait = {};
+// a part went missing on the way: after a quiet moment, ask the sender for what's still missing (three times at most)
+function giftChase(id, fromId, p, total, send) {
+  const w = giftWait[id] = giftWait[id] || { n: 0 }; clearTimeout(w.t);
+  w.t = setTimeout(() => { if (w.n++ >= 3) return; const missing = []; for (let i = 0; i < total; i++) if (p[i] == null) missing.push(i); if (missing.length) { send({ type: 'giveMiss', id, to: fromId, missing: missing.slice(0, 60) }); giftChase(id, fromId, p, total, send); } }, 3500);
+}
 async function giveMessage(d) {
+  if (d.type === 'givePing') { if (!bgAlive()) giveSendMsg({ type: 'givePong', id: d.id, to: d.fromId, ver: APP_VERSION }, d.fromId); return; }
+  if (d.type === 'givePong') { if (givePong[d.id]) givePong[d.id](d.ver || '?'); return; }
+  if (d.type === 'giveMiss') { const o = giveOut[d.id]; if (o) for (const i of d.missing || []) if (o.parts[i] != null) { await giveSendMsg(Object.assign({}, o.head, { part: i, data: o.parts[i] }), o.head.to); await new Promise(r => setTimeout(r, 60)); } return; }
   if (d.type === 'give') {
     // the background page stores gifts when it's running; the panel only shows them (and stores them when it isn't)
     if (!bgAlive()) {
       const p = giftParts[d.id] = giftParts[d.id] || []; p[d.part] = d.data;
-      if (p.filter(x => x != null).length < d.parts) return;
+      if (p.filter(x => x != null).length < d.parts) { giftChase(d.id, d.fromId, p, d.parts, x => giveSendMsg(x, d.fromId)); return; }
+      clearTimeout((giftWait[d.id] || {}).t);
       delete giftParts[d.id];
       const all = readJSON(GIFTS) || {}; all[d.id] = { id: d.id, data: p.join(''), from: String(d.from || 'The DM').slice(0, 40), fromId: d.fromId, name: String(d.name || '').slice(0, 80), at: Date.now() };
       try { localStorage.setItem(GIFTS, JSON.stringify(all)); } catch (e) { return; }
@@ -4768,6 +4778,7 @@ async function giveMessage(d) {
   if (d.type === 'giveGot') {
     const gv = readJSON(GIVES) || {}; if (!gv[d.id]) return;
     gv[d.id].got = true; try { localStorage.setItem(GIVES, JSON.stringify(gv)); } catch (e) { }
+    delete giveOut[d.id];
     if (ui.modal && ui.modal.type === 'give' && ui.modal.sent === d.id) { closeModal(); }
     toast(`Sent ${gv[d.id].name} to ${gv[d.id].toName}. It's theirs once they accept.`); return;
   }
@@ -4821,7 +4832,10 @@ function giveHtml(md) {
     <div><div class="sub-h" style="margin-top:0">Their token <span class="muted" style="font-weight:400">(optional)</span></div>
       ${md.loading ? '<div class="muted">Looking at the map…</div>' : rows.length ? `<div class="tokgrid">${rows.map(r => `<button class="tokpick ${md.tok === r.id ? 'on' : ''}" data-act="givetok" data-v="${esc(r.id)}" ${r.pc ? 'disabled title="Already linked to ' + esc(r.pc) + '"' : ''}>${r.img ? `<img src="${esc(r.img)}" alt="">` : '<span class="noimg">?</span>'}<span class="tp-n">${esc(r.name)}</span><span class="tp-s">${r.pc ? 'Linked: ' + esc(r.pc) : md.tok === r.id ? 'Chosen ✓' : r.away ? 'Elsewhere' : ''}</span></button>`).join('')}</div>` : '<div class="muted">No character tokens in this scene. You can send the sheet now; the player can link a token later by right-clicking it.</div>'}</div>
     ${Object.keys(store.chars).length > 1 ? `<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="give-rm" ${md.remove ? 'checked' : ''}> Remove my copy once they accept</label>` : ''}
-    ${md.state === 'sending' ? '<div class="muted">Sending…</div>' : md.state === 'failed' ? `<div class="banner warn" style="margin:0">Not delivered. Is ${esc(md.toName || 'the player')} in the room with Grimsheet added? You can try again.</div>` : ''}
+    ${md.state === 'sending' ? '<div class="muted">Sending…</div>'
+      : md.state === 'noanswer' ? `<div class="banner warn" style="margin:0">${esc(md.toName || 'The player')}'s Grimsheet didn't answer. They need <b>${window.GRIMSHEET_TEST ? 'Grimsheet TEST' : 'Grimsheet'}</b> ${APP_VERSION} or newer added in this room, the same one you're using${window.GRIMSHEET_TEST ? ' (the regular Grimsheet can\'t hear the TEST one)' : ''}. If they have it, ask them to reload the page, then try again.</div>`
+      : md.state === 'error' ? `<div class="banner warn" style="margin:0">Owlbear wouldn't send it: ${esc(md.why || 'unknown reason')}. You can try again.</div>`
+      : md.state === 'failed' ? `<div class="banner warn" style="margin:0">${esc(md.toName || 'The player')}'s Grimsheet answered, but the sheet didn't arrive whole. Try again.</div>` : ''}
   </div><div class="dlg-f"><span class="sp"></span><button class="btn" data-act="close">Cancel</button><button class="btn primary" data-act="givesend" ${md.to && md.state !== 'sending' ? '' : 'disabled'}>Send</button></div>`;
 }
 async function giveSend() {
@@ -4832,9 +4846,20 @@ async function giveSend() {
   const gv = readJSON(GIVES) || {}; Object.keys(gv).forEach(k => { if (Date.now() - gv[k].at > 7 * 864e5) delete gv[k]; });
   gv[id] = { id, tok: md.tok || '', charId: ch.id, remove: md.remove, to: pl.id, toName: pl.name, name: ch.name, at: Date.now() };
   try { localStorage.setItem(GIVES, JSON.stringify(gv)); } catch (e) { }
-  const data = await packJSON(ch), parts = []; for (let i = 0; i < data.length; i += 12000) parts.push(data.slice(i, i + 12000));
-  for (let i = 0; i < parts.length; i++) await giveSendMsg({ type: 'give', id, to: pl.id, part: i, parts: parts.length, data: parts[i], from: OBRX.me.name, fromId: OBRX.me.id, name: ch.name }, pl.id);
-  setTimeout(() => { const g2 = readJSON(GIVES) || {}; if (g2[id] && !g2[id].got) { delete g2[id]; try { localStorage.setItem(GIVES, JSON.stringify(g2)); } catch (e) { } if (ui.modal && ui.modal.type === 'give' && ui.modal.sent === id) { ui.modal.state = 'failed'; renderModal(); } } }, 10000);
+  const mine = () => ui.modal && ui.modal.type === 'give' && ui.modal.sent === id;
+  const fail = (state, why) => { const g2 = readJSON(GIVES) || {}; delete g2[id]; try { localStorage.setItem(GIVES, JSON.stringify(g2)); } catch (e) { } delete giveOut[id]; if (mine()) { ui.modal.state = state; ui.modal.why = why || ''; renderModal(); } };
+  // 1. is the player's Grimsheet listening? (the same Grimsheet as this one, new enough to take a character)
+  const pong = new Promise(r => { givePong[id] = r; setTimeout(() => r(''), 4000); });
+  const e0 = await giveSendMsg({ type: 'givePing', id, to: pl.id, fromId: OBRX.me.id }, pl.id);
+  if (e0) { fail('error', e0); return; }
+  const ver = await pong; delete givePong[id];
+  if (!ver) { fail('noanswer'); return; }
+  // 2. the sheet, in parts, with a short pause between them; a part the player misses is asked for again
+  const data = await packJSON(ch), parts = []; for (let i = 0; i < data.length; i += 8000) parts.push(data.slice(i, i + 8000));
+  const head = { type: 'give', id, to: pl.id, parts: parts.length, from: OBRX.me.name, fromId: OBRX.me.id, name: ch.name };
+  giveOut[id] = { head, parts };
+  for (let i = 0; i < parts.length; i++) { const er = await giveSendMsg(Object.assign({}, head, { part: i, data: parts[i] }), pl.id); if (er) { fail('error', er); return; } await new Promise(r => setTimeout(r, 40)); }
+  setTimeout(() => { const g2 = readJSON(GIVES) || {}; if (g2[id] && !g2[id].got) fail('failed'); }, 20000);
 }
 window.addEventListener('storage', ev => { if (ev.key === GIFTS) renderBanner(); });
 function attackNote(d) {

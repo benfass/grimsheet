@@ -301,12 +301,19 @@ window.GRIMSHEET_TEST = true;
 
     /* ---- a character given by the DM: keep it as a pending gift for the panel to offer; and, on the DM's side,
        finish the job when the player answers (link the token, hand it over, drop the DM's copy if asked) ---- */
-    const GIFTS = 'grimsheet.gifts.v1', GIVES = 'grimsheet.gives.v1', giftParts = {}, giveDone = new Set();
+    const GIFTS = 'grimsheet.gifts.v1', GIVES = 'grimsheet.gives.v1', giftParts = {}, giftWait = {}, giveDone = new Set();
     listen(S.CH_GM, async ev => {
       const d = ev.data; if (!d || d.to !== me.id) return;
+      if (d.type === 'givePing') { OBR.broadcast.sendMessage(S.CH_GM, { type: 'givePong', id: d.id, to: d.fromId, ver: S.VERSION }, { destination: 'REMOTE' }).catch(() => { }); return; }
       if (d.type === 'give') {
         const p = giftParts[d.id] = giftParts[d.id] || []; p[d.part] = d.data;
-        if (p.filter(x => x != null).length < d.parts) return;
+        if (p.filter(x => x != null).length < d.parts) {
+          // a part went missing on the way: after a quiet moment, ask for what's still missing (three times at most)
+          const w = giftWait[d.id] = giftWait[d.id] || { n: 0 }; clearTimeout(w.t);
+          const chase = () => { w.t = setTimeout(() => { if (w.n++ >= 3 || !giftParts[d.id]) return; const missing = []; for (let i = 0; i < d.parts; i++) if (p[i] == null) missing.push(i); if (missing.length) { OBR.broadcast.sendMessage(S.CH_GM, { type: 'giveMiss', id: d.id, to: d.fromId, missing: missing.slice(0, 60) }, { destination: 'REMOTE' }).catch(() => { }); chase(); } }, 3500); };
+          chase(); return;
+        }
+        clearTimeout((giftWait[d.id] || {}).t);
         delete giftParts[d.id];
         // the sender's name comes from Owlbear's own player list when it can, not from the message
         let from = String(d.from || 'The DM').slice(0, 40);
