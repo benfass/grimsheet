@@ -3800,7 +3800,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.58.5';
+const APP_VERSION = '1.59.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 // phones (touch screen, short side under 600px) get the flat dice by default: the 3D box takes too much of a small screen
@@ -4673,6 +4673,7 @@ function reportInit(en) {
   OBRX.api.broadcast.sendMessage(CH_GM, { type: 'init', id: uid(), from: OBRX.me.id, owner: OBRX.me.name, charId: C().id, name: C().name, total: en.total }, { destination: 'REMOTE' }).catch(() => { });
 }
 async function receiveGm(d) {
+  if (d && (d.type === 'give' || d.type === 'giveGot' || d.type === 'giveAck')) { if (d.to === OBRX.me.id) giveMessage(d); return; }
   if (!d || !OBRX.ready) return;
   if (d.type === 'init') {
     if (OBRX.me.role !== 'GM') return;
@@ -4738,6 +4739,104 @@ async function receiveGm(d) {
     for (let i = 0; i < parts.length; i++) await OBRX.api.broadcast.sendMessage(CH_GM, { type: 'sheet', id: d.id, to: d.from, part: i, parts: parts.length, data: parts[i], owner: OBRX.me.name }, { destination: 'REMOTE' }).catch(() => { });
   }
 }
+/* ---- give a character to a player (DM): the sheet travels in parts on the GM channel; the player's Grimsheet keeps it
+   as a pending gift until they accept; on accept the DM's side links the chosen token to the player's new character.
+   Pending gifts (GIFTS) and pending gives (GIVES) live in browser storage so the background page and the panel can
+   both finish the job, whichever is running. ---- */
+const GIFTS = 'grimsheet.gifts.v1', GIVES = 'grimsheet.gives.v1';
+const giftParts = {};
+const giftList = () => Object.values(readJSON(GIFTS) || {}).filter(g => g && g.data && Date.now() - g.at < 7 * 864e5).sort((a, b) => a.at - b.at);
+function giftBannerHtml() {
+  if (!IN_OBR || ui.viewing) return '';
+  return giftList().map(g => `<div class="banner" style="background:var(--accent-soft)"><span style="flex:1;min-width:200px">🎁 <b>${esc(g.from || 'The DM')}</b> sent you a character: <b>${esc(g.name || 'a sheet')}</b>.</span><button class="btn small primary" data-act="giftyes" data-id="${esc(g.id)}">Add to my characters</button><button class="btn small ghost" data-act="giftno" data-id="${esc(g.id)}">No thanks</button></div>`).join('');
+}
+const giveSendMsg = (x, to) => OBRX.api.broadcast.sendMessage(CH_GM, x, { destination: to === OBRX.me.id ? 'LOCAL' : 'REMOTE' }).catch(() => { });
+async function giveMessage(d) {
+  if (d.type === 'give') {
+    // the background page stores gifts when it's running; the panel only shows them (and stores them when it isn't)
+    if (!bgAlive()) {
+      const p = giftParts[d.id] = giftParts[d.id] || []; p[d.part] = d.data;
+      if (p.filter(x => x != null).length < d.parts) return;
+      delete giftParts[d.id];
+      const all = readJSON(GIFTS) || {}; all[d.id] = { id: d.id, data: p.join(''), from: String(d.from || 'The DM').slice(0, 40), fromId: d.fromId, name: String(d.name || '').slice(0, 80), at: Date.now() };
+      try { localStorage.setItem(GIFTS, JSON.stringify(all)); } catch (e) { return; }
+      giveSendMsg({ type: 'giveGot', id: d.id, to: d.fromId }, d.fromId);
+      OBRX.api.notification.show(`${all[d.id].from} sent you a character: ${all[d.id].name}. Open Grimsheet to add it.`, 'SUCCESS').catch(() => { });
+    }
+    setTimeout(renderBanner, 300); return;
+  }
+  if (d.type === 'giveGot') {
+    const gv = readJSON(GIVES) || {}; if (!gv[d.id]) return;
+    gv[d.id].got = true; try { localStorage.setItem(GIVES, JSON.stringify(gv)); } catch (e) { }
+    if (ui.modal && ui.modal.type === 'give' && ui.modal.sent === d.id) { closeModal(); }
+    toast(`Sent ${gv[d.id].name} to ${gv[d.id].toName}. It's theirs once they accept.`); return;
+  }
+  if (d.type === 'giveAck') { if (!bgAlive()) await giveFinish(d); else setTimeout(() => { if (ui.modal && ui.modal.type === 'chars') renderModal(); }, 600); }
+}
+// the DM's side, after the player answered: link the token, hand it over, and drop the DM's copy if asked
+async function giveFinish(d) {
+  const gv = readJSON(GIVES) || {}, g = gv[d.id]; if (!g) return;
+  delete gv[d.id]; try { localStorage.setItem(GIVES, JSON.stringify(gv)); } catch (e) { }
+  if (!d.ok) { OBRX.api.notification.show(`${d.owner || g.toName} didn't take ${g.name}.`, 'WARNING').catch(() => { }); return; }
+  let linked = false;
+  if (g.tok) {
+    const link = { player: d.player, char: d.char, name: d.name, owner: d.owner };
+    try { await OBRX.api.scene.items.updateItems([g.tok], ds => { for (const it of ds) { it.metadata[LINK] = link; it.createdUserId = d.player; } }); linked = true; }
+    catch (e) { try { await OBRX.api.scene.items.updateItems([g.tok], ds => { for (const it of ds) it.metadata[LINK] = link; }); linked = true; } catch (e2) { } }
+  }
+  if (g.remove && store.chars[g.charId] && Object.keys(store.chars).length > 1) { delete store.chars[g.charId]; if (store.active === g.charId) store.active = Object.keys(store.chars)[0]; save(); render(); }
+  OBRX.api.notification.show(`${d.owner || g.toName} accepted ${d.name}.${g.tok ? (linked ? ' Their token is linked.' : ' The token couldn\'t be linked: they can right-click it and link it themselves.') : ''}`, 'SUCCESS').catch(() => { });
+}
+async function giftAnswer(id, yes) {
+  const all = readJSON(GIFTS) || {}, g = all[id]; if (!g) { renderBanner(); return; }
+  let ch = null;
+  if (yes) {
+    try { ch = normalize(await unpackJSON(g.data)); } catch (e) { toast('That sheet couldn\'t be read. Ask for it again.'); return; }
+    ch.id = uid(); ch.example = false; delete ch.lastBackup;
+    store.chars[ch.id] = ch; store.active = ch.id; ui.mode = 'play'; ui.open.clear();
+  }
+  delete all[id]; try { localStorage.setItem(GIFTS, JSON.stringify(all)); } catch (e) { }
+  if (yes) { save(); render(); window.scrollTo(0, 0); toast(ch.name + ' is yours now.'); } else renderBanner();
+  if (OBRX.ready && g.fromId) giveSendMsg({ type: 'giveAck', id, to: g.fromId, ok: !!yes, char: ch ? ch.id : '', name: ch ? ch.name : g.name, player: OBRX.me.id, owner: OBRX.me.name }, g.fromId);
+}
+function giveOpen(charId) {
+  openModal('give', { charId, to: '', tok: '', remove: false, loading: true, rows: [] });
+  OBRX.api.scene.items.getItems(it => it.layer === 'CHARACTER').then(async items => {
+    const area = await viewArea();
+    if (!ui.modal || ui.modal.type !== 'give') return;
+    const inside = it => !area || !it.position || (it.position.x >= area.min.x && it.position.x <= area.max.x && it.position.y >= area.min.y && it.position.y <= area.max.y);
+    ui.modal.rows = items.map(it => { const pl = it.metadata && it.metadata[LINK], ml = it.metadata && it.metadata[MONLINK];
+      return { id: it.id, name: tokenLabel(it), img: tokImg(it), pc: pl ? (pl.name || 'a player') : '', mon: !!(ml && ml.room === roomKey()), away: !inside(it) }; })
+      .filter(r => !r.mon).sort((a, b) => (a.pc ? 1 : 0) - (b.pc ? 1 : 0) || (a.away ? 1 : 0) - (b.away ? 1 : 0) || a.name.localeCompare(b.name));
+    ui.modal.loading = false; renderModal();
+  }).catch(() => { if (ui.modal && ui.modal.type === 'give') { ui.modal.loading = false; renderModal(); } });
+}
+function giveHtml(md) {
+  const ch = store.chars[md.charId], others = (OBRX.players || []).filter(p => p.id !== OBRX.me.id);
+  if (!ch) return dlgHead('Give to a player') + '<div class="dlg-b"><div class="muted">That character is gone.</div></div>';
+  const rows = md.rows || [];
+  return dlgHead('Give ' + ch.name + ' to a player') + `<div class="dlg-b" style="gap:12px">
+    <div class="muted" style="font-size:.9rem">The player gets the whole sheet in their own Grimsheet and can accept or decline it. Pick their token too, and it links to their new character when they accept: HP, AC, conditions and initiative then follow their sheet.</div>
+    <div><div class="sub-h" style="margin-top:0">Who gets it</div>${others.length ? `<div class="seg" role="group" style="flex-wrap:wrap">${others.map(p => `<button data-act="givepl" data-v="${esc(p.id)}" class="${md.to === p.id ? 'on' : ''}">${esc(p.name)}${p.realRole === 'GM' ? ' (GM)' : ''}</button>`).join('')}</div>` : '<div class="banner warn" style="margin:0">Nobody else is in the room right now. The player needs to be here with Grimsheet added.</div>'}</div>
+    <div><div class="sub-h" style="margin-top:0">Their token <span class="muted" style="font-weight:400">(optional)</span></div>
+      ${md.loading ? '<div class="muted">Looking at the map…</div>' : rows.length ? `<div class="tokgrid">${rows.map(r => `<button class="tokpick ${md.tok === r.id ? 'on' : ''}" data-act="givetok" data-v="${esc(r.id)}" ${r.pc ? 'disabled title="Already linked to ' + esc(r.pc) + '"' : ''}>${r.img ? `<img src="${esc(r.img)}" alt="">` : '<span class="noimg">?</span>'}<span class="tp-n">${esc(r.name)}</span><span class="tp-s">${r.pc ? 'Linked: ' + esc(r.pc) : md.tok === r.id ? 'Chosen ✓' : r.away ? 'Elsewhere' : ''}</span></button>`).join('')}</div>` : '<div class="muted">No character tokens in this scene. You can send the sheet now; the player can link a token later by right-clicking it.</div>'}</div>
+    ${Object.keys(store.chars).length > 1 ? `<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="give-rm" ${md.remove ? 'checked' : ''}> Remove my copy once they accept</label>` : ''}
+    ${md.state === 'sending' ? '<div class="muted">Sending…</div>' : md.state === 'failed' ? `<div class="banner warn" style="margin:0">Not delivered. Is ${esc(md.toName || 'the player')} in the room with Grimsheet added? You can try again.</div>` : ''}
+  </div><div class="dlg-f"><span class="sp"></span><button class="btn" data-act="close">Cancel</button><button class="btn primary" data-act="givesend" ${md.to && md.state !== 'sending' ? '' : 'disabled'}>Send</button></div>`;
+}
+async function giveSend() {
+  const md = ui.modal; if (!md || md.type !== 'give' || !md.to) return;
+  const ch = store.chars[md.charId], pl = (OBRX.players || []).find(p => p.id === md.to); if (!ch || !pl) { toast('That player left the room.'); return; }
+  const rm = $('#give-rm'); md.remove = !!(rm && rm.checked); md.toName = pl.name; md.state = 'sending'; renderModal();
+  const id = uid(); md.sent = id;
+  const gv = readJSON(GIVES) || {}; Object.keys(gv).forEach(k => { if (Date.now() - gv[k].at > 7 * 864e5) delete gv[k]; });
+  gv[id] = { id, tok: md.tok || '', charId: ch.id, remove: md.remove, to: pl.id, toName: pl.name, name: ch.name, at: Date.now() };
+  try { localStorage.setItem(GIVES, JSON.stringify(gv)); } catch (e) { }
+  const data = await packJSON(ch), parts = []; for (let i = 0; i < data.length; i += 12000) parts.push(data.slice(i, i + 12000));
+  for (let i = 0; i < parts.length; i++) await giveSendMsg({ type: 'give', id, to: pl.id, part: i, parts: parts.length, data: parts[i], from: OBRX.me.name, fromId: OBRX.me.id, name: ch.name }, pl.id);
+  setTimeout(() => { const g2 = readJSON(GIVES) || {}; if (g2[id] && !g2[id].got) { delete g2[id]; try { localStorage.setItem(GIVES, JSON.stringify(g2)); } catch (e) { } if (ui.modal && ui.modal.type === 'give' && ui.modal.sent === id) { ui.modal.state = 'failed'; renderModal(); } } }, 10000);
+}
+window.addEventListener('storage', ev => { if (ev.key === GIFTS) renderBanner(); });
 function attackNote(d) {
   const what = d.part === 'atk' ? d.total + ' to hit' + (d.crit ? ' (natural 20!)' : d.fumble ? ' (natural 1)' : '') : d.part === 'heal' ? d.total + ' healing' : d.total + ' ' + (d.types || '') + ' damage';
   return `${d.attacker} → ${d.target.name}: ${what}. Confirm it in Grimsheet.`;
@@ -8578,8 +8677,8 @@ function renderTop() {
 }
 
 function renderBanner() {
-  if (gmMode()) { $('#banner').innerHTML = tourOfferHtml() + (storageOK ? '' : '<div class="banner warn">This browser view isn\'t saving changes.</div>') + bkBannerHtml(); return; }
-  const c = C(); let h = tourOfferHtml();
+  if (gmMode()) { $('#banner').innerHTML = giftBannerHtml() + tourOfferHtml() + (storageOK ? '' : '<div class="banner warn">This browser view isn\'t saving changes.</div>') + bkBannerHtml(); return; }
+  const c = C(); let h = giftBannerHtml() + tourOfferHtml();
   if (IN_OBR && OBRX.ready && OBRX.me.role !== 'GM' && OBRX.init && OBRX.init.active && !ui.viewing) h += `<div class="banner" style="background:var(--accent-soft)"><span style="flex:1">⚔ ${initStrip()}</span>${endTurnBtn()}</div>`;
   if (ui.viewing) {
     const t = new Date(ui.viewing.at); const hhmm = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
@@ -9572,6 +9671,7 @@ function renderModal() {
   let h = '';
   if (m.type === 'editor') h = editorHtml(m);
   else if (m.type === 'chars') h = charsHtml();
+  else if (m.type === 'give') h = giveHtml(m);
   else if (m.type === 'addModule') h = addModuleHtml();
   else if (m.type === 'log') h = logHtml();
   else if (m.type === 'fromlib') h = browseHtml(m);
@@ -9609,6 +9709,7 @@ function charsHtml() {
     ${c.id !== store.active ? `<button class="btn small" data-act="switch" data-id="${c.id}">Open</button>` : ''}
     <button class="btn small" data-act="dupchar" data-id="${c.id}">Duplicate</button>
     <button class="btn small" data-act="modal" data-v="export" data-id="${c.id}">Export</button>
+    ${IN_OBR && OBRX.ready && OBRX.me.role === 'GM' && !ui.viewing ? `<button class="btn small" data-act="giveopen" data-id="${c.id}" title="Send this sheet to a player in the room and link their token">Give to a player</button>` : ''}
     ${list.length > 1 ? `<button class="btn small ${ui.confirm === 'del-' + c.id ? 'danger' : ''}" data-act="delchar" data-id="${c.id}">${ui.confirm === 'del-' + c.id ? 'Confirm delete' : 'Delete'}</button>` : ''}</div>`).join('')}</div>
     <div class="addrow"><button class="btn primary" data-act="create" title="Class, species, background, abilities, skills, gear and spells, step by step">Create a character</button><button class="btn" data-act="newchar">Blank sheet</button><button class="btn" data-act="simplechar" title="Name, AC, HP, initiative and conditions only">Simple character</button><button class="btn" data-act="modal" data-v="import">Import</button><button class="btn" data-act="pdfopen">Import from PDF</button><button class="btn" data-act="modal" data-v="classes">Classes${myClasses.length ? ' (' + myClasses.length + ')' : ''}</button>${IN_OBR && OBRX.ready && OBRX.me.role !== 'GM' ? '<button class="btn" data-act="modal" data-v="pcbrestore">Restore from GM</button>' : ''}</div>
     <div class="muted" style="font-size:.85rem">${IN_OBR ? 'Inside Owlbear, Grimsheet keeps its own characters, apart from the website and other devices. To bring one here, open it where you made it, choose <b>Export</b>, then <b>Import</b> it here.' : 'Characters are saved in this browser automatically. Export a character to back it up or move it to another device. In Owlbear, Grimsheet keeps its own characters: import them there too.'}</div></div>`;
@@ -10125,6 +10226,12 @@ document.addEventListener('click', ev => {
     case 'newchar': { const n = blankChar(); store.chars[n.id] = n; store.active = n.id; ui.mode = 'edit'; save(); closeModal(); render(); toast('Blank character created. You are in Edit mode.'); break; }
     case 'simplechar': { const n = simpleChar(); n.fresh = false; store.chars[n.id] = n; store.active = n.id; save(); closeModal(); render(); if (IN_OBR) publishStatus(); break; }
     case 'fullsheet': c.simple = false; c.fresh = false; c.hidden = []; rerender(); toast('Every module is back. Hide the ones you don\'t need from their menus.'); break;
+    case 'giveopen': giveOpen(id); break;
+    case 'givepl': ui.modal.to = v; ui.modal.state = ''; renderModal(); break;
+    case 'givetok': ui.modal.tok = ui.modal.tok === v ? '' : v; renderModal(); break;
+    case 'givesend': giveSend(); break;
+    case 'giftyes': giftAnswer(id, true); break;
+    case 'giftno': giftAnswer(id, false); break;
     case 'dupchar': { const n = clone(store.chars[id]); n.id = uid(); n.name += ' (copy)'; n.example = false; store.chars[n.id] = n; save(); renderModal(); toast('Duplicated.'); break; }
     case 'delchar': { if (ui.confirm !== 'del-' + id) { ui.confirm = 'del-' + id; renderModal(); break; } delete store.chars[id]; if (store.active === id) store.active = Object.keys(store.chars)[0]; ui.confirm = null; save(); render(); renderModal(); break; }
     case 'copyexp': { const t = $('#exp-text'); markBackup(); const done = () => toast('Copied.'); try { navigator.clipboard.writeText(t.value).then(done, () => { t.select(); toast('Selected. Press Ctrl+C / Cmd+C to copy.'); }); } catch (x) { t.select(); toast('Selected. Press Ctrl+C / Cmd+C to copy.'); } break; }

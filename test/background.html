@@ -299,6 +299,40 @@ window.GRIMSHEET_TEST = true;
       }
     });
 
+    /* ---- a character given by the DM: keep it as a pending gift for the panel to offer; and, on the DM's side,
+       finish the job when the player answers (link the token, hand it over, drop the DM's copy if asked) ---- */
+    const GIFTS = 'grimsheet.gifts.v1', GIVES = 'grimsheet.gives.v1', giftParts = {}, giveDone = new Set();
+    listen(S.CH_GM, async ev => {
+      const d = ev.data; if (!d || d.to !== me.id) return;
+      if (d.type === 'give') {
+        const p = giftParts[d.id] = giftParts[d.id] || []; p[d.part] = d.data;
+        if (p.filter(x => x != null).length < d.parts) return;
+        delete giftParts[d.id];
+        // the sender's name comes from Owlbear's own player list when it can, not from the message
+        let from = String(d.from || 'The DM').slice(0, 40);
+        try { const pl = (await OBR.party.getPlayers()).find(x => x.connectionId === ev.connectionId); if (pl) from = pl.name; } catch (e) { }
+        const all = S.read(GIFTS) || {}; all[d.id] = { id: d.id, data: p.join(''), from, fromId: d.fromId, name: String(d.name || '').slice(0, 80), at: Date.now() };
+        S.write(GIFTS, all);
+        OBR.broadcast.sendMessage(S.CH_GM, { type: 'giveGot', id: d.id, to: d.fromId }, { destination: 'REMOTE' }).catch(() => { });
+        OBR.notification.show(`${from} sent you a character: ${all[d.id].name}. Open Grimsheet to add it.`, 'SUCCESS').catch(() => { });
+        return;
+      }
+      if (d.type === 'giveAck') {
+        if (giveDone.has(d.id)) return; giveDone.add(d.id);
+        const gv = S.read(GIVES) || {}, g = gv[d.id]; if (!g) return;
+        delete gv[d.id]; S.write(GIVES, gv);
+        if (!d.ok) { OBR.notification.show(`${d.owner || g.toName} didn't take ${g.name}.`, 'WARNING').catch(() => { }); return; }
+        let linked = false;
+        if (g.tok) {
+          const link = { player: d.player, char: d.char, name: d.name, owner: d.owner };
+          try { await OBR.scene.items.updateItems([g.tok], ds => { for (const it of ds) { it.metadata[S.LINK] = link; it.createdUserId = d.player; } }); linked = true; }
+          catch (e) { try { await OBR.scene.items.updateItems([g.tok], ds => { for (const it of ds) it.metadata[S.LINK] = link; }); linked = true; } catch (e2) { } }
+        }
+        if (g.remove) { const store = S.read(S.STORE); if (store && store.chars && store.chars[g.charId] && Object.keys(store.chars).length > 1) { delete store.chars[g.charId]; if (store.active === g.charId) store.active = Object.keys(store.chars)[0]; S.write(S.STORE, store); } }
+        OBR.notification.show(`${d.owner || g.toName} accepted ${d.name}.${g.tok ? (linked ? ' Their token is linked.' : " The token couldn't be linked: they can right-click it and link it themselves.") : ''}`, 'SUCCESS').catch(() => { });
+      }
+    });
+
     /* ---- room homebrew: the GM answers who asks; players keep a copy of what the GM shows ---- */
     const hbAll = () => S.read(S.HB) || {};
     const hbSend = x => OBR.broadcast.sendMessage(S.CH_HB, x, { destination: 'REMOTE' }).catch(() => { });
