@@ -709,3 +709,7 @@ Every change goes to a **test extension** first; players only get it after it's 
 - **How**: each player's background page listens on `com.grimsheet/dice`, applies the same visibility rules (DM-only rolls only for the DM) and the viewer's settings (Other players' dice, dice animation, 3D dice; reduced motion), puts the roll in a queue in browser storage (`grimsheet.dicebox.q`) and opens the popover if it isn't open (`grimsheet.dicebox.alive` heartbeat). The box plays the queue in order, mirrors rerolls (split box), and closes itself 5.5 s after the last roll; its ✕ closes it at once. Without 3D graphics it shows the name and total only.
 - **One source for the dice code**: `build.py` copies the panel's 3D dice code and styles into `dice.html` at build time (`/*@D3JS@*/`, `/*@D3CSS@*/`).
 - Phones default to flat dice, so they don't get the box unless 3D dice are turned on.
+
+## Panel fits the screen (1.58.2)
+- **Bug**: on a phone held sideways (about 390 px tall) the Owlbear panel asked for its full size (Medium: 760×820), Owlbear cut it off into a thin strip, and it couldn't be scrolled because the page inside thought it had the full height.
+- **Fix**: the panel's requested size is capped to Owlbear's viewport (`OBR.viewport.getWidth/Height`): width at most viewport − 16, height at most viewport − 64 on short screens (− 90 otherwise), at least 280×220. It's checked again every 2.5 s while the panel is visible and when the phone turns, so turning the phone resizes the panel. Settings → Panel size still sets the size wanted on larger screens.
