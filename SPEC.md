@@ -678,7 +678,7 @@ Every change goes to a **test extension** first; players only get it after it's 
 ## Reroll the lower d20; dice row above the box (1.57.3)
 - **Which d20 a reroll takes**: on an advantage or disadvantage roll, a one-die reroll (Heroic Inspiration, Lucky, a "reroll one d20" feature) now takes the **lower** of the two d20s. With advantage that's the dropped die, the only way the result can go up; with disadvantage it's the die that counts. Before, it took whichever die counted, so advantage rerolled the higher die (it could only get worse).
 - **Dice row position**: with the 3D box, the row of flat dice (numbers and reroll buttons) now sits above the box, and the box stays where it is when the row appears.
-- **Test suite** (tooling, not in the app): tests run two at a time (`runall.sh`), Playwright waits 5 s instead of 30 s for a missing element (`fast.js` preload), and the class-import test waits for the import to finish instead of a fixed 9 s. The suite went from about 10.5 minutes to under 5.
+- **Test suite** (tooling, not in the app): tests run two at a time (`runall.sh`), Playwright waits 5 s instead of 30 s for a missing element (`fast.js` preload), and the class-import test waits for the import to finish instead of a fixed 9 s. The suite went from about 10.5 minutes to under 5 (about 6.5 with the 3D dice tests, which run one at a time at the end: software graphics are too slow to share the cores).
 
 ## Single-die reroll (1.57.4)
 - When every die in the 3D box is being rerolled (a single d20, say), the box doesn't split: the die is thrown again across the whole box.
@@ -717,3 +717,7 @@ Every change goes to a **test extension** first; players only get it after it's 
 ## Short panels (1.58.3)
 - **Bug**: on a phone held sideways, Owlbear gives the panel only about 165 px of height. The header was meant to scroll away on short screens, but that rule sat above the sticky header rule in the stylesheet and lost to it, so the 188 px header and the 63 px roll bar covered the whole panel and nothing else could be reached (not even Settings).
 - **Fix**: the short-screen rules now win (`html .top`), so the header scrolls away with the sheet whenever the panel is under 700 px tall or 560 px wide. Under 420 px the roll bar shrinks to one line (about 45 px: smaller total, breakdown cut to one line, follow-up buttons hidden), and the dice use the flat row instead of the 200 px 3D box.
+
+## Slow devices (1.58.4)
+- **Time limits**: the 3D box gets 3 s to load (1.5 s once it has loaded before) and 6 s to throw. Past that, the roll goes on with the flat dice (result, sharing and follow-ups as usual), and the box keeps loading in the background for next time. Rerolls in the box get the same 6 s.
+- **Offer to switch**: the first time it happens in a session, a dialog says the 3D dice are slow here and offers **Use flat dice** (turns Dice style to Flat; Settings switches back) or **Keep 3D dice** (never asks again on this device, `d3slowOk`). Not asked while another dialog is open. The other players' dice box at the bottom right shows the name and total if its dice are too slow.

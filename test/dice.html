@@ -285,9 +285,9 @@ async function d3Reroll(entry, changes) {
     // throw only the rerolled dice; the old ones are cleared by the throw, the kept ones stay put
     b.diceList = old.map(x => x.m);
     const list = rr.map(c => ({ s: c.x.d.s, v: c.to, k: c.x.k })), N = d3Notation(list);
-    const res = await Promise.race([b.roll(N.text), new Promise(r => setTimeout(() => r('slow'), 9000))]);
+    const res = await d3Within(b.roll(N.text), 6000);
     if (DICE.entry !== entry) return true;
-    if (res !== 'slow') await d3Still(b);
+    if (res === D3_LATE) d3Slow(); else await d3Still(b);
     const fresh = (b.diceList || []).map((m, j) => ({ k: list[N.order[j]].k, m }));
     D3.meshes = kept.concat(fresh);
     const notKept = fresh.filter(x => { const c = rr.find(y => y.x.k === x.k); return c && c.kept !== c.to; }).map(x => x.m);
@@ -298,22 +298,40 @@ async function d3Reroll(entry, changes) {
     return true;
   } catch (e) { return false; }
 }
+const D3_LATE = {};
+const d3Within = (p, ms) => Promise.race([p, new Promise(r => setTimeout(() => r(D3_LATE), ms))]);
+// the 3D dice were too slow for one roll (that roll used the flat dice): offer to switch to the flat dice for good,
+// once per session, and never again after "Keep 3D dice"
+function d3Slow() {
+  D3.slow = (D3.slow || 0) + 1;
+  if (D3.asked || SETTINGS.d3slowOk || typeof openModal !== 'function') return;
+  if (ui.modal) { D3.askLater = true; return; }
+  D3.asked = true; openModal('d3slow', {});
+}
+function d3SlowHtml() {
+  return dlgHead('The 3D dice are slow here') + `<div class="dlg-b"><p style="margin:0">The 3D dice took too long to load or roll on this device, so this roll used the flat dice instead.</p>
+    <p class="muted" style="margin:0">Switch to the flat dice for good? They're quick on any device. You can switch back in Settings → Dice style.</p></div>
+    <div class="dlg-f"><span class="sp"></span><button class="btn" data-act="d3keep">Keep 3D dice</button><button class="btn primary" data-act="d3flat">Use flat dice</button></div>`;
+}
 async function roll3d(entry, all) {
   const box = $('#dicefx');
   const tray = d3Tray();
   box.appendChild(tray); tray.classList.remove('landed', 'crit', 'fum');
   try {
-    if (D3.warm) await Promise.race([D3.warm, new Promise(r => setTimeout(r, 3000))]);
+    // slow devices: the box gets 3 s to load (1.5 s once it has loaded before) and 6 s to throw; past that this roll
+    // uses the flat dice, and the player is asked whether to switch to them for good
+    if (D3.warm) await d3Within(D3.warm, 3000);
     box.style.visibility = ''; box.hidden = false;
     all = all.filter(d => D3_SIDES.includes(+d.s));
-    const b = await d3Box(tray), N = d3Notation(all);
+    const b = await d3Within(d3Box(tray), D3.box ? 1500 : 3000), N = d3Notation(all);
+    if (b === D3_LATE) { d3Slow(); tray.remove(); return false; }
     if (DICE.entry !== entry) return true;
     d3Unsplit(b, tray); D3.meshes = null;
     d3Wear(b, entry.spec ? d3Colors(entry.spec.set, entry.spec.color) : d3Colors());
-    const done = b.roll(N.text);
-    const res = await Promise.race([done, new Promise(r => setTimeout(() => r('slow'), 9000))]);
+    const res = await d3Within(b.roll(N.text), 6000);
     if (DICE.entry !== entry) return true;
-    if (res !== 'slow') await d3Still(b);
+    if (res === D3_LATE) { d3Slow(); tray.remove(); return false; }
+    await d3Still(b);
     if (DICE.entry !== entry) return true;
     D3.meshes = (b.diceList || []).map((m, j) => ({ k: all[N.order[j]] && all[N.order[j]].k, m })); D3.entry = entry;
     // dropped dice (advantage, disadvantage, keep highest…) go see-through
