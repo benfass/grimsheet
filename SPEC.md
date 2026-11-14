@@ -733,3 +733,9 @@ Every change goes to a **test extension** first; players only get it after it's 
 - **First a handshake**: the DM's Grimsheet asks the player's Grimsheet (`givePing` → `givePong` with its version) before sending. No answer in 4 s: "Guard's Grimsheet didn't answer. They need Grimsheet 1.59.1 or newer added in this room, the same one you're using (the regular Grimsheet can't hear the TEST one). If they have it, ask them to reload the page."
 - **Then the sheet**: in 8 kB parts with a short pause between them. If parts go missing, the player's side asks for them again (`giveMiss`, up to three times, after 3.5 s of quiet). The DM waits up to 20 s for the "got it" before saying the sheet didn't arrive whole.
 - **Owlbear refusing a message** (too big, too fast) is shown with Owlbear's own reason instead of a generic "not delivered".
+
+## HP fields (1.59.2)
+- The HP box shows two small tags, **Current HP** and **Max HP**, above the numbers.
+- **Play mode**: the current HP is a field: type a number to set it (kept between 0 and max), or −7 / +5 for damage and healing, same as the quick box; Enter or leaving the field applies it. Max HP is shown, not editable (it used to be a tap-to-edit button).
+- **Edit mode** (and simple characters, which have no separate edit mode): both current and max HP are fields.
+- Read-only when viewing another player's sheet.
