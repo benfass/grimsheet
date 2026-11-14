@@ -418,6 +418,7 @@ select.ed-inline{width:auto}
 .tray3d>svg{position:absolute;inset:0;width:100%;height:100%;display:block}
 .tray3d .d3floor{position:absolute;top:20px;bottom:20px;left:20px;right:20px;overflow:hidden;border-radius:3px}
 .tray3d canvas{display:block}
+.dicefx .specwho{width:fit-content;max-width:100%;margin:0 0 6px 4px;padding:3px 12px;border-radius:999px;background:#3a220f;color:#fff8e6;border:1px solid #c9a24a;font-size:.82rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 2px 6px rgba(0,0,0,.3)}
 .tray3d .d3x{pointer-events:auto;position:absolute;left:-8px;top:-8px;z-index:3;width:26px;height:26px;border-radius:50%;border:1px solid #c9a24a;background:#3a220f;color:#fff8e6;font-size:.8rem;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.35);padding:0}
 .tray3d .d3x:hover{background:#5d3920}
 @media (pointer:coarse){.tray3d .d3x{width:32px;height:32px;left:-10px;top:-10px}}
@@ -807,6 +808,70 @@ const ENGINE = (() => {
     const rest = sents.filter(s => !hits.includes(s)).join(' ');
     return { repeat: { action, attack, damage, upcast, save: /saving throw|\bsave\b/.test(x) && !damage.length }, rest };
   }
+  // Bonuses a feature, spell or item gives while it's on: "+1 bonus to AC", "add 1d4 to attack rolls and saving throws",
+  // "a bonus to initiative equal to your proficiency bonus", "your speed increases by 10 feet", "you have advantage on
+  // Dexterity saving throws". Returns the effect's fields, and whether it reads as always-on (no duration or activation).
+  const SKILLS = ['acrobatics', 'animal handling', 'arcana', 'athletics', 'deception', 'history', 'insight', 'intimidation', 'investigation', 'medicine', 'nature', 'perception', 'performance', 'persuasion', 'religion', 'sleight of hand', 'stealth', 'survival'];
+  function effectOf(text) {
+    const low = String(text || '').toLowerCase().replace(/[−–]/g, '-').replace(/\s+/g, ' ');
+    const fx = {}, adv = [], sents = low.split(/(?<=[.!?;])\s+/);
+    const ABL = '(?:' + ABRE + ')';
+    const val = x => { let m;
+      if ((m = x.match(new RegExp('equal to (?:your )?(' + ABRE + '|spellcasting ability) modifier(?: \\((?:with a )?minimum(?: bonus)?(?: of)? \\+?1\\))?')))) return /minimum/.test(m[0]) ? 'max(1, ' + modWord(m[1]) + ')' : modWord(m[1]);
+      if (/equal to (?:your )?proficiency bonus/.test(x)) return 'PROF';
+      if ((m = x.match(/\+\s?(\d+) bonus/)) || (m = x.match(/bonus of \+?(\d+)/))) return m[1];
+      return ''; };
+    const put = (part, v, whole) => { if (!v) return;
+      // "when you roll initiative, you can add your proficiency bonus to the roll"
+      if (whole && /initiative/.test(whole) && !/attack|damage|saving throw|\bac\b|armor class|ability check/.test(part)) { fx.init = v; return; }
+      if (/attack/.test(part)) fx.attack = v;
+      if (/damage/.test(part)) fx.damage = v;
+      if (/saving throws?|\bsaves?\b/.test(part)) fx.save = v;
+      if (/\bac\b|armor class/.test(part)) fx.ac = v;
+      if (/ability checks?/.test(part)) fx.check = v;
+      if (/initiative/.test(part)) fx.init = v; };
+    for (const x of sents) {
+      let m;
+      // a magic weapon's own bonus ("attack and damage rolls made with this weapon") belongs on that weapon's attack, not everywhere
+      const own = /\b(?:with|using) this\b|made with this/.test(x);
+      if (!own) {
+        if ((m = x.match(/(?:\+\s?\d+ |\ba )bonus to ([^.;]*)/))) put(m[1].replace(/(?:,| equal to| including| against| when| while| until| if | that | you make| made ).*$/, ''), val(x));
+        if ((m = x.match(/roll (?:a|one|1) ?(d\d+) and add (?:the number rolled|it|the result) to ([^.;]*)/))) put(m[2], '1' + m[1]);
+        else if ((m = x.match(/\badds? (?:a |one )?(\d*d\d+) to ([^.;]*)/))) put(m[2], /^d/.test(m[1]) ? '1' + m[1] : m[1], x);
+        else if ((m = x.match(new RegExp('\\badd (?:your )?(' + ABRE + '|spellcasting ability) modifier(?: \\([^)]*\\))? to ([^.;]*)')))) put(m[2], /minimum/.test(m[0]) ? 'max(1, ' + modWord(m[1]) + ')' : modWord(m[1]));
+        else if ((m = x.match(/\badd (?:your )?proficiency bonus to ([^.;]*)/))) put(m[1], 'PROF', x);
+        if ((m = x.match(/(?:\bac\b|armor class) (?:increases|is increased|improves) by (\d+)/)) || (m = x.match(/\+(\d+) (?:bonus )?to (?:your )?(?:ac\b|armor class)/))) fx.ac = m[1];
+        if ((m = x.match(new RegExp('(?:extra|additional) (\\d+d\\d+|\\d+) (?:(' + TYPES + ') )?damage'))) && !fx.damage) { fx.damage = m[1]; fx.extra = true; if (m[2]) fx.dtype = m[2]; }
+      }
+      if ((m = x.match(/\bspeed (?:increases|is increased) by (\d+)/))) fx.speed = m[1];
+      for (const mm of x.matchAll(/\b(?:you (?:have|gain|get|make)|gives? you|grants? you|you can (?:make|roll)) (?:[a-z0-9 ,'-]{0,40}? )?(?:with |at )?advantage(?: on ([^.;]*))?/g)) {
+        const part = mm[1] || x.slice(0, mm.index);
+        if (/\bagainst\b|\bto (?:avoid|resist|end|escape|maintain)\b|that rely|made to|\bif\b/.test(mm[1] || '')) continue;
+        let k;
+        if (/attack rolls?/.test(part)) adv.push('atk');
+        if (/initiative/.test(part)) adv.push('init');
+        if ((k = part.match(new RegExp('((?:' + ABL + '(?:,? (?:and |or )?)?)+)\\s*saving throws?')))) (k[1].match(new RegExp(ABRE, 'g')) || []).forEach(a => adv.push('save:' + AB[a]));
+        else if (/saving throws?/.test(part)) adv.push('save');
+        const sk = SKILLS.filter(n => new RegExp('\\b' + n + '\\b').test(part));
+        if (sk.length) sk.forEach(n => adv.push('skill:' + n.replace(/\b\w/g, c => c.toUpperCase()).replace(' Of ', ' of ')));
+        else if ((k = part.match(new RegExp('((?:' + ABL + '(?:,? (?:and |or )?)?)+)\\s*(?:ability )?checks?')))) (k[1].match(new RegExp(ABRE, 'g')) || []).forEach(a => adv.push('check:' + AB[a]));
+        else if (/ability checks?/.test(part)) adv.push('check');
+      }
+    }
+    if (adv.length) fx.adv = [...new Set(adv)].join(', ');
+    if (!Object.keys(fx).length) return null;
+    if (fx.attack || fx.damage) { fx.only = /ranged (?:weapons?|attacks?)/.test(low) ? 'RANGED' : /melee weapon/.test(low) ? 'MELEE' : /weapon attacks?|with (?:a|that|your) weapon/.test(low) ? 'WEAPON' : ''; }
+    const timed = /for 1 (?:minute|hour|round)|for \d+ (?:minutes?|hours?|rounds?)|for the duration|until the (?:start|end)|\buntil (?:you|your|the)\b|bonus action|as an action|magic action|\breaction\b|when you (?:activate|use|enter|cast)|while (?:raging|you are raging|your rage|it is active)|once per|\bexpend\b|you can (?:use|activate|enter|invoke|channel|expend)|\bconcentration\b|casting time/.test(low);
+    return { fx, passive: !timed };
+  }
+  function effectText(f) {
+    const p = [];
+    if (f.attack) p.push('+' + f.attack + ' attack'); if (f.damage) p.push('+' + f.damage + (f.dtype ? ' ' + f.dtype : '') + ' damage'); if (f.save) p.push('+' + f.save + ' saves');
+    if (f.ac) p.push('+' + f.ac + ' AC'); if (f.check) p.push('+' + f.check + ' checks'); if (f.init) p.push('+' + f.init + ' initiative'); if (f.speed) p.push('+' + f.speed + ' ft speed');
+    if (f.adv) p.push('advantage on ' + String(f.adv).split(',').map(t => { t = t.trim(); const [a, b] = t.split(':'); return a === 'atk' ? 'attacks' : a === 'init' ? 'initiative' : a === 'save' ? (b ? b + ' saves' : 'saves') : a === 'check' ? (b ? b + ' checks' : 'checks') : a === 'skill' ? b : t; }).join(', '));
+    const o = { WEAPON: 'weapon attacks', SPELLS: 'spell attacks', SPELL: 'spell-ability attacks', RANGED: 'ranged attacks', MELEE: 'melee attacks' }[f.only] || (f.only ? f.only + ' attacks' : '');
+    return p.join(', ').replace(/\+\-/g, '−') + (o && (f.attack || f.damage) ? ' (' + o + ')' : '');
+  }
   function scan(text) {
     const out = []; const t = String(text || ''); const rp = repeatOf(t); const low = t.toLowerCase(); const lowMain = rp ? rp.rest + ' ' + (low.match(/(using a higher-level spell slot|at higher levels|cantrip upgrade)\b[\s\S]*$/) || [''])[0] : low;
     const add = (key, label, apply) => { if (!out.some(s => s.key === key)) out.push({ key, label, apply }); };
@@ -873,6 +938,10 @@ const ENGINE = (() => {
       for (const ty of ['acid', 'bludgeoning', 'cold', 'fire', 'force', 'lightning', 'necrotic', 'piercing', 'poison', 'psychic', 'radiant', 'slashing', 'thunder']) if (new RegExp('\\b' + ty + '\\b').test(mm[2]) && !def[k].includes(ty)) def[k].push(ty);
     }
     if (def.res.length || def.imm.length || def.vul.length) add('defense', [def.res.length ? 'Resistance: ' + def.res.join(', ') : '', def.imm.length ? 'Immunity: ' + def.imm.join(', ') : '', def.vul.length ? 'Vulnerability: ' + def.vul.join(', ') : ''].filter(Boolean).join('; '), d => { d.defense = { res: def.res.join(', '), imm: def.imm.join(', '), vul: def.vul.join(', ') }; });
+    // bonuses while on (a toggle, or always on when the text has no duration or activation)
+    const ef = effectOf(t);
+    if (ef) { const f = Object.assign({}, ef.fx); if (f.extra) { if (dmg.length) { delete f.damage; delete f.dtype; } delete f.extra; }
+      if (Object.keys(f).some(k => k !== 'only')) add('effect', (ef.passive ? 'Always on: ' : 'While switched on: ') + effectText(f), d => { d.effect = Object.assign({ active: ef.passive, attack: '', damage: '', save: '', ac: '', check: '', only: '', init: '', speed: '', dtype: '', adv: '' }, f); }); }
     // rerolls
     const rr = rerollOf(t);
     if (rr) add('reroll', rerollText(rr), d => { d.reroll = rr; });
@@ -902,7 +971,7 @@ const ENGINE = (() => {
     return out;
   }
 
-  return { parse, tokenize, signedTerms, staticSum, rollComps, evalStatic, rollSimple, multDice, scaleLeadDice, scan, ordinal, hasDice, rerollOf, rerollText, areaOf, repeatOf };
+  return { parse, tokenize, signedTerms, staticSum, rollComps, evalStatic, rollSimple, multDice, scaleLeadDice, scan, ordinal, hasDice, rerollOf, rerollText, areaOf, repeatOf, effectOf, effectText };
 })();
 if (typeof module !== 'undefined') module.exports = ENGINE;
 </script>
@@ -3719,7 +3788,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.57.4';
+const APP_VERSION = '1.58.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 // phones (touch screen, short side under 600px) get the flat dice by default: the 3D box takes too much of a small screen
@@ -3927,7 +3996,9 @@ function findEntry(id) { for (const m of C().modules) { const i = m.entries.find
 function activeEffects() { return allEntries().filter(({ e }) => e.effect && (e.item ? e.item.equipped : e.effect.active)).map(({ e }) => e); }
 function fxMatch(fx, e) {
   const o = fx.effect.only; if (!o) return true; if (!e || !e.attack) return false;
-  if (o === 'WEAPON') return !e.spell; if (o === 'SPELLS') return !!e.spell; return e.attack.ability === o;
+  if (o === 'WEAPON') return !e.spell; if (o === 'SPELLS') return !!e.spell;
+  if (o === 'RANGED' || o === 'MELEE') { const melee = isMelee(rangeInfo(e.text, e.spell && e.spell.range)); return !e.spell && (o === 'MELEE') === !!melee; }
+  return e.attack.ability === o;
 }
 function counterMax(ct) { try { return Math.max(0, Math.floor(E.evalStatic(ct.max || '0', CTX))); } catch (e) { return 0; } }
 function cantripTier() { const l = +C().level || 1; return l >= 17 ? 4 : l >= 11 ? 3 : l >= 5 ? 2 : 1; }
@@ -3946,7 +4017,7 @@ function damageComps(e, opt = {}) {
   if (r && !r.upcast) opt = Object.assign({}, opt, { lvl: 0 });
   parts.forEach(p => { if (p.dice) c.push({ f: E.scaleLeadDice(p.dice, tier), suffix: p.type }); if (p.mod) c.push({ f: p.mod }); });
   if (opt.lvl && e.spell && e.spell.upcast && opt.lvl > e.spell.level) c.push({ src: 'Upcast', f: E.multDice(e.spell.upcast, opt.lvl - e.spell.level) });
-  if (e.attack && !isHealing(e) && !e.creature) activeEffects().forEach(fx => { if (fx.effect.damage && fxMatch(fx, e)) c.push({ src: fx.name, f: fx.effect.damage }); });
+  if (e.attack && !isHealing(e) && !e.creature) activeEffects().forEach(fx => { if (fx.effect.damage && fxMatch(fx, e)) c.push(Object.assign({ src: fx.name, f: fx.effect.damage }, fx.effect.dtype ? { suffix: fx.effect.dtype } : {})); });
   return c;
 }
 const isHealing = e => e.damage.length > 0 && e.damage.every(p => p.type === 'healing' || p.type === 'temp HP');
@@ -3963,7 +4034,22 @@ function checkComps(ab, prof) {
   return c;
 }
 function acComps() { const c = [{ src: 'Base', f: C().acFormula || '10' }]; activeEffects().forEach(fx => { if (fx.effect.ac) c.push({ src: fx.name, f: fx.effect.ac }); }); return c; }
-function initComps() { const c = checkComps('DEX', 0); if (C().initBonus) c.push({ src: 'Bonus', f: C().initBonus }); return c; }
+function initComps() { const c = checkComps('DEX', 0); if (C().initBonus) c.push({ src: 'Bonus', f: C().initBonus }); activeEffects().forEach(fx => { if (fx.effect.init) c.push({ src: fx.name, f: fx.effect.init }); }); return c; }
+// speed with the bonuses of what's switched on ("30 ft" + 10 → "40 ft")
+function speedText(c = C()) {
+  let add = 0; try { activeEffects().forEach(fx => { if (fx.effect.speed) add += Math.floor(E.evalStatic(String(fx.effect.speed), CTX)) || 0; }); } catch (e) { }
+  return add ? String(c.speed || '').replace(/\d+/, n => +n + add) : c.speed;
+}
+// advantage from what's switched on: tags like "atk", "save", "save:DEX", "check:STR", "skill:Stealth", "init"
+function fxAdvFor(t) {
+  const out = []; if (!t) return out;
+  activeEffects().forEach(fx => String(fx.effect.adv || '').split(',').map(x => x.trim()).filter(Boolean).forEach(tag => {
+    const [a, b] = tag.split(':');
+    const hit = a === 'atk' ? t.kind === 'atk' : a === 'init' ? !!t.init : a === 'save' ? t.kind === 'save' && (!b || b === t.ab) : a === 'check' ? t.kind === 'check' && (!b || b === t.ab) : a === 'skill' ? t.kind === 'check' && !!t.skill && t.skill.toLowerCase() === String(b || '').toLowerCase() : false;
+    if (hit && !out.includes(fx.name)) out.push(fx.name);
+  }));
+  return out;
+}
 function dcValue(e) { try { return E.evalStatic(e.save.dc || 'SPELLDC', CTX); } catch (x) { return '?'; } }
 function staticLabel(comps) { const s = E.staticSum(comps, CTX); return { text: signed(s.flat) + s.dice.join(''), s }; }
 function dmgLabel(e, opt) { const s = E.staticSum(damageComps(e, opt), CTX); const dice = s.dice.map(x => x.replace(/^\+/, '')).join(' + '); return (dice || '') + (s.flat ? (dice ? (s.flat > 0 ? ' + ' : ' − ') + Math.abs(s.flat) : s.flat) : (dice ? '' : '0')); }
@@ -3973,6 +4059,7 @@ function roll(title, comps, opt = {}) {
   CTX = ctxFor(C());
   const d20 = comps.some(c => c.d20);
   const cr = d20 && opt.test ? condRules(opt.test) : null;
+  if (cr && !opt.mon) try { cr.adv.push(...fxAdvFor(opt.test)); } catch (e) { }
   if (cr && cr.add.length) comps = comps.concat(cr.add);
   const mode = d20 ? (cr ? rollMode(ui.adv, cr) : ui.adv) : 'normal';
   const r = E.rollComps(comps, CTX, { mode, crit: opt.crit });
@@ -3997,7 +4084,7 @@ function roll(title, comps, opt = {}) {
 // Owlbear opens extensions with ?obrref=… in the address; only then is the SDK loaded.
 const IN_OBR = (() => { try { return new URLSearchParams(location.search).has('obrref'); } catch (e) { return false; } })();
 const OBRX = { ready: false, api: null, me: { id: '', name: '', role: 'PLAYER' }, feed: [], party: [] };
-const CH_ROLL = 'com.grimsheet-test/roll', META = 'com.grimsheet-test/status';
+const CH_ROLL = 'com.grimsheet-test/roll', CH_DICE = 'com.grimsheet-test/dice', META = 'com.grimsheet-test/status';
 const LINK = 'com.grimsheet-test/link', BUBBLES = 'com.owlbear-rodeo-bubbles-extension/metadata', INIT = 'rodeo.owlbear.initiative-tracker/metadata';
 const STATUSKEY = 'grimsheet.status.v1', BGKEY = 'grimsheet.bg.v1';
 const readJSON = k => { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } };
@@ -4286,13 +4373,14 @@ async function startOwlbear() {
       setInterval(() => { if (testHere() !== wasPaused) location.reload(); }, 5000);
       if (wasPaused) { showPausedForTest(OBR); return; }
       try { OBRX.roomMd = (await OBR.room.getMetadata()) || {}; } catch (e) { OBRX.roomMd = {}; }
-      const refreshMe = async () => { const id = OBR.player.id || await OBR.player.getId(); OBRX.realRole = await OBR.player.getRole(); OBRX.me = { id, name: await OBR.player.getName(), role: effRole(OBRX.realRole, id) }; };
+      const refreshMe = async () => { const id = OBR.player.id || await OBR.player.getId(); OBRX.realRole = await OBR.player.getRole(); OBRX.me = { id, name: await OBR.player.getName(), role: effRole(OBRX.realRole, id), color: OBR.player.getColor ? await OBR.player.getColor().catch(() => '') : '' }; };
       await refreshMe(); OBRX.ready = true;
       OBR.player.onChange(p => { OBRX.me.name = p.name; if (p.role !== OBRX.realRole) { OBRX.realRole = p.role; dmRoleCheck(); dmClaimSoon(); } });
       const applyTheme = t => { if (t && t.mode) document.documentElement.setAttribute('data-theme', t.mode === 'DARK' ? 'dark' : 'light'); };
       try { applyTheme(await OBR.theme.getTheme()); OBR.theme.onChange(applyTheme); } catch (e) { }
       OBRX.room = OBR.room && OBR.room.id ? OBR.room.id : 'room';
       OBR.broadcast.onMessage(CH_ROLL, ev => receiveRoll(ev.data));
+      OBR.broadcast.onMessage(CH_DICE, ev => receiveDice(ev.data));
       OBR.broadcast.onMessage(CH_GM, ev => receiveGm(ev.data));
       OBR.broadcast.onMessage(CH_NOTES, ev => notesReceive(ev.data));
       OBR.broadcast.onMessage(CH_HB, ev => hbReceive(ev.data));
@@ -4660,6 +4748,44 @@ function shareRoll(entry) {
   const msg = rollMessage(entry);
   feedPush(Object.assign({ mine: true }, msg));
   OBRX.api.broadcast.sendMessage(CH_ROLL, msg, { destination: 'REMOTE' }).catch(() => toast('Couldn\'t share that roll with the room.'));
+}
+// everyone sees the dice: when your dice are thrown, the room gets the same dice (your dice set, your numbers) to
+// throw in their own dice box. Each screen runs its own tumble; the numbers they land on are yours.
+const diceParts = entry => entry.parts.map(p => ({ label: p.label === 'd20' ? 'd20' : '', neg: !!p.neg, dice: (p.dice || []).map(d => ({ s: d.s, v: d.v, drop: !!d.drop })) }));
+function sendDice(entry) {
+  if (!IN_OBR || !OBRX.ready || SETTINGS.share === 'off' || entry.shared || entry.title === 'Test roll' || ui.viewing) return;
+  entry.diceSent = true;
+  const m = rollMessage(entry);
+  OBRX.api.broadcast.sendMessage(CH_DICE, { v: 1, id: entry.id, who: m.who, char: m.char, title: m.title, total: m.total, crit: m.crit, fumble: m.fumble, kind: entry.kind, mode: entry.mode, gmOnly: m.gmOnly,
+    set: D3_SETS[SETTINGS.diceSet] ? SETTINGS.diceSet : 'ivory', color: (OBRX.me && OBRX.me.color) || '', parts: diceParts(entry) }, { destination: 'REMOTE' }).catch(() => { });
+}
+function sendDiceReroll(entry, changes) {
+  if (!entry.diceSent || !IN_OBR || !OBRX.ready || ui.viewing) return;
+  OBRX.api.broadcast.sendMessage(CH_DICE, { v: 1, rr: 1, id: entry.id, total: String(entry.total), crit: !!entry.crit, fumble: !!entry.fumble, gmOnly: SETTINGS.share === 'gm', parts: diceParts(entry),
+    changes: changes.map(c => ({ k: c.x.k, s: c.x.d.s, to: c.to, kept: c.kept })) }, { destination: 'REMOTE' }).catch(() => { });
+}
+function receiveDice(d) {
+  try {
+    if (!d || d.v !== 1 || !Array.isArray(d.parts)) return;
+    if (d.gmOnly && OBRX.me.role !== 'GM') return;
+    if (!SETTINGS.diceAnim || SETTINGS.watchDice === false || ui.rrPick || document.hidden) return;
+    const cur = DICE.entry, box = $('#dicefx'), showing = box && !box.hidden && !box.classList.contains('out');
+    const parts = d.parts.slice(0, 40).map(p => ({ label: p.label === 'd20' ? 'd20' : '', neg: !!p.neg, value: 0, dice: (p.dice || []).slice(0, 40).map(x => ({ s: +x.s || 6, v: +x.v || 1, drop: !!x.drop })) }));
+    if (d.rr) {
+      if (!showing || !cur || !cur.spec || cur.spec.id !== d.id || !cur.landed) return;
+      cur.parts = parts; cur.total = String(d.total); cur.crit = !!d.crit; cur.fumble = !!d.fumble;
+      const ch = (d.changes || []).map(c => ({ x: { k: String(c.k), d: { s: +c.s } }, to: +c.to, kept: +c.kept })), ks = ch.map(c => c.x.k);
+      let p = null; try { if (SETTINGS.dice3d) p = d3Reroll(cur, ch); } catch (e) { p = null; }
+      if (p) p.then(() => paintDiceBox(cur, ks), () => paintDiceBox(cur, ks)); else paintDiceBox(cur, ks);
+      return;
+    }
+    if (!parts.some(p => p.dice.length)) return;
+    // your own dice come first: while they're rolling, or while they still offer a reroll, other people's dice wait their turn
+    if (showing && cur && !cur.spec && (!cur.landed || rrSources(cur).length)) return;
+    if (showing && cur && cur.spec && !cur.landed) { DICE.next = d; return; }
+    animateDice({ id: 'spec-' + d.id, spec: { id: d.id, who: String(d.who || 'Someone').slice(0, 40), char: String(d.char || '').slice(0, 40), set: d.set, color: d.color }, title: String(d.title || '').slice(0, 80),
+      kind: d.kind || '', mode: d.mode, total: String(d.total), crit: !!d.crit, fumble: !!d.fumble, parts, fu: [] });
+  } catch (e) { }
 }
 function receiveRoll(d) {
   if (!d || d.v !== 1) return;
@@ -6210,7 +6336,7 @@ function rollPromptedSave(id) {
   const p = readSaves().find(x => x.id === id); if (!p) return;
   if (p.skill) {
     const c = C(), sk = c.skills.find(x => x.name.toLowerCase() === p.skill.toLowerCase()), ab = sk ? sk.ab : (c.abilities.find(x => x.key === p.ability || x.name.toLowerCase() === p.skill.toLowerCase()) || {}).key || p.ability;
-    roll(p.skill + ' check' + (p.what && p.what !== p.skill + ' check' ? ' · ' + p.what : ''), checkComps(ab, sk ? sk.prof : 0), { test: { kind: 'check', self: myConds(), exh: c.exhaustion }, onLand: en => answerSave(p, en) });
+    roll(p.skill + ' check' + (p.what && p.what !== p.skill + ' check' ? ' · ' + p.what : ''), checkComps(ab, sk ? sk.prof : 0), { test: { kind: 'check', ab, skill: sk ? sk.name : '', self: myConds(), exh: c.exhaustion }, onLand: en => answerSave(p, en) });
     return;
   }
   const a = C().abilities.find(x => x.key === p.ability);
@@ -7904,7 +8030,7 @@ function rrDiceOf(entry, r) {
   return out;
 }
 function rrSources(entry) {
-  if (!entry || ui.viewing || entry.title === 'Test roll' || !entry.parts) return [];
+  if (!entry || entry.spec || ui.viewing || entry.title === 'Test roll' || !entry.parts) return [];
   const out = [], used = entry.rrUsed || [];
   if (entry.monId) {
     const m = enc().mons.find(x => x.id === entry.monId); if (!m) return [];
@@ -7970,6 +8096,7 @@ function doReroll(entry, S, dice) {
   if (S.e && S.left != null) { S.e.counter.used = (+S.e.counter.used || 0) + 1; save(); renderGrid(); }
   if (S.insp) { C().inspiration = false; save(); renderGrid(); publishStatus(); }
   if (S.mon && S.left != null) { S.mon.uses[S.ref] = (S.mon.uses[S.ref] || 0) + 1; saveEnc({ quiet: true }); if (encView()) renderGrid(); }
+  sendDiceReroll(entry, changes);
   const finish = () => { renderTray(true); paintDiceBox(entry, changes.map(c => c.x.k)); announceReroll(entry, S, text, before); toast(`${S.name}: ${text}. ${before} → ${entry.total}.`); };
   let p = null; try { if (SETTINGS.diceAnim && SETTINGS.dice3d) p = d3Reroll(entry, changes); } catch (e) { p = null; }
   if (!p) { finish(); return; }
@@ -8027,9 +8154,9 @@ function diceBoxControls(entry) {
 function scheduleDiceHide(want) {
   clearTimeout(DICE.hideT);
   const box = $('#dicefx'); if (!box || box.hidden) return;
-  const stay = SETTINGS.diceStay || 'auto';
+  const stay = DICE.entry && DICE.entry.spec ? 'auto' : SETTINGS.diceStay || 'auto';
   if (stay === 'tap' || DICE.hover || (ui.rrPick && ui.rrPick.entry === DICE.entry)) return;
-  const ms = stay === 'long' || want === 'long' ? DICE_STAY.long : DICE_STAY.short;
+  const ms = DICE.entry && DICE.entry.spec ? 4500 : stay === 'long' || want === 'long' ? DICE_STAY.long : DICE_STAY.short;
   DICE.hideT = setTimeout(hideDice, ms);
 }
 function hideDice() { const box = $('#dicefx'); if (!box) return; clearTimeout(DICE.hideT); box.classList.add('out'); DICE.hideT = setTimeout(() => { box.hidden = true; }, 400); }
@@ -8064,8 +8191,8 @@ function stopDice() { DICE.timers.forEach(t => clearInterval(t) || clearTimeout(
    dice are made to land on them, so history, rerolls and what the GM sees stay exactly the same ---- */
 const DICE3D = 'vendor/dice/';
 const D3 = { box: null, el: null, w: 0, loading: null, failed: false, busy: false, color: '' };
-// d4s don't reliably land on a set number in the library, so they (and d2, d3, d100) stay in the flat row only
-const D3_SIDES = [6, 8, 10, 12, 20];
+// d2 and d3 have no 3D die: they stay in the flat row only. A d100 is a tens die plus a d10 (see d3Notation)
+const D3_SIDES = [4, 6, 8, 10, 12, 20, 100];
 const D3_GRAV = { quick: 900, normal: 500, dramatic: 300 };
 // dice sets modelled on popular premium dice (metal, gemstone, swirled resin with gold ink, wood). Each set paints its
 // own surface (tex) and has its own finish (rough / metal / env = how much it reflects the room)
@@ -8122,7 +8249,6 @@ function d3Dress(b, key, set, base) {
   const [kind, cols, opt] = set.tex, col = cols.length ? cols : [base, base], vars = []; let cur = 0;
   const tex = { name: 'gs-' + key, composite: 'source-over', material: 'glass', get texture() { return vars[cur] || (vars[cur] = d3Paint(kind, col, opt, cur + 1)); } };
   const smi = F.__smi || (F.__smi = F.setMaterialInfo), ctm = F.__ctm || (F.__ctm = F.createTextMaterial), cm = F.__cm || (F.__cm = F.createMaterials);
-  F.materials_cache = {};
   F.setMaterialInfo = function (...a) { const r = smi.apply(this, a); this.dice_texture = tex; this.dice_texture_rand = tex; this.dice_material = 'glass'; this.dice_material_rand = 'glass'; return r; };
   F.createTextMaterial = function (e, t, n, ...rest) { cur = (n || 0) % 12; return ctm.call(this, e, t, n, ...rest); };
   F.createMaterials = function (...a) {
@@ -8167,7 +8293,7 @@ function d3Preload() {
     const wasHidden = box.hidden, tray = d3Tray();
     if (wasHidden) { box.style.visibility = 'hidden'; box.hidden = false; }
     box.appendChild(tray);
-    try { const b = await d3Box(tray); const snd = b.sounds; b.sounds = false; await Promise.race([b.roll('1d6+1d8+1d10+1d12+1d20@2,2,2,2,2'), new Promise(r => setTimeout(r, 8000))]); b.sounds = snd; try { b.clearDice && b.clearDice(); } catch (e) { } }
+    try { const b = await d3Box(tray); const snd = b.sounds; b.sounds = false; d3Wear(b, d3Colors()); await Promise.race([b.roll('1d4+1d6+1d8+1d10+1d12+1d20+1d100@2,2,2,2,2,2,20'), new Promise(r => setTimeout(r, 8000))]); b.sounds = snd; try { b.clearDice && b.clearDice(); } catch (e) { } }
     catch (e) { }
     if (wasHidden && !DICE.entry) { box.hidden = true; } box.style.visibility = '';
   })();
@@ -8195,20 +8321,24 @@ function dice3dWanted(all) {
   try { const c = document.createElement('canvas'); if (!(c.getContext('webgl2') || c.getContext('webgl'))) { D3.failed = true; return false; } } catch (e) { D3.failed = true; return false; }
   return true;
 }
-function d3Colors() {
-  const k = D3_SETS[SETTINGS.diceSet] ? SETTINGS.diceSet : 'ivory', set = D3_SETS[k];
+function d3Colors(setKey, ownColor) {
+  const k = D3_SETS[setKey || SETTINGS.diceSet] ? (setKey || SETTINGS.diceSet) : 'ivory', set = D3_SETS[k];
   let bg = set.tex[1][0], fg = set.fg, outline = set.outline;
   if (k === 'mine') {
-    bg = (IN_OBR && OBRX.me && OBRX.me.color) || '#efe6d0';
+    bg = (/^#[0-9a-f]{6}$/i.test(ownColor || '') && ownColor) || (!setKey && IN_OBR && OBRX.me && OBRX.me.color) || '#efe6d0';
     const m = bg.replace('#', '').match(/^([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i), lum = m ? (0.299 * parseInt(m[1], 16) + 0.587 * parseInt(m[2], 16) + 0.114 * parseInt(m[3], 16)) / 255 : 0.3;
     fg = lum > 0.6 ? '#1a1a1a' : '#ffffff'; outline = lum > 0.6 ? '#ffffff' : '#000000';
   }
   return { key: k, set, col: { name: 'gs-' + k + (k === 'mine' ? bg : ''), foreground: fg, background: bg, outline, edge: bg, texture: 'none', material: 'plastic' } };
 }
+// puts a dice set on the box's next throw (your own, or the set of the player whose roll you're watching)
+function d3Wear(b, CS) {
+  try { const F = b.DiceFactory, col = CS.col; F.applyColorSet(Object.assign({}, col, { texture: (F.colordata && F.colordata.texture) || { name: 'none', composite: 'source-over', material: '' } })); d3Dress(b, col.name, CS.set, col.background); } catch (e) { }
+}
 async function d3Box(el) {
   if (!D3.loading) D3.loading = (window['dice-box-threejs'] ? Promise.resolve() : loadScript(DICE3D + 'dist/dice-box-threejs.umd.js')).catch(e => { D3.failed = true; throw e; });
   await D3.loading;
-  const w = el.clientWidth, h = el.clientHeight || 190, CS = d3Colors(), col = CS.col, key = JSON.stringify(col) + SETTINGS.diceSpeed + SETTINGS.diceSound;
+  const w = el.clientWidth, h = el.clientHeight || 190, CS = d3Colors(), col = CS.col, key = SETTINGS.diceSpeed + '|' + SETTINGS.diceSound;
   if (D3.box && D3.el === el && Math.abs(D3.w - w) < 4 && D3.color === key) return D3.box;
   el.querySelectorAll('svg').forEach(x => x.remove()); el.insertAdjacentHTML('afterbegin', d3TraySvg(w, h));
   el.querySelectorAll('canvas').forEach(c => c.remove());
@@ -8219,14 +8349,17 @@ async function d3Box(el) {
   await b.initialize();
   try { b.renderer.setClearColor(0x000000, 0); } catch (e) { }
   try { const fl = document.getElementById('d3floor'), pr = Math.min(2, window.devicePixelRatio || 1); if (pr > 1) { b.renderer.setPixelRatio(pr); b.renderer.setSize(fl.clientWidth, fl.clientHeight); } } catch (e) { }
-  try { d3Dress(b, col.name, CS.set, col.background); } catch (e) { }
   Object.assign(D3, { box: b, el, w, color: key }); return b;
 }
-// "1d20+2d6@17,3,5": same-sided dice grouped in the order they first appear, values in that order
+// "1d20+2d6@17,3,5": same-sided dice grouped in the order they first appear, values in that order. A d100 is thrown
+// as two dice, a tens die (00-90) and a d10 for the ones. `order` says which of `all` each thrown die belongs to.
 function d3Notation(all) {
-  const groups = []; all.forEach((d, i) => { let g = groups.find(x => x.s === +d.s); if (!g) groups.push(g = { s: +d.s, idx: [] }); g.idx.push(i); });
-  const order = groups.flatMap(g => g.idx);
-  return { text: groups.map(g => g.idx.length + 'd' + g.s).join('+') + '@' + order.map(i => Math.max(1, Math.min(+all[i].s, +all[i].v || 1))).join(','), order };
+  const phys = [];
+  all.forEach((d, i) => { const sd = +d.s, v = Math.max(1, Math.min(sd, +d.v || 1));
+    if (sd === 100) { phys.push({ t: 100, v: (Math.floor(v / 10) % 10) * 10 || 100, i }); phys.push({ t: 10, v: v % 10 || 10, i }); } else phys.push({ t: sd, v, i }); });
+  const groups = []; phys.forEach(x => { let g = groups.find(y => y.t === x.t); if (!g) groups.push(g = { t: x.t, items: [] }); g.items.push(x); });
+  const flat = groups.flatMap(g => g.items);
+  return { text: groups.map(g => g.items.length + 'd' + g.t).join('+') + '@' + flat.map(x => x.v).join(','), order: flat.map(x => x.i) };
 }
 function d3Opacity(m, o) { [].concat(m.material || []).forEach(x => { x.transparent = true; x.opacity = o; }); }
 function d3Fade(b, entry, notKept = []) {
@@ -8302,6 +8435,7 @@ async function roll3d(entry, all) {
     const b = await d3Box(tray), N = d3Notation(all);
     if (DICE.entry !== entry) return true;
     d3Unsplit(b, tray); D3.meshes = null;
+    d3Wear(b, entry.spec ? d3Colors(entry.spec.set, entry.spec.color) : d3Colors());
     const done = b.roll(N.text);
     const res = await Promise.race([done, new Promise(r => setTimeout(() => r('slow'), 9000))]);
     if (DICE.entry !== entry) return true;
@@ -8313,7 +8447,7 @@ async function roll3d(entry, all) {
     d3Total(tray, entry);
     tray.classList.add('landed');
     if (entry.crit) tray.classList.add('crit'); else if (entry.fumble) tray.classList.add('fum');
-    try { if (navigator.vibrate) navigator.vibrate(entry.crit ? [30, 40, 60] : 25); } catch (e) { }
+    try { if (navigator.vibrate && !entry.spec) navigator.vibrate(entry.crit ? [30, 40, 60] : 25); } catch (e) { }
     return true;
   } catch (e) { tray.remove(); return false; }
 }
@@ -8324,15 +8458,16 @@ function animateDice(entry) {
   const shown = all.slice(0, 12), more = all.length - shown.length;
   const tone = entry.kind === 'heal' ? 'heal' : entry.kind === 'dmg' ? 'dmg' : 'check';
   const box = $('#dicefx');
-  box.innerHTML = '<div class="shelf">' + shown.map((d, i) => dieHtml(d, tone, i, ms)).join('') + (more > 0 ? `<span class="die-more">+${more} more</span>` : '') + '</div>';
+  if (!entry.spec) { DICE.next = null; sendDice(entry); }
+  box.innerHTML = (entry.spec ? `<div class="specwho">${esc(entry.spec.who)}${entry.spec.char ? ' (' + esc(entry.spec.char) + ')' : ''}: ${esc(entry.title)}</div>` : '') + '<div class="shelf">' + shown.map((d, i) => dieHtml(d, tone, i, ms)).join('') + (more > 0 ? `<span class="die-more">+${more} more</span>` : '') + '</div>';
   box.hidden = false; box.classList.remove('out');
-  renderTray(false, true);
+  if (!entry.spec) renderTray(false, true);
+  const landed = () => { entry.landed = true; if (entry.spec) { if (DICE.next) { const nx = DICE.next; DICE.next = null; DICE.timers.push(setTimeout(() => { if (DICE.entry === entry) receiveDice(nx); }, 1500)); } } else { renderTray(true); shareRoll(entry); entry.onLand && entry.onLand(entry); } diceBoxControls(entry); };
   const land3 = () => {
     shown.forEach((d, i) => { const el = box.querySelectorAll('.die')[i]; if (!el) return; el.classList.add('landed');
       if (d.s === 20 && !d.drop && entry.crit && d.v >= 2) el.classList.add('crit');
       if (d.s === 20 && !d.drop && d.v === 1 && entry.fumble) el.classList.add('fum'); });
-    renderTray(true); shareRoll(entry); entry.onLand && entry.onLand(entry);
-    diceBoxControls(entry);
+    landed();
   };
   box.classList.remove('d3');
   if (dice3dWanted(all)) {
@@ -8355,8 +8490,7 @@ function animateDice(entry) {
       if (d.s === 20 && !d.drop && entry.crit && d.v >= 2) el.classList.add('crit');
       if (d.s === 20 && !d.drop && d.v === 1 && entry.fumble) el.classList.add('fum');
     });
-    renderTray(true); shareRoll(entry); entry.onLand && entry.onLand(entry);
-    diceBoxControls(entry);
+    landed();
   }, ms + 45 * (shown.length - 1)));
 }
 function castMenu(el, e, c) {
@@ -8433,6 +8567,7 @@ function renderBanner() {
   }
   h += bkBannerHtml();
   h += levelUndoBanner(c);
+  try { h += fxSetupBanner(c); } catch (e) { }
   for (const e of hpBonusPending(c).slice(0, 2)) { const k = hpBonusOf(e).k, amt = k * (+c.level || 1); h += `<div class="banner"><span style="flex:1;min-width:200px"><b>${esc(e.name)}</b> raises your maximum HP by ${k} for every level: <b>+${amt}</b> at level ${+c.level || 1}. Is it in your maximum (${c.hp.max}) yet? Level-ups add ${k} each from now on.</span><button class="btn small primary" data-act="hpbonus" data-id="${e.id}">Add +${amt}</button><button class="btn small ghost" data-act="hpbonusskip" data-id="${e.id}">Already counted</button></div>`; }
   if (!storageOK) h += IN_OBR && !isGM()
     ? `<div class="banner warn"><span style="flex:1;min-width:200px">This browser blocks Grimsheet from saving (cookies or site data are turned off). Your character is backed up to your GM's Grimsheet as you play and comes back by itself when you reopen Grimsheet in this room${gmHasCopy(c) ? ' (the GM has your latest changes)' : ''}. For a copy of your own, use <b>Characters → Export</b>.</span></div>`
@@ -8826,6 +8961,47 @@ function openPrep(note, k) {
   const have = new Set((c.modules.find(m => m.type === 'spells') || { entries: [] }).entries.map(e => e.name));
   openModal('prep', { ci: Math.max(0, pcs.findIndex(P => P.k === k)), sel: [...have], own: spellOwners(c), note: note || '', show: 'all' });
 }
+/* ---- features that set themselves up: read every entry's text for bonuses, uses, rerolls and resistances that aren't
+   set up yet, and offer them in one list (new entries from imports and level-ups already get this as they arrive) ---- */
+const FXS_KEYS = { effect: e => !e.effect, uses: e => !e.counter, reroll: e => !e.reroll, defense: e => !e.defense };
+function fxFindings(c = C(), all) {
+  const ents = allEntries(c).filter(({ e }) => !e.creature && (e.text || '').length > 20);
+  const key = c.id + '|' + (all ? 1 : 0) + '|' + ents.map(({ e }) => e.id + (e.fxAsk ? 1 : 0) + e.text.length + (e.effect ? 'e' : '') + (e.counter ? 'c' : '')).join(',');
+  if (ui.fxFind && ui.fxFind.key === key) return ui.fxFind.list;
+  const list = [];
+  for (const { e, m } of ents) {
+    if (e.fxAsk && !all) continue;
+    let ss = []; try { ss = E.scan(e.text).filter(x => FXS_KEYS[x.key] && FXS_KEYS[x.key](e)); } catch (x) { }
+    if (ss.length) list.push({ e, m, ss });
+  }
+  ui.fxFind = { key, list }; return list;
+}
+function fxSetupBanner(c) {
+  if (ui.viewing || c.example) return '';
+  const n = fxFindings(c).length; if (!n) return '';
+  return `<div class="banner" style="background:var(--accent-soft)"><span style="flex:1;min-width:200px">Grimsheet can set up <b>${n} of your features, spells or items</b> from their text: bonuses, limited uses, rerolls and resistances.</span><button class="btn small primary" data-act="fxsopen">Review</button><button class="btn small ghost" data-act="fxslater">Not now</button></div>`;
+}
+function fxSetupHtml(md) {
+  const list = fxFindings(C(), md.all);
+  return dlgHead('Set up from the text') + `<div class="dlg-b" style="gap:10px">
+    <div class="muted" style="font-size:.9rem">Found in what your features, spells and items say. Tick what you want; you can change any of it later with the pencil on the entry. "Always on" bonuses apply straight away; the others get a switch on the sheet.</div>
+    ${list.length ? list.map(({ e, m, ss }) => `<div class="sugg" style="margin:0"><h3>${esc(e.name)} <span class="muted" style="font-weight:400">${esc(m.title)}</span></h3>${ss.map(x => `<label><input type="checkbox" data-fxs="${esc(e.id)}|${esc(x.key)}" checked> ${esc(x.label)}</label>`).join('')}</div>`).join('') : '<div class="muted">Nothing new found. Everything Grimsheet can read is already set up.</div>'}
+  </div><div class="dlg-f"><span class="sp"></span><button class="btn" data-act="close">Cancel</button>${list.length ? '<button class="btn primary" data-act="fxsapply">Set up selected</button>' : ''}</div>`;
+}
+function fxSetupAct(act) {
+  const c = C();
+  if (act === 'fxsopen') { openModal('fxsetup', { all: false }); return true; }
+  if (act === 'fxsall') { openModal('fxsetup', { all: true }); return true; }
+  if (act === 'fxslater') { fxFindings(c).forEach(({ e }) => { e.fxAsk = 1; }); ui.fxFind = null; save(); render(); toast('Okay. Settings → Set up from the text brings the list back.'); return true; }
+  if (act === 'fxsapply') {
+    const md = ui.modal, list = fxFindings(c, md && md.all); let n = 0;
+    const want = new Set([...document.querySelectorAll('[data-fxs]')].filter(b => b.checked).map(b => b.dataset.fxs));
+    list.forEach(({ e, ss }) => { ss.forEach(x => { if (want.has(e.id + '|' + x.key)) { try { x.apply(e); n++; } catch (err) { } } }); e.fxAsk = 1; });
+    ui.fxFind = null; save(); closeModal(); render(); toast(n ? `Set up ${n} thing${n === 1 ? '' : 's'} from the text.` : 'Nothing changed.');
+    return true;
+  }
+  return false;
+}
 function prepHtml(md) {
   const c = C(), pcs = prepClasses(c), P = pcs[md.ci] || pcs[0], L = spellList(P.k).filter(x => x.level <= P.max && srdSpell(x.name));
   const on = new Set(md.sel), onList = new Set(L.map(x => x.name)), own = md.own || {};
@@ -9125,7 +9301,7 @@ function renderCombat() {
   return `${simpleHead}${IN_OBR ? `<div data-link style="font-size:.85rem;margin-bottom:8px;display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center">${linkHtml()}</div>` : ''}<div class="vitals">
       <div class="vt"><span class="k">AC</span>${ed ? `<input id="f-ac" data-bind="acFormula" value="${esc(c.acFormula)}" title="Base AC formula, e.g. 10 + DEX or 17" aria-label="AC formula">` : ''}<button class="v vt-b" data-act="explain" data-v="ac" title="Where does this come from?">${ac}</button></div>
       <div class="vt"><span class="k">INIT</span>${ed ? `<input id="f-ini" data-bind="initBonus" value="${esc(c.initBonus)}" placeholder="bonus" aria-label="Initiative bonus">` : ''}<button class="v vt-b" data-act="init" title="Roll initiative">${ini}</button></div>
-      <div class="vt"><span class="k">SPEED</span>${ed ? `<input id="f-speed" data-bind="speed" value="${esc(c.speed)}" aria-label="Speed">` : `<span class="v" style="font-size:1.05rem;padding-top:3px">${esc(c.speed)}</span>`}</div>
+      <div class="vt"><span class="k">SPEED</span>${ed ? `<input id="f-speed" data-bind="speed" value="${esc(c.speed)}" aria-label="Speed">` : `<span class="v" style="font-size:1.05rem;padding-top:3px" ${speedText(c) !== c.speed ? `title="${esc(c.speed)} without what's switched on"` : ''}>${esc(speedText(c))}</span>`}</div>
       ${c.simple ? '' : `<div class="vt"><span class="k">PROF</span><span class="v">${signed(profBonus(c))}</span></div>`}
     </div>
     <button class="insp react ${c.reactUsed ? 'used' : ''}" data-act="react" aria-pressed="${!!c.reactUsed}" title="${c.reactUsed ? 'Reaction used this round. It comes back at the start of your turn.' : 'Reaction available. Tap when you use it.'}">${c.reactUsed ? '⟲ Reaction used' : '⟲ Reaction ready'}</button>
@@ -9272,14 +9448,7 @@ function entryRow(e, m, compact) {
     ${open && hasBody ? `<div class="e-body">${meta.length ? `<div class="e-meta">${meta.map(([k, v]) => `<span>${k}: <b>${esc(v)}</b></span>`).join('')}</div>` : ''}${textWithDice(e.text)}</div>` : ''}
   </div>`;
 }
-function fxSummary(e) {
-  const f = e.effect; if (!f) return '';
-  const p = [];
-  if (f.attack) p.push('+' + f.attack + ' attack'); if (f.damage) p.push('+' + f.damage + ' damage'); if (f.save) p.push('+' + f.save + ' saves');
-  if (f.ac) p.push('+' + f.ac + ' AC'); if (f.check) p.push('+' + f.check + ' checks');
-  const o = { WEAPON: 'weapon attacks', SPELLS: 'spell attacks', SPELL: 'spell-ability attacks' }[f.only] || (f.only ? f.only + ' attacks' : '');
-  return p.join(', ').replace(/\+\-/g, '−') + (o && (f.attack || f.damage) ? ' (' + o + ')' : '');
-}
+function fxSummary(e) { return e.effect ? E.effectText(e.effect) : ''; }
 
 function renderTray(isNew, rolling) {
   const r = ui.log[0];
@@ -9405,6 +9574,7 @@ function renderModal() {
   else if (m.type === 'pcbrestore') h = pcbRestoreHtml(m);
   else if (m.type === 'create') h = createHtml(m);
   else if (m.type === 'prep') h = prepHtml(m);
+  else if (m.type === 'fxsetup') h = fxSetupHtml(m);
   else if (m.type === 'viewwait') h = dlgHead('Opening ' + (m.name || 'sheet')) + `<div class="dlg-b">${m.failed ? `<div class="banner warn" style="margin:0">${esc(m.owner || 'The player')}'s Grimsheet didn't answer. They need to be in the room with Grimsheet 1.3 or newer installed.</div>` : `<div class="sugg"><h3>Asking ${esc(m.owner || 'the player')}'s Grimsheet…</h3><span>The sheet opens read-only in a moment.</span></div>`}</div><div class="dlg-f"><button class="btn" data-act="close">${m.failed ? 'Close' : 'Cancel'}</button></div>`;
   $('#ovl').innerHTML = `<div class="ovl" data-act="ovlbg"><div class="dlg" role="dialog" aria-modal="true">${h}</div></div>`;
   $('#ovl .ovl').scrollTop = keepScroll;
@@ -9604,10 +9774,13 @@ function settingsHtml() {
   const sp = SETTINGS.diceSpeed;
   return `<div class="dlg-h"><h2 style="flex:none">Settings</h2><span class="muted" id="set-version" style="font-size:.82rem;margin-left:10px;white-space:nowrap">Grimsheet ${esc(APP_VERSION)}${window.GRIMSHEET_TEST ? ' <b style="color:var(--danger,#c0392b)">TEST</b>' : ''}</span><span style="flex:1"></span><button class="ico" data-act="close" title="Close" aria-label="Close">✕</button></div>` + `<div class="dlg-b" style="gap:0">
     ${tourSettingsHtml()}
+    <div class="setrow"><div class="grow"><b>Set up from the text</b><div class="muted">Reads your features, spells and items for bonuses, limited uses, rerolls and resistances that aren't set up yet, and lists them for you to pick.</div></div><button class="btn small" data-act="fxsall">Read my sheet</button></div>
     <div class="setrow"><div class="grow"><b>Dice animation</b><div class="muted">Show the dice tumbling and landing on each roll. The total appears when they land.${REDUCED ? ' Your device asks for reduced motion, so this starts off.' : ''}</div></div>
       <button class="switch ${SETTINGS.diceAnim ? 'on' : ''}" data-act="setanim" aria-pressed="${SETTINGS.diceAnim}"><i></i>${SETTINGS.diceAnim ? 'On' : 'Off'}</button></div>
-    <div class="setrow" ${SETTINGS.diceAnim ? '' : 'style="opacity:.5"'}><div class="grow"><b>Dice style</b><div class="muted">3D: real dice thrown into a dice box (✕ on its corner closes it). Flat: the simple dice, the default on phones. d4s (and d2, d3, d100) show in the row of flat dice under the tray; more than 15 dice use the flat ones only.</div></div>
+    <div class="setrow" ${SETTINGS.diceAnim ? '' : 'style="opacity:.5"'}><div class="grow"><b>Dice style</b><div class="muted">3D: real dice thrown into a dice box (✕ on its corner closes it). Flat: the simple dice, the default on phones. A d100 is thrown as two dice, tens and ones. d2 and d3 show only in the row of flat dice; more than 15 dice use the flat ones only.</div></div>
       <div class="seg" role="group" aria-label="Dice style">${[['3d', '3D tray'], ['flat', 'Flat']].map(([v, l]) => `<button data-act="setd3" data-v="${v}" class="${(SETTINGS.dice3d ? '3d' : 'flat') === v ? 'on' : ''}" ${SETTINGS.diceAnim ? '' : 'disabled'}>${l}</button>`).join('')}</div></div>
+    ${IN_OBR ? `<div class="setrow" ${SETTINGS.diceAnim ? '' : 'style="opacity:.5"'}><div class="grow"><b>Other players' dice</b><div class="muted">When someone shares a roll, their dice roll on your screen too, in their dice set, landing on their numbers. Your own dice always come first.</div></div>
+      <button class="switch ${SETTINGS.watchDice !== false ? 'on' : ''}" data-act="setwatch" aria-pressed="${SETTINGS.watchDice !== false}" ${SETTINGS.diceAnim ? '' : 'disabled'}><i></i>${SETTINGS.watchDice !== false ? 'Shown' : 'Hidden'}</button></div>` : ''}
     <div class="setrow" style="flex-wrap:wrap;${SETTINGS.diceAnim && SETTINGS.dice3d ? '' : 'opacity:.5'}"><div class="grow" style="min-width:220px"><b>3D dice</b><div class="muted">Pick a set, and whether they clatter when they land.</div></div>
       <select id="set-diceset" aria-label="Dice set" ${SETTINGS.diceAnim && SETTINGS.dice3d ? '' : 'disabled'}>${Object.entries(D3_SETS).map(([k, x]) => `<option value="${k}" ${(SETTINGS.diceSet || 'ivory') === k ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}</select>
       <button class="switch ${SETTINGS.diceSound ? 'on' : ''}" data-act="setdicesnd" aria-pressed="${!!SETTINGS.diceSound}" ${SETTINGS.diceAnim && SETTINGS.dice3d ? '' : 'disabled'}><i></i>${SETTINGS.diceSound ? 'Sound' : 'Silent'}</button>
@@ -9743,7 +9916,10 @@ function editorHtml(m) {
       ${fld('Saving throws', 'effect.save', d.effect.save, { formula: 'num', ph: '1d4' })}
       ${fld('AC', 'effect.ac', d.effect.ac, { formula: 'num', ph: '2' })}
       ${fld('Ability checks', 'effect.check', d.effect.check, { formula: 'num', ph: '1d4' })}
-      <label class="fld"><span>Attack/damage applies to</span><select id="d-fx-only" data-d="effect.only">${abilOptions(d.effect.only, [['', 'All attacks'], ['WEAPON', 'Weapon attacks'], ['SPELLS', 'Spell entries']]).replace(/>(Strength|Dexterity|Constitution|Intelligence|Wisdom|Charisma)</g, '>$1 attacks<')}</select></label></div>` : '');
+      ${fld('Initiative', 'effect.init', d.effect.init || '', { formula: 'num', ph: 'PROF' })}
+      ${fld('Speed (ft)', 'effect.speed', d.effect.speed || '', { formula: 'num', ph: '10' })}
+      ${fld('Advantage on', 'effect.adv', d.effect.adv || '', { ph: 'atk, save:DEX, check:STR, skill:Stealth, init' })}
+      <label class="fld"><span>Attack/damage applies to</span><select id="d-fx-only" data-d="effect.only">${abilOptions(d.effect.only, [['', 'All attacks'], ['WEAPON', 'Weapon attacks'], ['MELEE', 'Melee weapon attacks'], ['RANGED', 'Ranged weapon attacks'], ['SPELLS', 'Spell entries']]).replace(/>(Strength|Dexterity|Constitution|Intelligence|Wisdom|Charisma)</g, '>$1 attacks<')}</select></label></div>` : '');
 
   h += sec('spell', 'Spell details', 'Level, timing and upcasting. Leveled spells get a Cast button that spends a slot.', isSpell, isSpell ? `<div class="frow">
       ${fld('Level (0 = cantrip)', 'spell.level', d.spell.level, { num: true })}${fld('School', 'spell.school', d.spell.school)}${fld('Casting time', 'spell.castTime', d.spell.castTime)}
@@ -9775,7 +9951,7 @@ const SEC_DEFAULT = {
   counter: () => ({ kind: 'boxes', max: '1', used: 0, reset: 'long', recover: 'all' }),
   reroll: () => ({ on: 'd20', dice: 'one', low: 1, keep: 'new', bonus: '' }),
   defense: () => ({ res: '', imm: '', vul: '' }),
-  effect: () => ({ active: false, attack: '', damage: '', save: '', ac: '', check: '', only: '' }),
+  effect: () => ({ active: false, attack: '', damage: '', save: '', ac: '', check: '', only: '', init: '', speed: '', dtype: '', adv: '' }),
   spell: () => ({ level: 1, school: '', castTime: '', range: '', duration: '', components: '', upcast: '', cantrip: false }),
   item: () => ({ qty: 1, weight: 0, equipped: false }),
   creature: () => ({ ac: '12', hpMax: 10, hp: 10, speed: '30 ft' }),
@@ -9802,6 +9978,7 @@ document.addEventListener('click', ev => {
   if (act.startsWith('cls') && clsAct(act, el, v, i)) return;
   if (act.startsWith('cw') && cwAct(act, el, v, i)) return;
   if (act.startsWith('prep') && prepAct(act, el, v)) return;
+  if (act.startsWith('fxs') && fxSetupAct(act)) return;
   if ((act.startsWith('gm') || act.startsWith('pcb') || act === 'bkdismiss') && bkAct(act, el, v)) return;
   switch (act) {
     case 'mode': ui.mode = v; render(); break;
@@ -9819,15 +9996,15 @@ document.addEventListener('click', ev => {
       save(); render(); renderModal(); break;
     }
     case 'srdone': closeModal(); doRest('short'); break;
-    case 'check': { const a = c.abilities.find(x => x.key === v); roll(a.name + ' check', checkComps(v, 0), { test: { kind: 'check', self: myConds(), exh: c.exhaustion }, onLand: IN_OBR && !ui.viewing ? en => answerCheckByRoll(a.name, en) : undefined }); break; }
+    case 'check': { const a = c.abilities.find(x => x.key === v); roll(a.name + ' check', checkComps(v, 0), { test: { kind: 'check', ab: v, self: myConds(), exh: c.exhaustion }, onLand: IN_OBR && !ui.viewing ? en => answerCheckByRoll(a.name, en) : undefined }); break; }
     case 'save': { const a = c.abilities.find(x => x.key === v); roll(a.name + ' save', saveComps(v), { test: { kind: 'save', ab: v, self: myConds(), exh: c.exhaustion }, onLand: IN_OBR && !ui.viewing ? en => answerByRoll(v, en) : undefined }); break; }
     case 'saveprof': if (ed) { c.abilities[i].save = !c.abilities[i].save; rerender(); } break;
-    case 'skill': { const s = c.skills[i]; roll(s.name + ' check', checkComps(s.ab, s.prof), { test: { kind: 'check', self: myConds(), exh: c.exhaustion }, onLand: IN_OBR && !ui.viewing ? en => answerCheckByRoll(s.name, en) : undefined }); break; }
+    case 'skill': { const s = c.skills[i]; roll(s.name + ' check', checkComps(s.ab, s.prof), { test: { kind: 'check', ab: s.ab, skill: s.name, self: myConds(), exh: c.exhaustion }, onLand: IN_OBR && !ui.viewing ? en => answerCheckByRoll(s.name, en) : undefined }); break; }
     case 'skprof': if (ed) { c.skills[i].prof = (c.skills[i].prof + 1) % 3; rerender(); } break;
     case 'delskill': c.skills.splice(i, 1); rerender(); break;
     case 'addskill': c.skills.push({ id: uid(), name: 'New skill', ab: 'INT', prof: 0 }); rerender(); break;
     case 'addabil': { let k = 'NEW', n = 1; while (c.abilities.some(a => a.key === k)) k = 'NEW' + (++n); c.abilities.push({ key: k, name: 'Custom', score: 10, save: false, custom: true }); ui.mode = 'edit'; rerender(); toast('Rename it, then set its key in formulas (e.g. SAN).'); break; }
-    case 'init': roll('Initiative', initComps(), { test: { kind: 'check', self: myConds(), exh: c.exhaustion }, onLand: en => { sendInitiative(en); reportInit(en); } }); break;
+    case 'init': roll('Initiative', initComps(), { test: { kind: 'check', ab: 'DEX', init: true, self: myConds(), exh: c.exhaustion }, onLand: en => { sendInitiative(en); reportInit(en); } }); break;
     case 'explain': {
       if (v === 'ac') showPop(el, explainHtml('Armor Class', acComps()));
       else if (v === 'spelldc') showPop(el, explainHtml('Spell save DC', [{ src: 'Base', f: '8' }, { f: 'SPELL', src: c.spellAbility ? c.spellAbility + ' (spellcasting)' : 'Spellcasting' }, { f: 'PROF' }]));
@@ -9935,6 +10112,7 @@ document.addEventListener('click', ev => {
     case 'setanim': SETTINGS.diceAnim = !SETTINGS.diceAnim; saveSettings(); if (!SETTINGS.diceAnim) { stopDice(); const b = $('#dicefx'); b.hidden = true; renderTray(); } renderModal(); break;
     case 'setspeed': SETTINGS.diceSpeed = v; saveSettings(); renderModal(); break;
     case 'setd3': SETTINGS.dice3d = v === '3d'; saveSettings(); renderModal(); if (SETTINGS.dice3d) setTimeout(d3Preload, 100); break;
+    case 'setwatch': SETTINGS.watchDice = SETTINGS.watchDice === false; saveSettings(); renderModal(); break;
     case 'setdicesnd': SETTINGS.diceSound = !SETTINGS.diceSound; saveSettings(); renderModal(); break;
     case 'setshare': SETTINGS.share = v; saveSettings(); renderModal(); break;
     case 'tour': tourStart(v); break;

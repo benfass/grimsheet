@@ -682,3 +682,23 @@ Every change goes to a **test extension** first; players only get it after it's 
 
 ## Single-die reroll (1.57.4)
 - When every die in the 3D box is being rerolled (a single d20, say), the box doesn't split: the die is thrown again across the whole box.
+
+## Everyone sees the dice (1.58.0)
+- **What**: when a shared roll's dice are thrown, the rest of the room gets the same dice on channel `com.grimsheet/dice` and their own dice box throws them: the roller's dice set (and Owlbear colour for "My Owlbear colour"), landing on the roller's numbers, with a name tag ("Ben (Brann): Longsword · to hit") above the box. Each screen runs its own tumble; the numbers are the roller's.
+- **Who sees it**: exactly who gets the roll's result today. Share off, hidden DM rolls and test rolls send nothing; "DM only" rolls show only on the DM's screen.
+- **Your own dice come first**: while your dice are rolling, or still offer a reroll, other people's dice are skipped (you still get the result notice). If someone else's dice are still rolling when another roll arrives, it waits and plays after.
+- **Rerolls** are mirrored: the watcher's box splits and rethrows the same dice.
+- **Watching**: needs the panel open and dice animation on; 3D box if you use it, flat dice otherwise. The dice clear after about 4.5 s. Settings → Other players' dice: Shown / Hidden.
+- Also: the box now swaps dice sets per throw without being rebuilt, and "My Owlbear colour" really reads the player's Owlbear colour (it used the ivory fallback before).
+
+## d4 and d100 in the dice box (1.58.0)
+- d4s are thrown in the 3D box (the library does land a forced d4 correctly; only its reported value was stale, which Grimsheet doesn't use). The number is the one upright at the top point.
+- A d100 is thrown as two dice: a tens die (00–90) and a d10 for the ones; 100 is 00 and 0. Both belong to the one d100 for rerolls and fading.
+- Only d2 and d3 stay in the flat row.
+
+## Bonuses read from the text (1.58.0)
+- **Scanner** (`E.effectOf`, part of `E.scan`): reads what a feature, spell or item gives while it's on: "+N bonus to attack rolls / damage rolls / saving throws / AC / ability checks / initiative", "a bonus to … equal to your X modifier (minimum +1)" or "your proficiency bonus", "add(s) 1d4 to …", "roll a d4 and add the number rolled to …", "AC increases by N", "speed increases by N feet", "an extra NdM [type] damage" (only when the text has no other damage), and "you have advantage on attack rolls / [ability] saving throws / [ability] checks / [skill] / initiative". A magic weapon's own bonus ("made with this weapon") and conditional advantage ("against…", "to avoid…") are left alone.
+- **Always on or a switch**: with no duration or activation in the text (for 1 minute, until…, bonus action, reaction, while raging, once per…, concentration) the bonus is on from the start; otherwise the entry gets a switch, off until used.
+- **Effect fields added**: initiative, speed, extra-damage type, advantage tags (`atk`, `save`, `save:DEX`, `check:STR`, `skill:Stealth`, `init`), and "ranged weapon attacks" / "melee weapon attacks" for attack and damage bonuses. Advantage from what's on feeds the same adv/dis logic as conditions and shows in the roll's reason. Speed on the sheet includes the bonus.
+- **Where it runs**: everywhere the scanner already ran (PDF and D&D Beyond imports, class features on level-up, homebrew classes, character creation, the entry editor's "Found in the text").
+- **Existing characters**: a banner offers "Grimsheet can set up N of your features, spells or items from their text"; Review lists each entry with what was found (bonuses, limited uses, rerolls, resistances not yet set up), all ticked; Set up selected applies them. Not now hides it; Settings → Set up from the text → Read my sheet brings the full list back. Entries are marked once reviewed (`fxAsk`).
