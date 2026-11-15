@@ -746,3 +746,7 @@ Every change goes to a **test extension** first; players only get it after it's 
 - **Placing**: tokens go on the Character layer in the middle of the DM's view, in a row (two rows past six), snapped to the grid, sized by the monster's size from its stat block (Tiny ½, Small/Medium 1, Large 2, Huge 3, Gargantuan 4 squares), named like the monster and already linked (Grimsheet monster link plus HP/AC for the token bars, same as Link token).
 - **Remembered**: the picture is kept per kind of monster on this browser (`grimsheet.montok.v1`, by name), so the next time ＋ Token places it straight away (all of that kind without a token). "New token" in the edit row opens the dialog to change the picture.
 - The bundled Owlbear SDK now also exposes `buildImage`.
+
+## Token size fix (1.60.1)
+- **Bug**: a picture already set to 2×2 in Owlbear (as Large token art usually is) was scaled ×2 again for a Large monster, so a Minotaur came out 4×4.
+- **Fix**: the token's scale is worked out so it ends up exactly the monster's size in squares, whatever size the picture was set to in Owlbear (squares across = picture width ÷ its grid DPI × scale).
