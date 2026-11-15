@@ -739,3 +739,10 @@ Every change goes to a **test extension** first; players only get it after it's 
 - **Play mode**: the current HP is a field: type a number to set it (kept between 0 and max), or −7 / +5 for damage and healing, same as the quick box; Enter or leaving the field applies it. Max HP is shown, not editable (it used to be a tap-to-edit button).
 - **Edit mode** (and simple characters, which have no separate edit mode): both current and max HP are fields.
 - Read-only when viewing another player's sheet.
+
+## Monster tokens from Grimsheet (1.60.0)
+- **Where**: in the encounter, a monster without a token has a **＋ Token** button (DM only, in Owlbear); the monster's edit row has **Place token** / **New token**.
+- **First time for a kind of monster**: a dialog offers **Choose from my Owlbear images** (Owlbear's own image picker, searched for the monster's name, character images) or **Upload a new image** (Owlbear's upload window, saved in the DM's Owlbear storage as one square across; then the picker opens on it). Options: place all of that kind still without a token (on when there are several), and hidden from players.
+- **Placing**: tokens go on the Character layer in the middle of the DM's view, in a row (two rows past six), snapped to the grid, sized by the monster's size from its stat block (Tiny ½, Small/Medium 1, Large 2, Huge 3, Gargantuan 4 squares), named like the monster and already linked (Grimsheet monster link plus HP/AC for the token bars, same as Link token).
+- **Remembered**: the picture is kept per kind of monster on this browser (`grimsheet.montok.v1`, by name), so the next time ＋ Token places it straight away (all of that kind without a token). "New token" in the edit row opens the dialog to change the picture.
+- The bundled Owlbear SDK now also exposes `buildImage`.
