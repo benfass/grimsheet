@@ -3788,7 +3788,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.59.2';
+const APP_VERSION = '1.60.2';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 // phones (touch screen, short side under 600px) get the flat dice by default: the 3D box takes too much of a small screen
@@ -5280,6 +5280,120 @@ function tokLinkHtml(md) {
     ${away ? `<div><button class="btn small" data-act="toklinkall">${md.showAll ? 'Only this map' : `Show ${away} token${away === 1 ? '' : 's'} elsewhere in the scene`}</button></div>` : ''}
   </div><div class="dlg-f"><button class="btn" data-act="close">Cancel</button></div>`;
 }
+/* ---- monster tokens from Grimsheet: pick (or upload) a picture in Owlbear's own image library, and Grimsheet puts the
+   monster's token on the map: sized by the monster's size, in the middle of the DM's view, already linked (name, HP,
+   AC). The picture is remembered per kind of monster (browser storage), so the next goblins go straight onto the map. ---- */
+const MONTOK = 'grimsheet.montok.v1';
+const SIZE_SQ = { tiny: 0.5, small: 1, medium: 1, large: 2, huge: 3, gargantuan: 4 };
+function monSize(t) { const m = String((t && (t.meta || '')) + ' ' + ((t && (t.text || t.desc)) || '')).match(/\b(tiny|small|medium|large|huge|gargantuan)\b/i); return m ? SIZE_SQ[m[1].toLowerCase()] : 1; }
+const monTokKey = t => String(t.name || '').trim().toLowerCase();
+function monTokImg(t) { const all = readJSON(MONTOK) || {}; return t && all[monTokKey(t)] || null; }
+function monTokSave(t, img) { const all = readJSON(MONTOK) || {}; if (img) all[monTokKey(t)] = img; else delete all[monTokKey(t)]; try { localStorage.setItem(MONTOK, JSON.stringify(all)); } catch (e) { } }
+function monTokOpen(inst) {
+  const f = findMon(inst); if (!f) return;
+  const t = f.e.tpls[f.m.tpl] || tplById(f.m.tpl) || { name: f.m.name };
+  const same = f.e.mons.filter(x => x.tpl === f.m.tpl && !(OBRX.monTokens[x.id] || []).length);
+  openModal('montok', { inst, tpl: f.m.tpl, all: same.length > 1, hidden: false, img: monTokImg(t), n: same.length });
+}
+function monTokHtml(md) {
+  const f = findMon(md.inst); if (!f) return dlgHead('Token') + '<div class="dlg-b"><div class="muted">That monster is gone.</div></div>';
+  const t = f.e.tpls[f.m.tpl] || tplById(f.m.tpl) || { name: f.m.name }, sq = monSize(t);
+  const name = String(f.m.name).replace(/\s+\d+$/, '');
+  return dlgHead('Token for ' + name) + `<div class="dlg-b" style="gap:12px">
+    ${md.img ? `<div style="display:flex;gap:12px;align-items:center"><img src="${esc(md.img.image.url)}" alt="" style="width:72px;height:72px;object-fit:contain;border-radius:50%;background:var(--sunk)"><div><b>${esc(md.img.name || name)}</b><div class="muted" style="font-size:.85rem">From your Owlbear images · ${sq === 0.5 ? 'half a square' : sq + ' square' + (sq === 1 ? '' : 's') + ' across'}</div></div></div>`
+      : `<div class="muted" style="font-size:.9rem">Pick the picture from your Owlbear images, or upload a new one. Grimsheet puts the token in the middle of your view, ${sq === 0.5 ? 'half a square' : sq + ' square' + (sq === 1 ? '' : 's')} across, already linked to ${esc(name)}, and remembers the picture for next time.</div>`}
+    <div class="addrow" style="margin:0"><button class="btn small ${md.img ? '' : 'primary'}" data-act="montokpick">${md.img ? 'Choose another picture' : 'Choose from my Owlbear images'}</button><button class="btn small" data-act="montokup">Upload a new image</button></div>
+    ${md.n > 1 ? `<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="mt-all" ${md.all ? 'checked' : ''}> Place all ${md.n} ${esc(name)} without a token</label>` : ''}
+    <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="mt-hid" ${md.hidden ? 'checked' : ''}> Hidden from players (reveal them in Owlbear when the fight starts)</label>
+    ${md.err ? `<div class="banner warn" style="margin:0">${esc(md.err)}</div>` : ''}
+  </div><div class="dlg-f"><span class="sp"></span><button class="btn" data-act="close">Cancel</button><button class="btn primary" data-act="montokgo" ${md.img ? '' : 'disabled'}>Place on the map</button></div>`;
+}
+function monTokRead() { const md = ui.modal; if (!md || md.type !== 'montok') return; const a = $('#mt-all'), h = $('#mt-hid'); if (a) md.all = a.checked; if (h) md.hidden = h.checked; }
+async function monTokPick(search) {
+  const md = ui.modal; if (!md || md.type !== 'montok') return; monTokRead();
+  const f = findMon(md.inst); if (!f) return;
+  let got; try { got = await OBRX.api.assets.downloadImages(false, search || String(f.m.name).replace(/\s+\d+$/, ''), 'CHARACTER'); } catch (e) { md.err = 'Owlbear didn\'t open its images.'; renderModal(); return; }
+  if (!got || !got.length) return;
+  const d = got[0]; md.img = { image: d.image, grid: d.grid, name: d.name, scale: (d.scale || { x: 1, y: 1 }), rotation: d.rotation || 0 }; md.err = ''; renderModal();
+}
+async function monTokUpload() {
+  const md = ui.modal; if (!md || md.type !== 'montok') return; monTokRead();
+  const f = findMon(md.inst); if (!f) return;
+  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/png,image/jpeg,image/webp,image/gif';
+  inp.onchange = async () => {
+    const file = inp.files && inp.files[0]; if (!file) return;
+    const name = String(f.m.name).replace(/\s+\d+$/, ''), B = window.OwlbearBuild;
+    try { await OBRX.api.assets.uploadImages([B.buildImageUpload(file).name(name).dpi(Math.max(1, Math.round(await imgDpi(file)))).build()], 'CHARACTER'); }
+    catch (e) { md.err = 'Owlbear didn\'t take the upload: ' + String((e && (e.message || (e.error && e.error.message))) || e).slice(0, 120); renderModal(); return; }
+    toast('Uploaded. Now pick it in your Owlbear images.');
+    monTokPick(name);
+  };
+  inp.click();
+}
+// an uploaded picture is one square across: its pixels-per-square is its shorter side
+const imgDpi = file => new Promise(res => { const u = URL.createObjectURL(file), im = new Image(); im.onload = () => { res(Math.min(im.naturalWidth, im.naturalHeight) || 150); URL.revokeObjectURL(u); }; im.onerror = () => res(150); im.src = u; });
+async function monTokPlace() {
+  const md = ui.modal; if (!md || md.type !== 'montok' || !md.img) return; monTokRead();
+  const f = findMon(md.inst); if (!f) return;
+  const t = f.e.tpls[f.m.tpl] || tplById(f.m.tpl) || { name: f.m.name };
+  const list = md.all ? f.e.mons.filter(x => x.tpl === f.m.tpl && !(OBRX.monTokens[x.id] || []).length) : [f.m];
+  monTokSave(t, md.img); closeModal();
+  await monTokDrop(t, list, md.img, md.hidden);
+}
+async function monTokDrop(t, list, img, hidden) {
+  const B = window.OwlbearBuild; if (!B || !list.length) return;
+  const sq = monSize(t);
+  let dpi = 150, view = null;
+  try { dpi = await OBRX.api.scene.grid.getDpi(); } catch (e) { }
+  try { const vp = OBRX.api.viewport, w = await vp.getWidth(), h = await vp.getHeight(); view = await vp.inverseTransformPoint({ x: w / 2, y: h / 2 }); } catch (e) { view = { x: 0, y: 0 }; }
+  // a row (two rows past six) in the middle of the view, on the grid
+  const step = Math.max(1, sq) * dpi, perRow = list.length > 6 ? Math.ceil(list.length / 2) : list.length;
+  const snap = v => Math.round(v / dpi) * dpi + (sq % 2 === 1 || sq < 1 ? dpi / 2 : 0);
+  const x0 = snap(view.x - (perRow - 1) * step / 2), y0 = snap(view.y - (list.length > perRow ? step / 2 : 0));
+  const items = list.map((m, i) => {
+    const pos = { x: x0 + (i % perRow) * step, y: y0 + Math.floor(i / perRow) * step };
+    const gr = Object.assign({ offset: { x: img.image.width / 2, y: img.image.height / 2 } }, img.grid || {}, { dpi: (img.grid && img.grid.dpi) || Math.min(img.image.width, img.image.height) });
+    // the token ends up exactly `sq` squares across, whatever size the picture was set to in Owlbear (a picture saved
+    // as 2×2 would otherwise be doubled again for a Large monster): squares across = width / dpi × scale
+    const native = Math.max(img.image.width, img.image.height) / gr.dpi || 1, k = sq / native;
+    return B.buildImage(img.image, gr).name(m.name).position(pos).scale({ x: k, y: k }).rotation(img.rotation || 0)
+      .layer('CHARACTER').visible(!hidden).locked(false)
+      .metadata({ [MONLINK]: { room: roomKey(), inst: m.id, name: m.name }, [BUBBLES]: { health: m.hp, 'max health': m.max, 'temporary health': m.temp || 0, 'armor class': m.ac, hide: (SETTINGS.monHp || 'hidden') !== 'exact' } }).build();
+  });
+  try { await OBRX.api.scene.items.addItems(items); } catch (e) { toast('Owlbear didn\'t take the tokens: ' + String((e && e.message) || e).slice(0, 100)); return; }
+  await refreshLinks(); renderGrid();
+  toast(list.length > 1 ? `${list.length} tokens placed${hidden ? ' (hidden)' : ''} and linked.` : `${list[0].name}'s token is on the map${hidden ? ' (hidden)' : ''}, linked.`);
+}
+// "Place token" with a remembered picture skips the dialog
+function monTokQuick(inst) {
+  const f = findMon(inst); if (!f) return;
+  const t = f.e.tpls[f.m.tpl] || tplById(f.m.tpl) || { name: f.m.name }, img = monTokImg(t);
+  if (!img) { monTokOpen(inst); return; }
+  const same = f.e.mons.filter(x => x.tpl === f.m.tpl && !(OBRX.monTokens[x.id] || []).length);
+  monTokDrop(t, same.length ? same : [f.m], img, false);
+}
+// removing monsters that have tokens on the map: ask whether the tokens go too. Keeping them unlinks them (they become
+// ordinary tokens). Cancel removes nothing.
+function monRemoveAsk(ids, after) {
+  const tokIds = IN_OBR && OBRX.ready ? ids.flatMap(i => (OBRX.monTokens[i] || []).map(t => t.id)) : [];
+  if (!tokIds.length) { after(); return; }
+  const names = ids.filter(i => (OBRX.monTokens[i] || []).length).map(i => { const f = findMon(i); return f ? f.m.name : ''; }).filter(Boolean);
+  ui.monRm = { after, tokIds }; openModal('monrm', { names, n: tokIds.length });
+}
+function monRmHtml(md) {
+  const who = md.names.length === 1 ? esc(md.names[0]) + ' has' : md.names.length + ' monsters have';
+  return dlgHead('Remove the token' + (md.n === 1 ? '' : 's') + ' too?') + `<div class="dlg-b"><p style="margin:0">${who} ${md.n === 1 ? 'a token' : md.n + ' tokens'} on the map.</p>
+    <p class="muted" style="margin:0;font-size:.9rem">${md.names.length > 1 && md.names.length <= 8 ? esc(md.names.join(', ')) + '. ' : ''}Keeping ${md.n === 1 ? 'it' : 'them'} leaves ${md.n === 1 ? 'an ordinary token' : 'ordinary tokens'}, no longer linked to Grimsheet.</p></div>
+    <div class="dlg-f"><button class="btn" data-act="close">Cancel</button><span class="sp"></span><button class="btn" data-act="monrmkeep">Keep on the map</button><button class="btn danger" data-act="monrmtok">Remove from the map</button></div>`;
+}
+async function monRmDo(removeTokens) {
+  const r = ui.monRm; ui.monRm = null; closeModal(); if (!r) return;
+  try {
+    if (removeTokens) await OBRX.api.scene.items.deleteItems(r.tokIds);
+    else await OBRX.api.scene.items.updateItems(r.tokIds, ds => { for (const d of ds) { delete d.metadata[MONLINK]; delete d.metadata[BUBBLES]; } });
+  } catch (e) { toast('Owlbear didn\'t change the tokens.'); }
+  r.after(); await refreshLinks(); renderGrid();
+}
 async function linkMonToken(inst, itemId) {
   const f = findMon(inst); if (!f) return;
   const m = f.m;
@@ -5330,10 +5444,12 @@ function monCard(m, cur) {
       <label class="muted"><input type="checkbox" id="ms-${m.id}" data-monf="solo" data-id="${m.id}" ${m.solo ? 'checked' : ''}> Rolls its own initiative</label>
       ${t.hpDice ? `<button class="btn small" data-act="monrollhp" data-id="${m.id}">Roll HP (${esc(t.hpDice)})</button>` : ''}
       <button class="btn small" data-act="monstat" data-id="${m.id}">Edit stat block</button>
+      ${IN_OBR && OBRX.ready && OBRX.me.role === 'GM' ? `<button class="btn small" data-act="${tok ? 'montokopen' : 'montokquick'}" data-id="${m.id}" title="${tok ? 'Put another token for it on the map' : 'Put its token on the map, linked'}">${tok ? 'New token' : 'Place token'}</button>` : ''}
       ${IN_OBR && OBRX.ready ? `<button class="btn small" data-act="monlinkpick" data-id="${m.id}">${tok ? 'Link another token' : 'Link token'}</button>${tok ? `<button class="btn small" data-act="monunlink" data-id="${m.id}">Unlink token${tok > 1 ? 's' : ''}</button>` : ''}` : ''}
     </div>` : '';
   return `<section class="mcard ${isCur ? 'cur' : ''} ${m.hp <= 0 ? 'down' : ''} ${ui.monFocus === m.id ? 'focus' : ''}" data-inst="${m.id}">
     <div class="mhead">${tokImg((OBRX.monTokens[m.id] || [])[0]) ? `<img class="tokimg sm" src="${esc(tokImg(OBRX.monTokens[m.id][0]))}" alt="" data-dblfocus="mon|${m.id}" title="Double-click to find its token">` : ''}<b class="mtitle" data-dblfocus="mon|${m.id}" title="${tok ? 'Double-click to find its token' : ''}">${esc(m.name)}</b><span class="chip">AC ${m.ac}</span>${tok ? `<span class="chip tag-action" title="Linked to ${tok} token${tok > 1 ? 's' : ''}">Token</span>${locateBtn('focus', `data-v="mon|${m.id}"`, 'Find its token on the map')}` : IN_OBR && OBRX.ready ? `<button class="btn small tlink ${ui.linkPick === m.id ? 'on' : ''}" data-act="monlinkpick" data-id="${m.id}" title="Pick its token from a list, or select it on the map">${ICON.target} Link token</button>` : ''}${IN_OBR ? tgtMini() : ''}
+      ${!tok && IN_OBR && OBRX.ready && OBRX.me.role === 'GM' && m.hp > 0 ? `<button class="btn small ghost" data-act="montokquick" data-id="${m.id}" title="Put its token on the map, already linked">＋ Token</button>` : ''}
       <span style="flex:1"></span>
       <button class="ico plus1" data-act="monmore" data-id="${m.id}" title="Add another ${esc(t.name)}">+1</button>
       <button class="ico" data-act="monedit" data-id="${m.id}" title="Edit name, HP, AC">${ICON.edit}</button>
@@ -9689,6 +9805,8 @@ function renderModal() {
   if (m.type === 'editor') h = editorHtml(m);
   else if (m.type === 'chars') h = charsHtml();
   else if (m.type === 'give') h = giveHtml(m);
+  else if (m.type === 'montok') h = monTokHtml(m);
+  else if (m.type === 'monrm') h = monRmHtml(m);
   else if (m.type === 'addModule') h = addModuleHtml();
   else if (m.type === 'log') h = logHtml();
   else if (m.type === 'fromlib') h = browseHtml(m);
@@ -10243,6 +10361,13 @@ document.addEventListener('click', ev => {
     case 'newchar': { const n = blankChar(); store.chars[n.id] = n; store.active = n.id; ui.mode = 'edit'; save(); closeModal(); render(); toast('Blank character created. You are in Edit mode.'); break; }
     case 'simplechar': { const n = simpleChar(); n.fresh = false; store.chars[n.id] = n; store.active = n.id; save(); closeModal(); render(); if (IN_OBR) publishStatus(); break; }
     case 'fullsheet': c.simple = false; c.fresh = false; c.hidden = []; rerender(); toast('Every module is back. Hide the ones you don\'t need from their menus.'); break;
+    case 'monrmtok': monRmDo(true); break;
+    case 'monrmkeep': monRmDo(false); break;
+    case 'montokquick': monTokQuick(id); break;
+    case 'montokopen': monTokOpen(id); break;
+    case 'montokpick': monTokPick(); break;
+    case 'montokup': monTokUpload(); break;
+    case 'montokgo': monTokPlace(); break;
     case 'giveopen': giveOpen(id); break;
     case 'givepl': ui.modal.to = v; ui.modal.state = ''; renderModal(); break;
     case 'givetok': ui.modal.tok = ui.modal.tok === v ? '' : v; renderModal(); break;
@@ -10299,7 +10424,7 @@ document.addEventListener('click', ev => {
     case 'encnew': { const r = encs(), x = blankEnc(); x.id = uid(); x.name = 'Encounter ' + (r.order.length + 1); r.list[x.id] = x; r.order.push(x.id); ui.encSel = x.id; ui.encRen = x.id; saveEnc({ quiet: true }); renderGrid(); const n = $('#enc-name'); if (n) { n.focus(); n.select(); } break; }
     case 'encren': ui.encRen = enc().id; renderGrid(); { const n = $('#enc-name'); if (n) { n.focus(); n.select(); } } break;
     case 'encdup': { const r = encs(), src = enc(), x = clone(src); x.id = uid(); x.name = (src.name || 'Encounter') + ' (copy)'; x.mons.forEach(m => { m.id = uid(); m.hp = m.max; m.temp = 0; m.cond = []; m.rech = {}; m.uses = {}; m.leg = 0; m.init = null; }); x.groupInit = {}; x.pcs = []; x.combat = { active: false, round: 1, turn: null }; r.list[x.id] = x; r.order.splice(r.order.indexOf(src.id) + 1, 0, x.id); ui.encSel = x.id; saveEnc({ quiet: true }); renderGrid(); toast('Copied ' + src.name + '.'); break; }
-    case 'encdel': { const r = encs(), x = enc(); if (r.order.length < 2) break; if (ui.confirm !== 'encdel-' + x.id) { ui.confirm = 'encdel-' + x.id; renderGrid(); break; } ui.confirm = null; delete r.list[x.id]; r.order = r.order.filter(id => id !== x.id); if (r.active === x.id) r.active = r.order[0]; ui.encSel = null; saveEnc(); renderGrid(); toast('Deleted ' + (x.name || 'the encounter') + '.'); break; }
+    case 'encdel': { const r = encs(), x = enc(); if (r.order.length < 2) break; if (ui.confirm !== 'encdel-' + x.id) { ui.confirm = 'encdel-' + x.id; renderGrid(); break; } ui.confirm = null; renderGrid(); monRemoveAsk(x.mons.map(m => m.id), () => { delete r.list[x.id]; r.order = r.order.filter(id => id !== x.id); if (r.active === x.id) r.active = r.order[0]; ui.encSel = null; saveEnc(); renderGrid(); toast('Deleted ' + (x.name || 'the encounter') + '.'); }); break; }
     case 'encactivate': { const r = encs(), old = encActive(), x = enc(); if (old.combat.active) { old.combat = { active: false, round: 1, turn: null }; toast((old.name || 'The old encounter') + ': combat ended.'); } r.active = x.id; ui.encSel = null; saveEnc(); renderGrid(); toast((x.name || 'Encounter') + ' is now active.'); break; }
     case 'groupsave': openModal('groupsave', { only: v || null }); break;
     case 'gsgo': startGroupSave(); break;
@@ -10392,7 +10517,7 @@ document.addEventListener('click', ev => {
     case 'endturn': endMyTurn(); break;
     case 'prevturn': nextTurn(-1); break;
     case 'endcombat': endCombat(); break;
-    case 'encclear': { if (ui.confirm !== 'encclear') { ui.confirm = 'encclear'; renderGrid(); break; } ui.confirm = null; const e = enc(); e.mons = []; e.groupInit = {}; e.seq = {}; e.combat = { active: false, round: 1, turn: null }; saveEnc(); renderGrid(); toast('Monsters removed.'); break; }
+    case 'encclear': { if (ui.confirm !== 'encclear') { ui.confirm = 'encclear'; renderGrid(); break; } ui.confirm = null; renderGrid(); const e0 = enc(); monRemoveAsk(e0.mons.map(m => m.id), () => { const e = e0; e.mons = []; e.groupInit = {}; e.seq = {}; e.combat = { active: false, round: 1, turn: null }; saveEnc(); renderGrid(); toast('Monsters removed.'); }); break; }
     case 'turnto': { const e = enc(); if (!e.combat.active) break; e.combat.turn = v; saveEnc(); onTurnStart(initRows().find(r => r.k === v)); renderGrid(); break; }
     case 'pcdel': { const e = enc(); e.pcs = e.pcs.filter(x => x.key !== v); saveEnc(); renderGrid(); break; }
     case 'monatk': { const m = enc().mons.find(x => x.id === id); if (m) monAttack(m, v); break; }
@@ -10419,7 +10544,7 @@ document.addEventListener('click', ev => {
     case 'monunlink': unlinkMon(id); break;
     case 'monedit': ui.monEdit = ui.monEdit === id ? null : id; renderGrid(); break;
     case 'monopen': ui.monOpen = ui.monOpen || new Set(); if (ui.monOpen.has(id)) ui.monOpen.delete(id); else ui.monOpen.add(id); renderGrid(); break;
-    case 'mondel': { if (ui.confirm !== 'mondel-' + id) { ui.confirm = 'mondel-' + id; renderGrid(); break; } ui.confirm = null; const e = enc(); e.mons = e.mons.filter(x => x.id !== id); saveEnc(); renderGrid(); break; }
+    case 'mondel': { if (ui.confirm !== 'mondel-' + id) { ui.confirm = 'mondel-' + id; renderGrid(); break; } ui.confirm = null; renderGrid(); monRemoveAsk([id], () => { const e = enc(); e.mons = e.mons.filter(x => x.id !== id); saveEnc(); renderGrid(); }); break; }
     case 'moncond': { const m = enc().mons.find(x => x.id === id); if (!m) break; m.cond = m.cond.filter(k => k !== v); if (m.condDur) delete m.condDur[v]; saveEnc(); renderGrid(); break; }
     case 'monrollhp': { const m = enc().mons.find(x => x.id === id); if (!m) break; const t = tplOf(m); const r = E.rollComps([{ f: t.hpDice }], CTX, {}).total; m.max = Math.max(1, r); m.hp = m.max; saveEnc(); renderGrid(); toast(m.name + ' has ' + m.max + ' HP (rolled ' + t.hpDice + ').'); break; }
     case 'setcompact': SETTINGS.compact = !SETTINGS.compact; saveSettings(); document.documentElement.classList.toggle('compact', SETTINGS.compact); if (ui.modal) renderModal(); else hidePop(); break;
