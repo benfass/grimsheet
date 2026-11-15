@@ -750,3 +750,7 @@ Every change goes to a **test extension** first; players only get it after it's 
 ## Token size fix (1.60.1)
 - **Bug**: a picture already set to 2×2 in Owlbear (as Large token art usually is) was scaled ×2 again for a Large monster, so a Minotaur came out 4×4.
 - **Fix**: the token's scale is worked out so it ends up exactly the monster's size in squares, whatever size the picture was set to in Owlbear (squares across = picture width ÷ its grid DPI × scale).
+
+## Removing monsters with tokens (1.60.2)
+- Removing a monster (bin, tapped twice), clearing the encounter, or deleting an encounter now asks, when any of those monsters has a linked token on the map: "Goblin 4 has a token on the map" (or "4 monsters have 6 tokens…").
+- **Remove from the map** deletes the tokens; **Keep on the map** keeps them as ordinary tokens (Grimsheet link and HP/AC removed); **Cancel** removes nothing. No linked tokens: no question, as before.

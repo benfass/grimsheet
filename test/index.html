@@ -3809,7 +3809,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.60.1';
+const APP_VERSION = '1.60.2';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 // phones (touch screen, short side under 600px) get the flat dice by default: the 3D box takes too much of a small screen
@@ -5392,6 +5392,28 @@ function monTokQuick(inst) {
   if (!img) { monTokOpen(inst); return; }
   const same = f.e.mons.filter(x => x.tpl === f.m.tpl && !(OBRX.monTokens[x.id] || []).length);
   monTokDrop(t, same.length ? same : [f.m], img, false);
+}
+// removing monsters that have tokens on the map: ask whether the tokens go too. Keeping them unlinks them (they become
+// ordinary tokens). Cancel removes nothing.
+function monRemoveAsk(ids, after) {
+  const tokIds = IN_OBR && OBRX.ready ? ids.flatMap(i => (OBRX.monTokens[i] || []).map(t => t.id)) : [];
+  if (!tokIds.length) { after(); return; }
+  const names = ids.filter(i => (OBRX.monTokens[i] || []).length).map(i => { const f = findMon(i); return f ? f.m.name : ''; }).filter(Boolean);
+  ui.monRm = { after, tokIds }; openModal('monrm', { names, n: tokIds.length });
+}
+function monRmHtml(md) {
+  const who = md.names.length === 1 ? esc(md.names[0]) + ' has' : md.names.length + ' monsters have';
+  return dlgHead('Remove the token' + (md.n === 1 ? '' : 's') + ' too?') + `<div class="dlg-b"><p style="margin:0">${who} ${md.n === 1 ? 'a token' : md.n + ' tokens'} on the map.</p>
+    <p class="muted" style="margin:0;font-size:.9rem">${md.names.length > 1 && md.names.length <= 8 ? esc(md.names.join(', ')) + '. ' : ''}Keeping ${md.n === 1 ? 'it' : 'them'} leaves ${md.n === 1 ? 'an ordinary token' : 'ordinary tokens'}, no longer linked to Grimsheet.</p></div>
+    <div class="dlg-f"><button class="btn" data-act="close">Cancel</button><span class="sp"></span><button class="btn" data-act="monrmkeep">Keep on the map</button><button class="btn danger" data-act="monrmtok">Remove from the map</button></div>`;
+}
+async function monRmDo(removeTokens) {
+  const r = ui.monRm; ui.monRm = null; closeModal(); if (!r) return;
+  try {
+    if (removeTokens) await OBRX.api.scene.items.deleteItems(r.tokIds);
+    else await OBRX.api.scene.items.updateItems(r.tokIds, ds => { for (const d of ds) { delete d.metadata[MONLINK]; delete d.metadata[BUBBLES]; } });
+  } catch (e) { toast('Owlbear didn\'t change the tokens.'); }
+  r.after(); await refreshLinks(); renderGrid();
 }
 async function linkMonToken(inst, itemId) {
   const f = findMon(inst); if (!f) return;
@@ -9805,6 +9827,7 @@ function renderModal() {
   else if (m.type === 'chars') h = charsHtml();
   else if (m.type === 'give') h = giveHtml(m);
   else if (m.type === 'montok') h = monTokHtml(m);
+  else if (m.type === 'monrm') h = monRmHtml(m);
   else if (m.type === 'addModule') h = addModuleHtml();
   else if (m.type === 'log') h = logHtml();
   else if (m.type === 'fromlib') h = browseHtml(m);
@@ -10359,6 +10382,8 @@ document.addEventListener('click', ev => {
     case 'newchar': { const n = blankChar(); store.chars[n.id] = n; store.active = n.id; ui.mode = 'edit'; save(); closeModal(); render(); toast('Blank character created. You are in Edit mode.'); break; }
     case 'simplechar': { const n = simpleChar(); n.fresh = false; store.chars[n.id] = n; store.active = n.id; save(); closeModal(); render(); if (IN_OBR) publishStatus(); break; }
     case 'fullsheet': c.simple = false; c.fresh = false; c.hidden = []; rerender(); toast('Every module is back. Hide the ones you don\'t need from their menus.'); break;
+    case 'monrmtok': monRmDo(true); break;
+    case 'monrmkeep': monRmDo(false); break;
     case 'montokquick': monTokQuick(id); break;
     case 'montokopen': monTokOpen(id); break;
     case 'montokpick': monTokPick(); break;
@@ -10420,7 +10445,7 @@ document.addEventListener('click', ev => {
     case 'encnew': { const r = encs(), x = blankEnc(); x.id = uid(); x.name = 'Encounter ' + (r.order.length + 1); r.list[x.id] = x; r.order.push(x.id); ui.encSel = x.id; ui.encRen = x.id; saveEnc({ quiet: true }); renderGrid(); const n = $('#enc-name'); if (n) { n.focus(); n.select(); } break; }
     case 'encren': ui.encRen = enc().id; renderGrid(); { const n = $('#enc-name'); if (n) { n.focus(); n.select(); } } break;
     case 'encdup': { const r = encs(), src = enc(), x = clone(src); x.id = uid(); x.name = (src.name || 'Encounter') + ' (copy)'; x.mons.forEach(m => { m.id = uid(); m.hp = m.max; m.temp = 0; m.cond = []; m.rech = {}; m.uses = {}; m.leg = 0; m.init = null; }); x.groupInit = {}; x.pcs = []; x.combat = { active: false, round: 1, turn: null }; r.list[x.id] = x; r.order.splice(r.order.indexOf(src.id) + 1, 0, x.id); ui.encSel = x.id; saveEnc({ quiet: true }); renderGrid(); toast('Copied ' + src.name + '.'); break; }
-    case 'encdel': { const r = encs(), x = enc(); if (r.order.length < 2) break; if (ui.confirm !== 'encdel-' + x.id) { ui.confirm = 'encdel-' + x.id; renderGrid(); break; } ui.confirm = null; delete r.list[x.id]; r.order = r.order.filter(id => id !== x.id); if (r.active === x.id) r.active = r.order[0]; ui.encSel = null; saveEnc(); renderGrid(); toast('Deleted ' + (x.name || 'the encounter') + '.'); break; }
+    case 'encdel': { const r = encs(), x = enc(); if (r.order.length < 2) break; if (ui.confirm !== 'encdel-' + x.id) { ui.confirm = 'encdel-' + x.id; renderGrid(); break; } ui.confirm = null; renderGrid(); monRemoveAsk(x.mons.map(m => m.id), () => { delete r.list[x.id]; r.order = r.order.filter(id => id !== x.id); if (r.active === x.id) r.active = r.order[0]; ui.encSel = null; saveEnc(); renderGrid(); toast('Deleted ' + (x.name || 'the encounter') + '.'); }); break; }
     case 'encactivate': { const r = encs(), old = encActive(), x = enc(); if (old.combat.active) { old.combat = { active: false, round: 1, turn: null }; toast((old.name || 'The old encounter') + ': combat ended.'); } r.active = x.id; ui.encSel = null; saveEnc(); renderGrid(); toast((x.name || 'Encounter') + ' is now active.'); break; }
     case 'groupsave': openModal('groupsave', { only: v || null }); break;
     case 'gsgo': startGroupSave(); break;
@@ -10513,7 +10538,7 @@ document.addEventListener('click', ev => {
     case 'endturn': endMyTurn(); break;
     case 'prevturn': nextTurn(-1); break;
     case 'endcombat': endCombat(); break;
-    case 'encclear': { if (ui.confirm !== 'encclear') { ui.confirm = 'encclear'; renderGrid(); break; } ui.confirm = null; const e = enc(); e.mons = []; e.groupInit = {}; e.seq = {}; e.combat = { active: false, round: 1, turn: null }; saveEnc(); renderGrid(); toast('Monsters removed.'); break; }
+    case 'encclear': { if (ui.confirm !== 'encclear') { ui.confirm = 'encclear'; renderGrid(); break; } ui.confirm = null; renderGrid(); const e0 = enc(); monRemoveAsk(e0.mons.map(m => m.id), () => { const e = e0; e.mons = []; e.groupInit = {}; e.seq = {}; e.combat = { active: false, round: 1, turn: null }; saveEnc(); renderGrid(); toast('Monsters removed.'); }); break; }
     case 'turnto': { const e = enc(); if (!e.combat.active) break; e.combat.turn = v; saveEnc(); onTurnStart(initRows().find(r => r.k === v)); renderGrid(); break; }
     case 'pcdel': { const e = enc(); e.pcs = e.pcs.filter(x => x.key !== v); saveEnc(); renderGrid(); break; }
     case 'monatk': { const m = enc().mons.find(x => x.id === id); if (m) monAttack(m, v); break; }
@@ -10540,7 +10565,7 @@ document.addEventListener('click', ev => {
     case 'monunlink': unlinkMon(id); break;
     case 'monedit': ui.monEdit = ui.monEdit === id ? null : id; renderGrid(); break;
     case 'monopen': ui.monOpen = ui.monOpen || new Set(); if (ui.monOpen.has(id)) ui.monOpen.delete(id); else ui.monOpen.add(id); renderGrid(); break;
-    case 'mondel': { if (ui.confirm !== 'mondel-' + id) { ui.confirm = 'mondel-' + id; renderGrid(); break; } ui.confirm = null; const e = enc(); e.mons = e.mons.filter(x => x.id !== id); saveEnc(); renderGrid(); break; }
+    case 'mondel': { if (ui.confirm !== 'mondel-' + id) { ui.confirm = 'mondel-' + id; renderGrid(); break; } ui.confirm = null; renderGrid(); monRemoveAsk([id], () => { const e = enc(); e.mons = e.mons.filter(x => x.id !== id); saveEnc(); renderGrid(); }); break; }
     case 'moncond': { const m = enc().mons.find(x => x.id === id); if (!m) break; m.cond = m.cond.filter(k => k !== v); if (m.condDur) delete m.condDur[v]; saveEnc(); renderGrid(); break; }
     case 'monrollhp': { const m = enc().mons.find(x => x.id === id); if (!m) break; const t = tplOf(m); const r = E.rollComps([{ f: t.hpDice }], CTX, {}).total; m.max = Math.max(1, r); m.hp = m.max; saveEnc(); renderGrid(); toast(m.name + ' has ' + m.max + ' HP (rolled ' + t.hpDice + ').'); break; }
     case 'setcompact': SETTINGS.compact = !SETTINGS.compact; saveSettings(); document.documentElement.classList.toggle('compact', SETTINGS.compact); if (ui.modal) renderModal(); else hidePop(); break;
