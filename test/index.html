@@ -3819,7 +3819,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.61.0';
+const APP_VERSION = '1.61.1';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 // phones (touch screen, short side under 600px) get the flat dice by default: the 3D box takes too much of a small screen
@@ -6780,7 +6780,8 @@ function shrinkImage(file, max = 640) {
 function ndRead() { const md = ui.modal; if (!md || md.type !== 'noteedit') return; try { const { d } = noteFromEditor(); md.draft = d; } catch (e) { } }
 async function notePicPick(search) {
   const md = ui.modal; if (!md || md.type !== 'noteedit') return; ndRead();
-  let got; try { got = await OBRX.api.assets.downloadImages(false, search || md.draft.title || '', undefined); } catch (e) { toast('Owlbear didn\'t open its images.'); return; }
+  let got; try { got = await OBRX.api.assets.downloadImages(false, search || md.draft.title || '', 'PROP'); }
+  catch (e) { console.warn('[Grimsheet] image picker', e); toast('Owlbear didn\'t open its images: ' + String((e && (e.message || (e.error && e.error.message))) || e).slice(0, 100)); return; }
   if (!got || !got.length || !ui.modal || ui.modal.type !== 'noteedit') return;
   const im = got[0].image; ui.modal.draft.img = { url: im.url, w: im.width, h: im.height }; renderModal();
 }
@@ -6788,7 +6789,7 @@ async function notePicFile(file) {
   const md = ui.modal; if (!md || md.type !== 'noteedit' || !file || !/^image\//.test(file.type)) return; ndRead();
   if (IN_OBR && OBRX.ready) {
     const B = window.OwlbearBuild, name = md.draft.title || file.name.replace(/\.\w+$/, '') || 'Handout';
-    try { await OBRX.api.assets.uploadImages([B.buildImageUpload(file).name(name).build()], 'NOTE'); }
+    try { await OBRX.api.assets.uploadImages([B.buildImageUpload(file).name(name).build()], 'PROP'); }
     catch (e) { toast('Owlbear didn\'t take the upload: ' + String((e && (e.message || (e.error && e.error.message))) || e).slice(0, 100)); return; }
     toast('Uploaded to your Owlbear images. Pick it to put it on the note.'); notePicPick(name);
   } else {
