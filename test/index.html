@@ -360,6 +360,16 @@ select.ed-inline{width:auto}
 .ncard.open{grid-column:1/-1;border-color:var(--accent)}
 .nhead{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}
 .ntitle{flex:1;min-width:0;text-align:left;background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer;overflow:hidden;text-overflow:ellipsis}
+.nico{width:26px;height:26px;flex:none;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:1rem;background:var(--sunk);overflow:hidden}
+.nico img{width:100%;height:100%;object-fit:cover}
+.npic{display:block;max-width:min(100%,420px);max-height:320px;border-radius:8px;box-shadow:var(--shadow);object-fit:contain}
+.nd-pic{display:flex;gap:12px;align-items:center;padding:10px;border:2px dashed var(--line);border-radius:10px;transition:border-color .15s,background .15s}
+.nd-pic.over{border-color:var(--accent);background:var(--accent-soft)}
+.nd-pic img{width:84px;height:84px;object-fit:cover;border-radius:8px;flex:none}
+.nd-ph{width:84px;height:84px;flex:none;display:flex;align-items:center;justify-content:center;font-size:2rem;border-radius:8px;background:var(--sunk)}
+.nd-icons{display:flex;flex-wrap:wrap;gap:4px}
+.nd-icons button{width:34px;height:34px;border-radius:8px;border:1px solid var(--line);background:var(--surface);font-size:1.1rem;cursor:pointer;padding:0}
+.nd-icons button.on{border-color:var(--accent);background:var(--accent-soft);box-shadow:0 0 0 2px var(--accent)}
 .ntype{font-size:.75rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-right:2px}
 .ncard.t-npc .ntype{color:var(--accent)}.ncard.t-quest .ntype{color:var(--gold)}.ncard.t-place .ntype{color:#4f7cac}.ncard.t-item .ntype{color:#8a5ca8}
 .nst{cursor:pointer}.nst.ok{color:var(--ok);border-color:var(--ok)}.nst.bad{color:var(--danger);border-color:var(--danger)}
@@ -3809,7 +3819,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.60.2';
+const APP_VERSION = '1.61.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 // phones (touch screen, short side under 600px) get the flat dice by default: the 3D box takes too much of a small screen
@@ -6643,7 +6653,7 @@ function notesAuthor() { return { id: IN_OBR ? OBRX.me.id : 'me', name: IN_OBR ?
 function sendNotes(d) { if (IN_OBR && OBRX.ready) OBRX.api.broadcast.sendMessage(CH_NOTES, d, { destination: 'REMOTE' }).catch(() => toast('Couldn\'t share that note right now.')); }
 function noteSaved(n) {
   const c = camp(); n.updated = Date.now(); mergeNote(c, n); saveCamp(c);
-  if (n.vis === 'party') sendNotes({ type: 'up', note: n, by: OBRX.me.name });
+  if (n.vis === 'party') sendNotes({ type: 'up', note: n.img && !/^https?:/.test(n.img.url) ? { ...n, img: null } : n, by: OBRX.me.name });
   if (notesView()) renderGrid();
 }
 function deleteNote(id) {
@@ -6726,13 +6736,14 @@ function noteCard(n) {
   const stCls = /dead|failed|hostile/i.test(st) ? 'bad' : /done|friendly/i.test(st) ? 'ok' : '';
   const first = (n.body || '').split('\n').find(x => x.trim()) || '';
   return `<section class="ncard ${open ? 'open' : ''} t-${n.type}" data-note="${esc(n.id)}">
-    <div class="nhead"><button class="ntitle" data-act="noteopen" data-id="${esc(n.id)}"><span class="ntype">${NOTE_TYPES[n.type]}</span> <b>${esc(n.title)}</b></button>
+    <div class="nhead">${noteIcon(n)}<button class="ntitle" data-act="noteopen" data-id="${esc(n.id)}"><span class="ntype">${NOTE_TYPES[n.type]}</span> <b>${esc(n.title)}</b></button>
       ${st ? `<button class="chip nst ${stCls}" data-act="notestat" data-id="${esc(n.id)}" title="Change status">${esc(st)}</button>` : ''}
       ${n.vis !== 'party' ? `<span class="chip" title="${isGM() && IN_OBR ? 'Hidden from players' : 'Only you can see this'}">🔒 ${isGM() && IN_OBR ? 'Hidden' : 'Only me'}</span>` : ''}
       ${n.pinned ? '<span class="chip">★</span>' : ''}</div>
-    ${open ? `<div class="nbody">${noteBody(n) || '<span class="muted">No text yet.</span>'}</div>` : first ? `<div class="nfirst muted">${esc(first.length > 140 ? first.slice(0, 137) + '…' : first)}</div>` : ''}
+    ${open ? `${n.img && n.img.url ? `<img class="npic" src="${esc(n.img.url)}" alt="">` : ''}<div class="nbody">${noteBody(n) || (n.img ? '' : '<span class="muted">No text yet.</span>')}</div>` : first ? `<div class="nfirst muted">${esc(first.length > 140 ? first.slice(0, 137) + '…' : first)}</div>` : ''}
     ${(n.tags || []).length ? `<div class="ntags">${n.tags.map(t => `<button class="chip" data-act="notetag" data-v="${esc(t)}">#${esc(t)}</button>`).join('')}</div>` : ''}
     ${open ? `<div class="nfoot"><span class="muted">${n.author ? esc(n.author.name) + (n.author.char ? ' (' + esc(n.author.char) + ')' : '') + ' · ' : ''}${ago(n.updated)}</span><span style="flex:1"></span>
+      ${isGM() && IN_OBR && OBRX.ready ? `<button class="btn small primary" data-act="noteshow" data-id="${esc(n.id)}" title="Open it in a window in the middle of every player's map${n.vis !== 'party' ? ', and share it with them' : ''}">Show to players</button>` : ''}
       ${n.vis !== 'party' ? `<button class="btn small" data-act="noteshare" data-id="${esc(n.id)}">${isGM() && IN_OBR ? 'Reveal to players' : 'Share with the party'}</button>` : ''}
       <button class="btn small" data-act="notepin" data-id="${esc(n.id)}">${n.pinned ? 'Unpin' : 'Pin'}</button>
       <button class="btn small" data-act="noteedit" data-id="${esc(n.id)}">Edit</button>
@@ -6745,10 +6756,68 @@ function noteEditorHtml(md) {
     <div class="frow"><label class="fld"><span>Type</span><select id="nd-type" data-nd="type">${Object.entries(NOTE_TYPES).map(([k, l]) => `<option value="${k}" ${d.type === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <label class="fld" style="grid-column:span 2"><span>Title</span><input id="nd-title" data-nd="title" value="${esc(d.title)}" placeholder="${{ npc: 'Ferryman Oskar', place: 'The Drowned Mill', quest: 'Find the missing miller', item: 'Brass key with a fish', note: 'Session 3' }[d.type]}"></label>
       ${st ? `<label class="fld"><span>Status</span><select id="nd-status" data-nd="status">${st.map(s => `<option value="${s}" ${(d.status || '') === s ? 'selected' : ''}>${s || '—'}</option>`).join('')}</select></label>` : ''}</div>
-    <label class="fld"><span>Notes</span><textarea id="nd-body" data-nd="body" maxlength="${NOTE_MAX}" style="min-height:180px" placeholder="What you know. Link other notes with [[their title]].">${esc(d.body || '')}</textarea><span class="hint">Link to another note with [[its title]].</span></label>
+    <label class="fld"><span>Notes</span><textarea id="nd-body" data-nd="body" maxlength="${NOTE_MAX}" style="min-height:160px" placeholder="What you know. Link other notes with [[their title]]. Drop or paste text here.">${esc(d.body || '')}</textarea><span class="hint">Link to another note with [[its title]].</span></label>
+    <div class="nd-pic" id="nd-drop">${d.img && d.img.url ? `<img src="${esc(d.img.url)}" alt="">` : '<span class="nd-ph">🖼️</span>'}
+      <div class="grow"><b>Picture</b><div class="muted" style="font-size:.85rem">${d.img && d.img.url ? 'Shown on the note and in the handout window.' : 'Drop or paste a picture here, or:'}</div>
+        <div class="addrow" style="margin:6px 0 0">${IN_OBR && OBRX.ready ? '<button class="btn small" data-act="ndpick">From my Owlbear images</button>' : ''}<button class="btn small" data-act="ndup">${IN_OBR ? 'Upload' : 'Choose a file'}</button>${d.img && d.img.url ? '<button class="btn small ghost" data-act="ndpicx">Remove</button>' : ''}</div></div></div>
+    <div><div class="sub-h" style="margin:4px 0 6px">Icon <span class="muted" style="font-weight:400">${d.img && d.img.url ? '(optional; without one, the picture is used)' : '(optional)'}</span></div>
+      <div class="nd-icons">${NOTE_ICONS.map(i => `<button class="${d.icon === i ? 'on' : ''}" data-act="ndicon" data-v="${i}" title="Use ${i}">${i}</button>`).join('')}${d.icon ? '<button data-act="ndicon" data-v="" title="No icon" style="font-size:.8rem">None</button>' : ''}</div></div>
     <div class="frow"><label class="fld" style="grid-column:span 2"><span>Tags</span><input id="nd-tags" data-nd="tags" value="${esc((d.tags || []).join(', '))}" placeholder="Saltmarsh, smugglers"></label>
       <label class="fld"><span>Who can see it</span><select id="nd-vis" data-nd="vis"><option value="party" ${d.vis === 'party' ? 'selected' : ''}>The party${IN_OBR ? ' (shared)' : ''}</option><option value="me" ${d.vis !== 'party' ? 'selected' : ''}>${isGM() && IN_OBR ? 'Only me (hidden from players)' : 'Only me'}</option></select></label></div>
   </div><div class="dlg-f"><button class="btn" data-act="close">Cancel</button><button class="btn primary" data-act="notesave">Save</button></div>`;
+}
+/* ---- pictures and icons on notes ---- */
+// A picture lives in the DM's Owlbear image library (so everyone at the table can load it); on the website, where
+// nothing is shared, it's kept in the note itself, shrunk. A note's icon is the picture (round) or one of these.
+const NOTE_ICONS = ['🧙', '🧝', '🤴', '👸', '🧔', '👤', '💀', '🐉', '👹', '🗡️', '🛡️', '🏹', '🧪', '💎', '🔑', '📜', '💍', '🪙', '📖', '🏰', '⚓', '🍺', '🌲', '❓'];
+const noteIcon = (n, cls = 'nico') => n.icon ? `<span class="${cls}">${esc(n.icon)}</span>` : n.img && n.img.url ? `<span class="${cls}"><img src="${esc(n.img.url)}" alt=""></span>` : '';
+function shrinkImage(file, max = 640) {
+  return new Promise((res, rej) => { const u = URL.createObjectURL(file), im = new Image();
+    im.onload = () => { const k = Math.min(1, max / Math.max(im.naturalWidth, im.naturalHeight)), cv = document.createElement('canvas'); cv.width = Math.round(im.naturalWidth * k); cv.height = Math.round(im.naturalHeight * k);
+      cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height); URL.revokeObjectURL(u); res({ url: cv.toDataURL('image/jpeg', 0.82), w: cv.width, h: cv.height }); };
+    im.onerror = () => { URL.revokeObjectURL(u); rej(new Error('not an image')); }; im.src = u; });
+}
+function ndRead() { const md = ui.modal; if (!md || md.type !== 'noteedit') return; try { const { d } = noteFromEditor(); md.draft = d; } catch (e) { } }
+async function notePicPick(search) {
+  const md = ui.modal; if (!md || md.type !== 'noteedit') return; ndRead();
+  let got; try { got = await OBRX.api.assets.downloadImages(false, search || md.draft.title || '', undefined); } catch (e) { toast('Owlbear didn\'t open its images.'); return; }
+  if (!got || !got.length || !ui.modal || ui.modal.type !== 'noteedit') return;
+  const im = got[0].image; ui.modal.draft.img = { url: im.url, w: im.width, h: im.height }; renderModal();
+}
+async function notePicFile(file) {
+  const md = ui.modal; if (!md || md.type !== 'noteedit' || !file || !/^image\//.test(file.type)) return; ndRead();
+  if (IN_OBR && OBRX.ready) {
+    const B = window.OwlbearBuild, name = md.draft.title || file.name.replace(/\.\w+$/, '') || 'Handout';
+    try { await OBRX.api.assets.uploadImages([B.buildImageUpload(file).name(name).build()], 'NOTE'); }
+    catch (e) { toast('Owlbear didn\'t take the upload: ' + String((e && (e.message || (e.error && e.error.message))) || e).slice(0, 100)); return; }
+    toast('Uploaded to your Owlbear images. Pick it to put it on the note.'); notePicPick(name);
+  } else {
+    try { md.draft.img = await shrinkImage(file); renderModal(); } catch (e) { toast('That file isn\'t a picture.'); }
+  }
+}
+function notePicInput() { const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*'; inp.onchange = () => inp.files[0] && notePicFile(inp.files[0]); inp.click(); }
+// drop or paste a picture anywhere in the note editor; dropped text goes into the note's text
+document.addEventListener('dragover', ev => { if (ui.modal && ui.modal.type === 'noteedit' && ev.target.closest && ev.target.closest('.dlg')) { ev.preventDefault(); const z = $('#nd-drop'); if (z) z.classList.add('over'); } });
+document.addEventListener('dragleave', ev => { const z = $('#nd-drop'); if (z && !(ev.relatedTarget && ev.relatedTarget.closest && ev.relatedTarget.closest('.dlg'))) z.classList.remove('over'); });
+document.addEventListener('drop', ev => {
+  if (!ui.modal || ui.modal.type !== 'noteedit' || !(ev.target.closest && ev.target.closest('.dlg'))) return;
+  const z = $('#nd-drop'); if (z) z.classList.remove('over');
+  const f = [...(ev.dataTransfer.files || [])].find(x => /^image\//.test(x.type));
+  if (f) { ev.preventDefault(); notePicFile(f); return; }
+  const t = ev.dataTransfer.getData('text/plain');
+  if (t && ev.target.id !== 'nd-body') { ev.preventDefault(); const b = $('#nd-body'); if (b) { b.value = (b.value ? b.value.replace(/\s*$/, '\n\n') : '') + t; b.focus(); } }
+});
+document.addEventListener('paste', ev => {
+  if (!ui.modal || ui.modal.type !== 'noteedit') return;
+  const f = [...((ev.clipboardData && ev.clipboardData.files) || [])].find(x => /^image\//.test(x.type));
+  if (f) { ev.preventDefault(); notePicFile(f); }
+});
+// the DM shows a note to the players: it opens in a handout window in the middle of their map
+function noteShow(id) {
+  const n = camp().notes.find(x => x.id === id); if (!n || !IN_OBR || !OBRX.ready) return;
+  if (n.vis !== 'party') { n.vis = 'party'; noteSaved(n); }
+  const note = { id: n.id, type: n.type, title: n.title, body: String(n.body || '').slice(0, NOTE_MAX), img: n.img && /^https?:/.test(n.img.url) ? n.img : null, icon: n.icon || '' };
+  OBRX.api.broadcast.sendMessage(CH_NOTES, { type: 'show', note, by: OBRX.me.name }, { destination: 'REMOTE' }).then(() => toast(`Showing “${n.title}” to the players.`), () => toast('Couldn\'t show that right now.'));
 }
 function sessionTitle(c) { const k = c.notes.filter(x => x.type === 'session').length + 1; return 'Session ' + k + ' · ' + new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }); }
 function openNoteEditor(id, type) {
@@ -10457,6 +10526,11 @@ document.addEventListener('click', ev => {
     case 'noteadd': openNoteEditor(null); break;
     case 'noteopen': { const cc = camp(), n = cc.notes.find(x => x.id === id); if (!n) break; if (!notesView()) { SETTINGS.view = 'campaign'; saveSettings(); render(); } if (ui.noteOpen === id && el.classList.contains('ntitle')) ui.noteOpen = null; else { ui.noteOpen = id; if (!el.classList.contains('ntitle')) { ui.noteQ = ''; ui.noteF = 'all'; } } renderGrid(); const nd = document.querySelector(`[data-note="${id}"]`); if (nd && nd.scrollIntoView) nd.scrollIntoView({ block: 'nearest' }); break; }
     case 'noteedit': openNoteEditor(id); break;
+    case 'noteshow': noteShow(id); break;
+    case 'ndpick': notePicPick(); break;
+    case 'ndup': notePicInput(); break;
+    case 'ndpicx': ndRead(); ui.modal.draft.img = null; renderModal(); break;
+    case 'ndicon': ndRead(); ui.modal.draft.icon = v || ''; renderModal(); break;
     case 'notedel': if (ui.confirm !== 'notedel-' + id) { ui.confirm = 'notedel-' + id; renderGrid(); break; } ui.confirm = null; deleteNote(id); break;
     case 'notepin': { const n = camp().notes.find(x => x.id === id); if (n) { n.pinned = !n.pinned; noteSaved(n); } break; }
     case 'noteshare': { const n = camp().notes.find(x => x.id === id); if (n) { n.vis = 'party'; noteSaved(n); toast(n.title + ' is shared with the party.'); } break; }
