@@ -3819,7 +3819,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.61.1';
+const APP_VERSION = '1.62.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 // phones (touch screen, short side under 600px) get the flat dice by default: the 3D box takes too much of a small screen
@@ -4158,6 +4158,7 @@ function errReportText() {
   const lines = ['**Grimsheet** ' + APP_VERSION + (window.GRIMSHEET_TEST ? ' (TEST)' : '') + (IN_OBR ? ' in Owlbear Rodeo' : ' on the website'), '**Browser** ' + navigator.userAgent, ''];
   lines.push('**What I was doing:**', '', '');
   if (ERRS.length) { lines.push('**Errors:**', '```'); for (const e of ERRS.slice(-5)) lines.push(e.when + ' ' + e.msg + (e.where ? ' @ ' + e.where : ''), ...(e.stack ? e.stack.split('\n').slice(0, 6) : []), ''); lines.push('```'); }
+  const ol = readJSON(OBRLOG) || []; if (ol.length) { lines.push('**Owlbear problems:**', '```'); for (const e of ol.slice(-8)) lines.push((e.page || '?') + ' ' + e.call + '(' + (e.args || '') + ') → ' + e.err); lines.push('```'); }
   return lines.join('\n').slice(0, 5500);
 }
 function errIssueUrl() { const top = ERRS.length ? ERRS[ERRS.length - 1].msg.slice(0, 80) : 'Problem report'; return ISSUES + '?title=' + encodeURIComponent('Bug: ' + top) + '&body=' + encodeURIComponent(errReportText()); }
@@ -4404,10 +4405,57 @@ function driveStart() {
   setInterval(() => { const l = (OBRX.roomMd || {})[driveKey()]; if (!l || l.dev === DEV_ID || Date.now() - (l.at || 0) > DRIVE_TTL) { driveLast = 0; driveClaim(false); } else driveCheck(); }, 10000);
   driveClaim(false);
 }
+/* ---- Owlbear problem log ---- */
+// Every request to Owlbear that fails is written down (what was asked, and Owlbear's own reason), here and in the
+// extension's other pages, in this browser only. Settings → Copy debug report shows it, so a problem in a real room
+// can be reported with the exact error instead of "it didn't work". Nothing is sent anywhere.
+const OBRLOG = 'grimsheet.obrlog.v1';
+function obrLogAdd(e) { try { const l = JSON.parse(localStorage.getItem(OBRLOG) || '[]'); l.push(e); localStorage.setItem(OBRLOG, JSON.stringify(l.slice(-60))); } catch (x) { } }
+function obrErrText(e) { try { return String((e && (e.message || (e.error && (e.error.message || e.error.name)))) || (e && typeof e === 'object' ? JSON.stringify(e) : e)).slice(0, 300); } catch (x) { return 'unknown error'; } }
+function obrArgText(a) {
+  if (typeof a === 'string') return JSON.stringify(a.length > 50 ? a.slice(0, 50) + '…' : a);
+  if (a == null || typeof a === 'number' || typeof a === 'boolean') return String(a);
+  if (typeof a === 'function') return 'fn'; if (Array.isArray(a)) return '[' + a.length + ']';
+  if (typeof Blob !== 'undefined' && a instanceof Blob) return 'file';
+  try { return '{' + Object.keys(a).slice(0, 8).join(',') + '}'; } catch (x) { return 'object'; }
+}
+function obrTraced(obj, page, path = '') {
+  return new Proxy(obj, { get(t, k) {
+    const v = t[k]; if (typeof k !== 'string') return v;
+    if (typeof v === 'function') return function (...a) {
+      const log = e => obrLogAdd({ at: Date.now(), page, call: path + k, args: a.map(obrArgText).join(', ').slice(0, 200), err: obrErrText(e) });
+      let r; try { r = v.apply(t, a); } catch (e) { log(e); throw e; }
+      if (r && typeof r.then === 'function') r.then(null, log);
+      return r;
+    };
+    if (v && typeof v === 'object' && !Array.isArray(v)) return obrTraced(v, page, path + k + '.');
+    return v;
+  } });
+}
+function debugReportText() {
+  const t = at => { const d = new Date(at); return [d.getHours(), d.getMinutes(), d.getSeconds()].map(n => String(n).padStart(2, '0')).join(':'); };
+  const bg = readJSON(BGKEY) || {}, log = readJSON(OBRLOG) || [];
+  const L = ['Grimsheet ' + APP_VERSION + (window.GRIMSHEET_TEST ? ' (TEST)' : '') + (IN_OBR ? ' in Owlbear Rodeo' + (OBRX.ready ? ' · ' + (OBRX.me.role === 'GM' ? 'GM' : 'player') : ' · not connected') + ' · background page ' + (bgAlive() ? 'running' + (bg.v ? ' ' + bg.v : '') : 'not running') : ' on the website'),
+    'Browser: ' + navigator.userAgent, 'Window: ' + innerWidth + '×' + innerHeight + ' · ' + new Date().toString().slice(0, 33), ''];
+  L.push('Owlbear problems (' + log.length + ', newest last):');
+  if (!log.length) L.push('  none recorded');
+  for (const e of log.slice(-40)) L.push('  ' + t(e.at) + ' ' + (e.page || '?') + ' ' + e.call + '(' + (e.args || '') + ') → ' + e.err);
+  L.push('', 'Page errors (' + ERRS.length + '):');
+  if (!ERRS.length) L.push('  none since this page opened');
+  for (const e of ERRS.slice(-8)) L.push('  ' + e.when + ' ' + e.msg + (e.where ? ' @ ' + e.where : ''), ...(e.stack ? e.stack.split('\n').slice(1, 4).map(x => '    ' + x.trim()) : []));
+  return L.join('\n').slice(0, 9000);
+}
+function debugHtml() {
+  const n = (readJSON(OBRLOG) || []).length;
+  return dlgHead('Debug report') + `<div class="dlg-b"><p class="muted" style="margin:0">Copy this and paste it wherever you report the problem. It holds your Grimsheet version, your browser, and the requests to Owlbear that failed on this device, with Owlbear's reasons. No character data.</p>
+    <textarea class="code" id="dbg-text" readonly style="min-height:240px">${esc(debugReportText())}</textarea></div>
+    <div class="dlg-f">${n || ERRS.length ? '<button class="btn ghost" data-act="dbgclear">Clear the log</button>' : ''}<span class="sp"></span><button class="btn" data-act="close">Close</button><button class="btn primary" data-act="dbgcopy">Copy</button></div>`;
+}
 async function startOwlbear() {
   try {
     let OBR = window.GrimsheetOBR; // a test double can be provided here
     if (!OBR) { await loadScript('vendor/owlbear-sdk-3.1.0.js'); OBR = window.OwlbearSDK; }
+    OBR = obrTraced(OBR, 'panel');
     OBR.onReady(async () => {
       OBRX.api = OBR;
       // main extension: while Grimsheet TEST runs in this room on this computer, this panel steps aside
@@ -9923,6 +9971,7 @@ function renderModal() {
   else if (m.type === 'prep') h = prepHtml(m);
   else if (m.type === 'fxsetup') h = fxSetupHtml(m);
   else if (m.type === 'd3slow') h = d3SlowHtml(m);
+  else if (m.type === 'dbg') h = debugHtml();
   else if (m.type === 'viewwait') h = dlgHead('Opening ' + (m.name || 'sheet')) + `<div class="dlg-b">${m.failed ? `<div class="banner warn" style="margin:0">${esc(m.owner || 'The player')}'s Grimsheet didn't answer. They need to be in the room with Grimsheet 1.3 or newer installed.</div>` : `<div class="sugg"><h3>Asking ${esc(m.owner || 'the player')}'s Grimsheet…</h3><span>The sheet opens read-only in a moment.</span></div>`}</div><div class="dlg-f"><button class="btn" data-act="close">${m.failed ? 'Close' : 'Cancel'}</button></div>`;
   $('#ovl').innerHTML = `<div class="ovl" data-act="ovlbg"><div class="dlg" role="dialog" aria-modal="true">${h}</div></div>`;
   $('#ovl .ovl').scrollTop = keepScroll;
@@ -10170,6 +10219,8 @@ function settingsHtml() {
     ${bkSettingsHtml()}
     <div class="setrow"><div class="grow"><b>Report a problem</b><div class="muted">Opens a new issue on GitHub with your Grimsheet version and browser${ERRS.length ? ' and the ' + ERRS.length + ' error' + (ERRS.length > 1 ? 's' : '') + ' seen since this page opened' : ''} filled in. You see it all before anything is sent. No character data is included.</div></div>
       <a class="btn small" href="${esc(errIssueUrl())}" target="_blank" rel="noopener">Report a problem</a></div>
+    <div class="setrow"><div class="grow"><b>Debug report</b><div class="muted">${(n => n ? n + ' request' + (n > 1 ? 's' : '') + ' to Owlbear failed on this device recently.' : 'What went wrong on this device, to copy and paste:')(((readJSON(OBRLOG) || []).length))} your version, browser, and any requests to Owlbear that failed, with Owlbear's reasons. Stays on this device until you copy it.</div></div>
+      <button class="btn small" data-act="dbgopen">Copy debug report</button></div>
     <div class="setrow"><div class="grow"><b>Try it</b><div class="muted">Settings are saved in this browser. Grimsheet ${APP_VERSION}${IN_OBR ? (bgAlive() ? ' · background page running' + ((readJSON(BGKEY) || {}).v ? ' (' + readJSON(BGKEY).v + ')' : '') : ' · background page not running: re-add the extension in Owlbear') : ''}.</div></div><button class="btn" data-act="settest">Roll 1d20 + 2d6</button></div>
   </div><div class="dlg-f"><button class="btn primary" data-act="close">Done</button></div>`;
 }
@@ -10475,6 +10526,9 @@ document.addEventListener('click', ev => {
     case 'setspeed': SETTINGS.diceSpeed = v; saveSettings(); renderModal(); break;
     case 'setd3': SETTINGS.dice3d = v === '3d'; saveSettings(); renderModal(); if (SETTINGS.dice3d) setTimeout(d3Preload, 100); break;
     case 'd3flat': SETTINGS.dice3d = false; saveSettings(); closeModal(); toast('Flat dice from now on. Settings → Dice style switches back.'); break;
+    case 'dbgopen': openModal('dbg'); break;
+    case 'dbgclear': try { localStorage.removeItem(OBRLOG); } catch (x) { } ERRS.length = 0; renderModal(); break;
+    case 'dbgcopy': { const t = $('#dbg-text'), sel = () => { t.focus(); t.select(); toast('Selected. Press Ctrl+C / Cmd+C, or long-press and choose Copy.'); }; try { navigator.clipboard.writeText(t.value).then(() => toast('Debug report copied.'), sel); } catch (x) { sel(); } break; }
     case 'd3keep': SETTINGS.d3slowOk = true; saveSettings(); closeModal(); break;
     case 'setwatch': SETTINGS.watchDice = SETTINGS.watchDice === false; saveSettings(); renderModal(); break;
     case 'setdicesnd': SETTINGS.diceSound = !SETTINGS.diceSound; saveSettings(); renderModal(); break;

@@ -1,0 +1,240 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Owlbear stand-in</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;font:13px system-ui,sans-serif;color:#e8e8f0}
+body{background:#1e2030}
+#map{position:absolute;inset:0;background-color:#2a2d44;background-image:linear-gradient(rgba(255,255,255,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.07) 1px,transparent 1px);background-size:150px 150px}
+#items{position:absolute;inset:0;pointer-events:none}
+#items img,#items div{position:absolute}
+#items .txt{color:#fff;font-size:12px;background:rgba(0,0,0,.55);padding:1px 5px;border-radius:6px;transform:translate(-50%,-50%);white-space:pre}
+#items .sel{outline:2px solid #7fd4ff;outline-offset:2px}
+#bar{position:absolute;top:8px;left:8px;display:flex;gap:8px;align-items:center;z-index:5}
+#bar button{position:relative;height:36px;border-radius:18px;border:0;background:#3d4160;color:#fff;padding:0 14px;cursor:pointer;font:inherit}
+#badge{position:absolute;top:-4px;right:-4px;background:#e0a030;color:#000;border-radius:9px;padding:0 5px;font-size:11px}
+#who{background:rgba(0,0,0,.45);padding:6px 10px;border-radius:14px}
+.box{position:absolute;z-index:10}
+.box.paper{background:#222639;border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.5);overflow:hidden}
+.box iframe{border:0;width:100%;height:100%;display:block}
+#bgframes{position:absolute;width:0;height:0;overflow:hidden;visibility:hidden}
+#modalback{position:absolute;inset:0;background:rgba(0,0,0,.5);z-index:19;display:none}
+#toasts{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);z-index:40;display:flex;flex-direction:column;gap:6px;align-items:center}
+#toasts div{background:#111;border-left:4px solid #888;padding:8px 12px;border-radius:6px;max-width:520px}
+#toasts .ERROR{border-color:#e05050}#toasts .SUCCESS{border-color:#50c070}#toasts .WARNING{border-color:#e0a030}#toasts .INFO{border-color:#5090e0}
+#picker{position:absolute;inset:0;background:rgba(0,0,0,.6);z-index:50;display:none;align-items:center;justify-content:center}
+#picker .in{background:#222639;border-radius:14px;padding:16px;width:min(560px,90vw);max-height:80vh;overflow:auto}
+#picker .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin:10px 0}
+#picker button{background:#33375a;border:0;border-radius:10px;color:#fff;padding:8px;cursor:pointer;font:inherit}
+#picker img{width:72px;height:72px;object-fit:contain;display:block;margin:0 auto 4px}
+#ctx{position:absolute;z-index:30;background:#222639;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.5);padding:6px;display:none;min-width:200px}
+#ctx button{display:block;width:100%;text-align:left;background:none;border:0;color:#fff;padding:7px 10px;border-radius:8px;cursor:pointer;font:inherit}
+#ctx button:hover{background:#33375a}
+#ctx iframe{border:0;width:300px;display:block;border-radius:8px}
+#problems{position:absolute;right:8px;bottom:8px;z-index:60;background:#501818;border-radius:10px;padding:8px 10px;max-width:420px;max-height:40vh;overflow:auto;display:none;white-space:pre-wrap;font:11px ui-monospace,monospace}
+</style></head>
+<body>
+<div id="map"></div><div id="items"></div>
+<div id="bar"><button id="actbtn" title="The extension's action button">Extension<span id="badge" hidden></span></button><span id="who"></span></div>
+<div id="bgframes"></div><div id="modalback"></div><div id="ctx"></div><div id="toasts"></div>
+<div id="picker"><div class="in"><b id="pk-title">Images</b> <input id="pk-q" placeholder="Search"><div class="grid" id="pk-grid"></div><button id="pk-cancel">Cancel</button></div></div>
+<div id="problems"></div>
+<script src="obrworld.js"></script>
+<script>
+/* The page that plays Owlbear Rodeo's frame around Grimsheet (see obrworld.js for what is and isn't real).
+   It loads the extension's background page and its action panel as iframes, speaks the Owlbear SDK's message protocol
+   with them, opens popovers / modals / the image picker / context menus, and draws the scene's items roughly.
+   Address: obrhost.html?seat=g1&name=Dana&role=GM[&color=#f00][&ext=./][&theme=DARK][&open=0][&aw=400&ah=600]
+   Several players share one room when a test connects them (window.__obrWorld, see room.js); alone, the room lives here. */
+(() => {
+  const Q = new URLSearchParams(location.search);
+  const SEAT = Q.get('seat') || 'p1', NAME = Q.get('name') || SEAT, ROLE = Q.get('role') === 'GM' ? 'GM' : 'PLAYER', COLOR = Q.get('color') || '#9966ff';
+  const EXT = new URL(Q.get('ext') || './', location.href).href, ROOM = Q.get('room') || 'room1';
+  const REF64 = btoa(location.origin + ' ' + ROOM), $ = id => document.getElementById(id);
+  const W = window.ObrWorld, frames = new Map(), LOG = [], PROBLEMS = [];
+  const own = W.createWorld({ roomId: ROOM }); // used whole when alone; always used for this player's local items
+  const LOCAL = [];
+  let seq = 0, itemsNow = [], selection = [];
+  $('who').textContent = NAME + ' · ' + ROLE;
+  const theme = { mode: Q.get('theme') === 'LIGHT' ? 'LIGHT' : 'DARK', primary: { main: '#bb99ff', light: '#d7c4ff', dark: '#8a63d2', contrastText: '#000000' }, secondary: { main: '#ee99ff', light: '#f5c4ff', dark: '#b963c9', contrastText: '#000000' }, background: { default: '#1e2231', paper: '#222639' }, text: { primary: '#ffffff', secondary: 'rgba(255,255,255,0.7)', disabled: 'rgba(255,255,255,0.5)' } };
+  const svg = (label, bg, px) => ({ url: 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${px}" height="${px}"><circle cx="${px / 2}" cy="${px / 2}" r="${px / 2 - 6}" fill="${bg}" stroke="#111" stroke-width="6"/><text x="50%" y="55%" font-size="${px / 6}" text-anchor="middle" fill="#fff" font-family="sans-serif">${label}</text></svg>`), width: px, height: px, mime: 'image/svg+xml' });
+  const TEXT = () => ({ richText: [{ type: 'paragraph', children: [{ text: '' }] }], plainText: '', style: { padding: 8, fontFamily: 'Roboto', fontSize: 24, fontWeight: 400, textAlign: 'CENTER', textAlignVertical: 'BOTTOM', fillColor: 'white', fillOpacity: 1, strokeColor: 'white', strokeOpacity: 1, strokeWidth: 0, lineHeight: 1.5 }, type: 'PLAIN', width: 'AUTO', height: 'AUTO' });
+  const lib = (name, bg, px, dpi, type) => ({ name, image: svg(name, bg, px), text: TEXT(), textItemType: 'LABEL', grid: { offset: { x: px / 2, y: px / 2 }, dpi }, visible: true, locked: false, rotation: 0, scale: { x: 1, y: 1 }, type });
+  const host = window.host = { seat: SEAT, role: ROLE, frames, log: LOG, problems: PROBLEMS, popovers: {}, modals: {}, menus: {}, notifications: [], viewport: {}, action: { open: Q.get('open') !== '0', width: +Q.get('aw') || 400, height: +Q.get('ah') || 600, badgeText: undefined, title: 'Grimsheet' },
+    library: [lib('Goblin', '#5a8f3c', 300, 300, 'CHARACTER'), lib('Minotaur', '#8f4a3c', 600, 300, 'CHARACTER'), lib('Old map', '#8a7a4a', 512, 150, 'PROP')], pick: null, uploads: [] };
+
+  /* ---- frames ---- */
+  function mkFrame(kind, id, url, parent) {
+    const ref = 'ref-' + SEAT + '-' + (++seq), el = document.createElement('iframe'), u = new URL(url, EXT);
+    u.searchParams.set('obrref', REF64); el.src = u.href; el.dataset.kind = kind; if (id) el.dataset.id = id; el.id = 'f-' + kind + (id ? '-' + id.replace(/[^\w-]/g, '_') : '');
+    el.allow = 'clipboard-write; fullscreen';
+    const F = { ref, kind, id, el, subs: new Map() }; frames.set(ref, F);
+    el.addEventListener('load', () => { F.subs.clear(); try { el.contentWindow.postMessage({ id: 'OBR_READY', data: { ref, userId: SEAT } }, location.origin); } catch (e) { } });
+    parent.appendChild(el); return F;
+  }
+  function dropFrames(box) { for (const [ref, F] of frames) if (box.contains(F.el)) { frames.delete(ref); for (const k of Object.keys(host.menus)) if (host.menus[k].frame === F) delete host.menus[k]; } box.remove(); }
+  const post = (F, id, data) => { try { F.el.contentWindow.postMessage({ id, data }, location.origin); } catch (e) { } };
+  const emit = (ev, data) => { for (const F of frames.values()) if ((F.subs.get(ev) || 0) > 0) post(F, ev, data); if (ev === 'OBR_SCENE_ITEMS_EVENT_CHANGE') { itemsNow = data.items; draw(); } if (ev === 'OBR_PLAYER_EVENT_CHANGE') { selection = data.player.selection || []; draw(); } };
+  window.__obrEvent = e => emit(e.ev, e.data);
+
+  /* ---- the shared room: through the test's hub when there is one, else here ---- */
+  async function shared(id, data) {
+    if (window.__obrWorld) { const r = JSON.parse(await window.__obrWorld(JSON.stringify({ seat: SEAT, id, data }))); if (r.error) throw new Error(r.error); return r.result; }
+    const r = own.handle(SEAT, id, data); for (const e of r.events) if (e.to === '*' || e.to === SEAT) emit(e.ev, e.data); return r.result;
+  }
+  if (!window.__obrWorld) own.join({ id: SEAT, name: NAME, role: ROLE, color: COLOR });
+
+  const SUBS = { OBR_PLAYER_SUBSCRIBE: 'OBR_PLAYER_EVENT_CHANGE', OBR_PARTY_SUBSCRIBE: 'OBR_PARTY_EVENT_CHANGE', OBR_ROOM_METADATA_SUBSCRIBE: 'OBR_ROOM_METADATA_EVENT_CHANGE', OBR_ROOM_PERMISSIONS_SUBSCRIBE: 'OBR_ROOM_PERMISSIONS_EVENT_CHANGE',
+    OBR_SCENE_ITEMS_SUBSCRIBE: 'OBR_SCENE_ITEMS_EVENT_CHANGE', OBR_SCENE_LOCAL_SUBSCRIBE: 'OBR_SCENE_LOCAL_EVENT_CHANGE', OBR_SCENE_READY_SUBSCRIBE: 'OBR_SCENE_EVENT_READY_CHANGE', OBR_SCENE_METADATA_SUBSCRIBE: 'OBR_SCENE_METADATA_EVENT_CHANGE',
+    OBR_SCENE_GRID_SUBSCRIBE: 'OBR_SCENE_GRID_EVENT_CHANGE', OBR_SCENE_FOG_SUBSCRIBE: 'OBR_SCENE_FOG_EVENT_CHANGE', OBR_THEME_SUBSCRIBE: 'OBR_THEME_EVENT_CHANGE', OBR_ACTION_IS_OPEN_SUBSCRIBE: 'OBR_ACTION_IS_OPEN_EVENT_CHANGE',
+    OBR_TOOL_ACTIVE_SUBSCRIBE: 'OBR_TOOL_ACTIVE_EVENT_CHANGE', OBR_TOOL_MODE_ACTIVE_SUBSCRIBE: 'OBR_TOOL_MODE_ACTIVE_EVENT_CHANGE' };
+  const UNSUBS = { OBR_PLAYER_UNSUBSCRIBE: 'OBR_PLAYER_EVENT_CHANGE', OBR_PARTY_UNSUBSCRIBE: 'OBR_PARTY_EVENT_CHANGE', OBR_METADATA_ROOM_UNSUBSCRIBE: 'OBR_ROOM_METADATA_EVENT_CHANGE', OBR_PERMISSIONS_ROOM_UNSUBSCRIBE: 'OBR_ROOM_PERMISSIONS_EVENT_CHANGE',
+    OBR_SCENE_ITEMS_UNSUBSCRIBE: 'OBR_SCENE_ITEMS_EVENT_CHANGE', OBR_SCENE_LOCAL_UNSUBSCRIBE: 'OBR_SCENE_LOCAL_EVENT_CHANGE', OBR_SCENE_READY_UNSUBSCRIBE: 'OBR_SCENE_EVENT_READY_CHANGE', OBR_SCENE_METADATA_UNSUBSCRIBE: 'OBR_SCENE_METADATA_EVENT_CHANGE',
+    OBR_SCENE_GRID_UNSUBSCRIBE: 'OBR_SCENE_GRID_EVENT_CHANGE', OBR_SCENE_FOG_UNSUBSCRIBE: 'OBR_SCENE_FOG_EVENT_CHANGE', OBR_THEME_UNSUBSCRIBE: 'OBR_THEME_EVENT_CHANGE', OBR_IS_OPEN_ACTION_UNSUBSCRIBE: 'OBR_ACTION_IS_OPEN_EVENT_CHANGE',
+    OBR_TOOL_ACTIVE_UNSUBSCRIBE: 'OBR_TOOL_ACTIVE_EVENT_CHANGE', OBR_TOOL_MODE_ACTIVE_UNSUBSCRIBE: 'OBR_TOOL_MODE_ACTIVE_EVENT_CHANGE' };
+
+  /* ---- windows Owlbear opens for the extension ---- */
+  const side = (o, w, h) => ({ x: o && o.horizontal === 'CENTER' ? w / 2 : o && o.horizontal === 'RIGHT' ? w : 0, y: o && o.vertical === 'CENTER' ? h / 2 : o && o.vertical === 'BOTTOM' ? h : 0 });
+  function placeAction() { const a = host.action, b = $('action'); if (!b) return; b.style.display = a.open ? '' : 'none'; b.style.width = Math.min(a.width, innerWidth - 16) + 'px'; b.style.height = Math.min(a.height, innerHeight - 60) + 'px'; }
+  function setActionOpen(v) { if (host.action.open === v) return; host.action.open = v; if (v && !$('action')) openAction(); placeAction(); emit('OBR_ACTION_IS_OPEN_EVENT_CHANGE', { isOpen: v }); }
+  function openAction() { const b = document.createElement('div'); b.className = 'box paper'; b.id = 'action'; b.style.left = '8px'; b.style.top = '52px'; document.body.appendChild(b); mkFrame('action', '', Q.get('action') || 'index.html', b); placeAction(); }
+  $('actbtn').onclick = () => setActionOpen(!host.action.open);
+  function openPopover(d) {
+    closePopover(d.id);
+    const b = document.createElement('div'); b.className = 'box' + (d.hidePaper ? '' : ' paper'); b.dataset.pop = d.id;
+    const m = d.marginThreshold === undefined ? 16 : d.marginThreshold, an = d.anchorReference === 'POSITION' ? d.anchorPosition : (() => { const r = $('actbtn').getBoundingClientRect(), s = side(d.anchorOrigin, r.width, r.height); return { left: r.left + s.x, top: r.top + s.y }; })();
+    const t = side(d.transformOrigin, d.width, d.height);
+    const left = Math.max(m, Math.min(innerWidth - d.width - m, an.left - t.x)), top = Math.max(m, Math.min(innerHeight - d.height - m, an.top - t.y));
+    Object.assign(b.style, { left: left + 'px', top: top + 'px', width: d.width + 'px', height: d.height + 'px', zIndex: 20 });
+    document.body.appendChild(b); const F = mkFrame('popover', d.id, d.url, b);
+    host.popovers[d.id] = { opts: d, rect: { left, top, width: d.width, height: d.height }, box: b, frame: F, fits: d.width <= innerWidth && d.height <= innerHeight, moved: Math.abs(left - (an.left - t.x)) > 1 || Math.abs(top - (an.top - t.y)) > 1 };
+  }
+  function closePopover(id) { const p = host.popovers[id]; if (p) { dropFrames(p.box); delete host.popovers[id]; } }
+  $('map').addEventListener('pointerdown', () => { for (const id of Object.keys(host.popovers)) if (!host.popovers[id].opts.disableClickAway) closePopover(id); $('ctx').style.display = 'none'; });
+  function openModal(d) {
+    closeModal(d.id);
+    const b = document.createElement('div'); b.className = 'box' + (d.hidePaper ? '' : ' paper'); const w = d.fullScreen ? innerWidth : Math.min(d.width || 600, innerWidth - 32), h = d.fullScreen ? innerHeight : Math.min(d.height || 400, innerHeight - 32);
+    Object.assign(b.style, { left: (innerWidth - w) / 2 + 'px', top: (innerHeight - h) / 2 + 'px', width: w + 'px', height: h + 'px', zIndex: 21 });
+    if (!d.hideBackdrop) $('modalback').style.display = 'block';
+    document.body.appendChild(b); host.modals[d.id] = { opts: d, box: b, frame: mkFrame('modal', d.id, d.url, b) };
+  }
+  function closeModal(id) { const p = host.modals[id]; if (p) { dropFrames(p.box); delete host.modals[id]; } if (!Object.keys(host.modals).length) $('modalback').style.display = 'none'; }
+  function notify(d) { const id = 'n' + (++seq), el = document.createElement('div'); el.className = d.variant || 'DEFAULT'; el.textContent = d.message; el.dataset.id = id; $('toasts').appendChild(el); host.notifications.push({ id, message: d.message, variant: d.variant || 'DEFAULT', at: Date.now() }); setTimeout(() => el.remove(), 6000); return id; }
+
+  /* ---- the image library: Owlbear's picker and its upload window ---- */
+  function pickImages(d) {
+    return new Promise(res => {
+      const matches = q => { const hit = host.library.filter(x => !q || x.name.toLowerCase().includes(q.toLowerCase())); return hit.length ? hit : host.library; };
+      host.lastPicker = { multiple: !!d.multiple, search: d.defaultSearch || '', typeHint: d.typeHint };
+      const out = x => { const { type, ...rest } = x; return JSON.parse(JSON.stringify({ ...rest, type })); };
+      if (host.pick !== null) { // a test chooses: a name, an index, or 'cancel'
+        if (host.pick === 'cancel') return res([]);
+        const all = matches(d.defaultSearch || ''), one = typeof host.pick === 'number' ? all[host.pick] : host.library.find(x => x.name === host.pick) || all[0];
+        return setTimeout(() => res(one ? [out(one)] : []), 30);
+      }
+      const show = () => { $('pk-grid').innerHTML = ''; for (const x of matches($('pk-q').value)) { const b = document.createElement('button'); b.innerHTML = '<img alt="">'; b.firstChild.src = x.image.url; b.append(x.name + ' (' + x.type + ')'); b.onclick = () => { $('picker').style.display = 'none'; res([out(x)]); }; $('pk-grid').appendChild(b); } };
+      $('pk-title').textContent = 'Images' + (d.typeHint ? ' · ' + d.typeHint : ''); $('pk-q').value = d.defaultSearch || ''; $('pk-q').oninput = show; $('pk-cancel').onclick = () => { $('picker').style.display = 'none'; res([]); };
+      $('picker').style.display = 'flex'; show();
+    });
+  }
+  async function upload(d, files) {
+    for (let i = 0; i < d.images.length; i++) {
+      const im = d.images[i], url = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(files[i]); });
+      const sz = await new Promise(res => { const g = new Image(); g.onload = () => res({ w: g.naturalWidth, h: g.naturalHeight }); g.onerror = () => res({ w: 0, h: 0 }); g.src = url; });
+      if (!sz.w) throw new Error('The file "' + im.name + '" could not be read as an image');
+      const rec = { name: im.name, image: { url, width: sz.w, height: sz.h, mime: files[i].type }, text: im.text, textItemType: im.textItemType, grid: im.grid, visible: im.visible, locked: im.locked, rotation: im.rotation, scale: im.scale, description: im.description, type: d.typeHint || 'PROP' };
+      rec.image.url = await hosted(url); host.library.unshift(rec); host.uploads.push({ name: im.name, type: rec.type, dpi: im.grid.dpi });
+    }
+  }
+
+  // Owlbear serves library images from its own https address; with a test hub the stand-in does the same
+  const hosted = async url => (window.__obrAsset && /^data:/.test(url) ? await window.__obrAsset(url) : url);
+
+  /* ---- context menus ---- */
+  const at = (o, key) => (Array.isArray(key) ? key : [key]).reduce((v, k) => (v == null ? undefined : v[k]), o);
+  function passKeys(list, item) { let res = true, co = '&&'; list.forEach((f, i) => { const eq = JSON.stringify(at(item, f.key)) === JSON.stringify(f.value), ok = (f.operator || '==') === '==' ? eq : !eq; res = i === 0 ? ok : co === '||' ? res || ok : res && ok; co = f.coordinator || '&&'; }); return res; }
+  function iconFor(menu, items) {
+    for (const ic of menu.def.icons) { const f = ic.filter || {};
+      if (f.roles && !f.roles.includes(ROLE)) continue; if (items.length < (f.min === undefined ? 1 : f.min)) continue; if (f.max !== undefined && items.length > f.max) continue;
+      if (f.every && !items.every(it => passKeys(f.every, it))) continue; if (f.some && !items.some(it => passKeys(f.some, it))) continue; return ic; }
+    return null;
+  }
+  // what Owlbear's right-click menu would offer for these items: [{ id, label, embed }]
+  host.menuFor = async ids => { const { items } = await shared('OBR_SCENE_ITEMS_GET_ITEMS', { ids }); return Object.values(host.menus).map(m => { const ic = iconFor(m, items); return ic && { id: m.def.id, label: ic.label, embed: !!m.def.embed }; }).filter(Boolean); };
+  host.clickMenu = async (id, ids) => {
+    const m = host.menus[id]; if (!m) throw new Error('No context menu ' + id);
+    const { items } = await shared('OBR_SCENE_ITEMS_GET_ITEMS', { ids }); if (!iconFor(m, items)) throw new Error('Context menu ' + id + ' is not offered for these items');
+    const { bounds } = await shared('OBR_SCENE_ITEMS_GET_ITEM_BOUNDS', { ids });
+    if (m.def.embed) { const c = $('ctx'); c.innerHTML = ''; c.style.display = 'block'; c.style.left = '420px'; c.style.top = '80px'; const F = mkFrame('embed', id, m.def.embed.url, c); F.el.style.height = (m.def.embed.height || 200) + 'px'; return; }
+    post(m.frame, 'OBR_CONTEXT_MENU_EVENT_CLICK', { id, context: { items, selectionBounds: bounds }, elementId: 'actbtn' });
+  };
+  host.select = ids => shared('OBR_PLAYER_SELECT', { items: ids, replace: true });
+  host.closeMenu = () => { const c = $('ctx'); for (const [ref, F] of frames) if (c.contains(F.el)) frames.delete(ref); c.innerHTML = ''; c.style.display = 'none'; };
+
+  /* ---- one request from one of the extension's pages ---- */
+  async function answer(F, id, d) {
+    d = d || {};
+    let files = null;
+    if (id === 'OBR_ASSETS_UPLOAD_IMAGES' && Array.isArray(d.images)) { files = d.images.map(x => x && x.file); d = { ...d, images: d.images.map(x => x && typeof x === 'object' ? { ...x, file: x.file instanceof Blob ? { __file: true, name: x.file.name || '', type: x.file.type, size: x.file.size } : x.file } : x) }; }
+    const bad = W.check(id, d); if (bad) throw new Error(bad);
+    if (SUBS[id]) { const e = SUBS[id]; F.subs.set(e, (F.subs.get(e) || 0) + 1); return; }
+    if (UNSUBS[id]) { const e = UNSUBS[id]; F.subs.set(e, Math.max(0, (F.subs.get(e) || 0) - 1)); return; }
+    const a = host.action, lm = /^OBR_SCENE_LOCAL_(.+)$/.exec(id);
+    if (lm) { const r = own.itemsOp(LOCAL, lm[1], d, SEAT); if (r.changed !== undefined) { if (r.changed) { emit('OBR_SCENE_LOCAL_EVENT_CHANGE', { items: JSON.parse(JSON.stringify(LOCAL)) }); draw(); } return {}; } return r; }
+    switch (id) {
+      case 'OBR_BROADCAST_SUBSCRIBE': { const e = 'OBR_BROADCAST_MESSAGE_' + d.channel; F.subs.set(e, (F.subs.get(e) || 0) + 1); return; }
+      case 'OBR_BROADCAST_UNSUBSCRIBE': { const e = 'OBR_BROADCAST_MESSAGE_' + d.channel; F.subs.set(e, Math.max(0, (F.subs.get(e) || 0) - 1)); return; }
+      case 'OBR_ACTION_GET_WIDTH': return { width: a.width }; case 'OBR_ACTION_GET_HEIGHT': return { height: a.height };
+      case 'OBR_ACTION_SET_WIDTH': a.width = d.width; placeAction(); return {}; case 'OBR_ACTION_SET_HEIGHT': a.height = d.height; placeAction(); return {};
+      case 'OBR_ACTION_GET_IS_OPEN': return { isOpen: a.open }; case 'OBR_ACTION_OPEN': setActionOpen(true); return {}; case 'OBR_ACTION_CLOSE': setActionOpen(false); return {};
+      case 'OBR_ACTION_GET_BADGE_TEXT': return { badgeText: a.badgeText }; case 'OBR_ACTION_SET_BADGE_TEXT': a.badgeText = d.badgeText; $('badge').hidden = !d.badgeText; $('badge').textContent = d.badgeText || ''; return {};
+      case 'OBR_ACTION_GET_BADGE_BACKGROUND_COLOR': return { badgeBackgroundColor: a.badgeColor }; case 'OBR_ACTION_SET_BADGE_BACKGROUND_COLOR': a.badgeColor = d.badgeBackgroundColor; return {};
+      case 'OBR_ACTION_GET_TITLE': return { title: a.title }; case 'OBR_ACTION_SET_TITLE': a.title = d.title; return {};
+      case 'OBR_ACTION_GET_ICON': return { icon: a.icon }; case 'OBR_ACTION_SET_ICON': a.icon = d.icon; return {};
+      case 'OBR_POPOVER_OPEN': openPopover(d); return {}; case 'OBR_POPOVER_CLOSE': closePopover(d.id); return {};
+      case 'OBR_POPOVER_GET_WIDTH': return { width: (host.popovers[d.id] || { rect: {} }).rect.width }; case 'OBR_POPOVER_GET_HEIGHT': return { height: (host.popovers[d.id] || { rect: {} }).rect.height };
+      case 'OBR_POPOVER_SET_WIDTH': { const p = host.popovers[d.id]; if (p) { p.rect.width = d.width; p.box.style.width = d.width + 'px'; } return {}; }
+      case 'OBR_POPOVER_SET_HEIGHT': { const p = host.popovers[d.id]; if (p) { p.rect.height = d.height; p.box.style.height = d.height + 'px'; } return {}; }
+      case 'OBR_MODAL_OPEN': openModal(d); return {}; case 'OBR_MODAL_CLOSE': closeModal(d.id); return {};
+      case 'OBR_NOTIFICATION_SHOW': return { id: notify(d) }; case 'OBR_NOTIFICATION_CLOSE': { const el = $('toasts').querySelector('[data-id="' + d.id + '"]'); if (el) el.remove(); return {}; }
+      case 'OBR_THEME_GET_THEME': return { theme };
+      case 'OBR_VIEWPORT_GET_WIDTH': return { width: innerWidth }; case 'OBR_VIEWPORT_GET_HEIGHT': return { height: innerHeight };
+      case 'OBR_VIEWPORT_GET_POSITION': return { position: { x: 0, y: 0 } }; case 'OBR_VIEWPORT_GET_SCALE': return { scale: 1 };
+      case 'OBR_VIEWPORT_TRANSFORM_POINT': case 'OBR_VIEWPORT_INVERSE_TRANSFORM_POINT': return { point: { x: d.point.x, y: d.point.y } };
+      case 'OBR_VIEWPORT_SET_POSITION': case 'OBR_VIEWPORT_SET_SCALE': case 'OBR_VIEWPORT_RESET': case 'OBR_VIEWPORT_ANIMATE_TO': case 'OBR_VIEWPORT_ANIMATE_TO_BOUNDS': host.viewport.last = { id, data: d }; return {};
+      case 'OBR_CONTEXT_MENU_CREATE': host.menus[d.id] = { def: d, frame: F }; return {}; case 'OBR_CONTEXT_MENU_REMOVE': delete host.menus[d.id]; return {};
+      case 'OBR_ASSETS_DOWNLOAD_IMAGES': return { images: await pickImages(d) };
+      case 'OBR_ASSETS_UPLOAD_IMAGES': await upload(d, files); return {};
+    }
+    return shared(id, d);
+  }
+  addEventListener('message', async ev => {
+    const m = ev.data; if (!m || typeof m.id !== 'string' || !m.ref) return;
+    const F = frames.get(m.ref); if (!F || F.el.contentWindow !== ev.source) return;
+    const rec = { at: Date.now(), frame: F.kind + (F.id ? ':' + F.id : ''), id: m.id }; LOG.push(rec); if (LOG.length > 4000) LOG.splice(0, 1000);
+    try { const r = await answer(F, m.id, m.data); rec.ok = true; if (m.nonce) post(F, m.id + '_RESPONSE' + m.nonce, r === undefined ? {} : r); }
+    catch (e) {
+      rec.err = String(e && e.message || e); PROBLEMS.push(rec); const p = $('problems'); p.style.display = 'block'; p.textContent += rec.frame + ' ' + rec.id + '\n  ' + rec.err + '\n';
+      if (window.__obrProblem) window.__obrProblem(JSON.stringify({ seat: SEAT, ...rec }));
+      if (m.nonce) post(F, m.id + '_ERROR' + m.nonce, { error: { name: 'Error', message: rec.err } });
+    }
+  });
+
+  /* ---- a rough picture of the scene, so a person (or a screenshot) can see what Grimsheet did ---- */
+  function draw() {
+    const box = $('items'); box.innerHTML = '';
+    const all = itemsNow.concat(LOCAL), byId = Object.fromEntries(all.map(i => [i.id, i]));
+    for (const it of all.slice().sort((a, b) => W.LAYERS.indexOf(a.layer) - W.LAYERS.indexOf(b.layer) || a.zIndex - b.zIndex)) {
+      if (it.visible === false && ROLE !== 'GM') continue;
+      if (it.type === 'IMAGE') { const b = own.bounds(all, [it.id]), el = document.createElement('img'); el.src = it.image.url; el.title = it.name; Object.assign(el.style, { left: b.min.x + 'px', top: b.min.y + 'px', width: b.width + 'px', height: b.height + 'px', opacity: it.visible === false ? .45 : 1 }); if (selection.includes(it.id)) el.className = 'sel'; box.appendChild(el); }
+      else if ((it.type === 'TEXT' || it.type === 'LABEL') && it.text && it.text.plainText) { const el = document.createElement('div'); el.className = 'txt'; el.textContent = it.text.plainText; el.style.left = it.position.x + 'px'; el.style.top = it.position.y + 'px'; box.appendChild(el); }
+    }
+    void byId;
+  }
+
+  (async () => {
+    for (const x of host.library) x.image.url = await hosted(x.image.url);
+    mkFrame('background', '', Q.get('bg') || 'background.html', $('bgframes'));
+    if (host.action.open) openAction();
+    host.ready = true;
+  })();
+})();
+</script></body></html>
