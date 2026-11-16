@@ -142,6 +142,7 @@
       case 'OBR_ASSETS_DOWNLOAD_IMAGES':
         if (!opt(d.multiple, isBool)) return 'multiple must be true or false';
         if (!opt(d.defaultSearch, isStr)) return 'defaultSearch must be a string';
+        if (d.defaultSearch === '') return '"defaultSearch" is not allowed to be empty'; // seen in a real room, 1.62.0
         return opt(d.typeHint, oneOf(ASSET_TYPES)) ? null : 'typeHint "' + d.typeHint + '" is not one of ' + ASSET_TYPES.join(', ');
       case 'OBR_ASSETS_UPLOAD_IMAGES':
         if (!Array.isArray(d.images) || !d.images.length) return 'images must be a list with at least one image';
