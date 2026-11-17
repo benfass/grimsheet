@@ -3852,7 +3852,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.63.0';
+const APP_VERSION = '1.63.1';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 // phones (touch screen, short side under 600px) get the flat dice by default: the 3D box takes too much of a small screen
@@ -4707,7 +4707,7 @@ function ensurePartyModule() {
 function refreshParty() { document.querySelectorAll('[data-party]').forEach(n => { n.innerHTML = partyList(); }); }
 function renderParty() {
   if (!IN_OBR) return '<div class="empty">Open Grimsheet inside Owlbear Rodeo to see your party here: everyone\'s HP, AC and conditions, live.</div>';
-  return `<div data-party>${partyList()}</div>`;
+  return `<div data-party>${partyList()}</div>${stashOn() && !ui.viewing ? `<div class="addrow" style="margin-top:8px"><button class="btn small" data-act="stashopen" title="Items and coins the whole party shares">Party stash${(n => n ? ' (' + n + ')' : '')(stashGet().items.length)}</button></div>` : ''}`;
 }
 function refreshInitView() { refreshParty(); renderBanner(); checkMyTurn(); renderTray(); }
 /* ---- players end their own turn ---- */
@@ -5425,7 +5425,7 @@ function monTokRead() { const md = ui.modal; if (!md || md.type !== 'montok') re
 async function monTokPick(search) {
   const md = ui.modal; if (!md || md.type !== 'montok') return; monTokRead();
   const f = findMon(md.inst); if (!f) return;
-  let got; try { got = await OBRX.api.assets.downloadImages(false, String(search || String(f.m.name || '').replace(/\s+\d+$/, '')).trim() || undefined, 'CHARACTER'); } catch (e) { md.err = 'Owlbear didn\'t open its images.'; renderModal(); return; }
+  let got; try { got = await OBRX.api.assets.downloadImages(false, String(search || String(f.m.name || '').replace(/\s+\d+$/, '')).trim() || undefined, 'CHARACTER'); } catch (e) { md.err = notSignedIn(e) ? NOT_SIGNED_IN + ' Monster tokens need it, because they go on the shared map.' : 'Owlbear didn\'t open its images.'; renderModal(); return; }
   if (!got || !got.length) return;
   const d = got[0]; md.img = { image: d.image, grid: d.grid, name: d.name, scale: (d.scale || { x: 1, y: 1 }), rotation: d.rotation || 0 }; md.err = ''; renderModal();
 }
@@ -5437,7 +5437,7 @@ async function monTokUpload() {
     const file = inp.files && inp.files[0]; if (!file) return;
     const name = String(f.m.name).replace(/\s+\d+$/, ''), B = window.OwlbearBuild;
     try { await OBRX.api.assets.uploadImages([B.buildImageUpload(file).name(name).dpi(Math.max(1, Math.round(await imgDpi(file)))).build()], 'CHARACTER'); }
-    catch (e) { md.err = 'Owlbear didn\'t take the upload: ' + String((e && (e.message || (e.error && e.error.message))) || e).slice(0, 120); renderModal(); return; }
+    catch (e) { md.err = notSignedIn(e) ? NOT_SIGNED_IN + ' Monster tokens need it, because they go on the shared map.' : 'Owlbear didn\'t take the upload: ' + String((e && (e.message || (e.error && e.error.message))) || e).slice(0, 120); renderModal(); return; }
     toast('Uploaded. Now pick it in your Owlbear images.');
     monTokPick(name);
   };
@@ -6855,6 +6855,9 @@ function noteEditorHtml(md) {
 // A picture lives in the DM's Owlbear image library (so everyone at the table can load it); on the website, where
 // nothing is shared, it's kept in the note itself, shrunk. A note's icon is the picture (round) or one of these.
 const NOTE_ICONS = ['🧙', '🧝', '🤴', '👸', '🧔', '👤', '💀', '🐉', '👹', '🗡️', '🛡️', '🏹', '🧪', '💎', '🔑', '📜', '💍', '🪙', '📖', '🏰', '⚓', '🍺', '🌲', '❓'];
+// Owlbear's image library needs an Owlbear account: guests get "user not signed in"
+const notSignedIn = e => /not signed in/i.test(String((e && (e.message || (e.error && e.error.message))) || e));
+const NOT_SIGNED_IN = 'Owlbear\'s image library needs you signed in to Owlbear (you\'re a guest in this room).';
 const noteIcon = (n, cls = 'nico') => n.icon ? `<span class="${cls}">${esc(n.icon)}</span>` : n.img && n.img.url ? `<span class="${cls}"><img src="${esc(n.img.url)}" alt=""></span>` : '';
 function shrinkImage(file, max = 640) {
   return new Promise((res, rej) => { const u = URL.createObjectURL(file), im = new Image();
@@ -6866,7 +6869,7 @@ function ndRead() { const md = ui.modal; if (!md || md.type !== 'noteedit') retu
 async function notePicPick(search) {
   const md = ui.modal; if (!md || md.type !== 'noteedit') return; ndRead();
   let got; try { got = await OBRX.api.assets.downloadImages(false, String(search || md.draft.title || '').trim() || undefined, 'PROP'); } // Owlbear refuses an empty search
-  catch (e) { console.warn('[Grimsheet] image picker', e); toast('Owlbear didn\'t open its images: ' + String((e && (e.message || (e.error && e.error.message))) || e).slice(0, 100)); return; }
+  catch (e) { console.warn('[Grimsheet] image picker', e); if (notSignedIn(e)) { toast(NOT_SIGNED_IN + ' Drop or paste a picture instead: it stays on this device.'); return; } toast('Owlbear didn\'t open its images: ' + String((e && (e.message || (e.error && e.error.message))) || e).slice(0, 100)); return; }
   if (!got || !got.length || !ui.modal || ui.modal.type !== 'noteedit') return;
   const im = got[0].image; ui.modal.draft.img = { url: im.url, w: im.width, h: im.height }; renderModal();
 }
@@ -6875,7 +6878,8 @@ async function notePicFile(file) {
   if (IN_OBR && OBRX.ready) {
     const B = window.OwlbearBuild, name = md.draft.title || file.name.replace(/\.\w+$/, '') || 'Handout';
     try { await OBRX.api.assets.uploadImages([B.buildImageUpload(file).name(name).build()], 'PROP'); }
-    catch (e) { toast('Owlbear didn\'t take the upload: ' + String((e && (e.message || (e.error && e.error.message))) || e).slice(0, 100)); return; }
+    catch (e) {
+      if (notSignedIn(e)) { try { md.draft.img = await shrinkImage(file); renderModal(); toast(NOT_SIGNED_IN + ' The picture is kept on this device only, so players won\'t see it.'); } catch (x) { toast('That file isn\'t a picture.'); } return; } toast('Owlbear didn\'t take the upload: ' + String((e && (e.message || (e.error && e.error.message))) || e).slice(0, 100)); return; }
     toast('Uploaded to your Owlbear images. Pick it to put it on the note.'); notePicPick(name);
   } else {
     try { md.draft.img = await shrinkImage(file); renderModal(); } catch (e) { toast('That file isn\'t a picture.'); }

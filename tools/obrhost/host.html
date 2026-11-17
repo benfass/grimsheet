@@ -48,6 +48,7 @@ body{background:#1e2030}
   const Q = new URLSearchParams(location.search);
   const SEAT = Q.get('seat') || 'p1', NAME = Q.get('name') || SEAT, ROLE = Q.get('role') === 'GM' ? 'GM' : 'PLAYER', COLOR = Q.get('color') || '#9966ff';
   const EXT = new URL(Q.get('ext') || './', location.href).href, ROOM = Q.get('room') || 'room1';
+  const GUEST = Q.get('guest') === '1'; // a guest in the room: no Owlbear account, so no image library (seen in a real room, 1.63.0)
   const REF64 = btoa(location.origin + ' ' + ROOM), $ = id => document.getElementById(id);
   const W = window.ObrWorld, frames = new Map(), LOG = [], PROBLEMS = [];
   const own = W.createWorld({ roomId: ROOM }); // used whole when alone; always used for this player's local items
@@ -201,8 +202,8 @@ body{background:#1e2030}
       case 'OBR_VIEWPORT_TRANSFORM_POINT': case 'OBR_VIEWPORT_INVERSE_TRANSFORM_POINT': return { point: { x: d.point.x, y: d.point.y } };
       case 'OBR_VIEWPORT_SET_POSITION': case 'OBR_VIEWPORT_SET_SCALE': case 'OBR_VIEWPORT_RESET': case 'OBR_VIEWPORT_ANIMATE_TO': case 'OBR_VIEWPORT_ANIMATE_TO_BOUNDS': host.viewport.last = { id, data: d }; return {};
       case 'OBR_CONTEXT_MENU_CREATE': host.menus[d.id] = { def: d, frame: F }; return {}; case 'OBR_CONTEXT_MENU_REMOVE': delete host.menus[d.id]; return {};
-      case 'OBR_ASSETS_DOWNLOAD_IMAGES': return { images: await pickImages(d) };
-      case 'OBR_ASSETS_UPLOAD_IMAGES': await upload(d, files); return {};
+      case 'OBR_ASSETS_DOWNLOAD_IMAGES': if (GUEST) throw new Error('Unable to download images, user not signed in'); return { images: await pickImages(d) };
+      case 'OBR_ASSETS_UPLOAD_IMAGES': if (GUEST) throw new Error('Unable to upload images, user not signed in'); await upload(d, files); return {};
     }
     return shared(id, d);
   }

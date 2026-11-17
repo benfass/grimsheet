@@ -3,7 +3,7 @@ const { chromium } = require('playwright');
 const { room, sleep } = require('./room.js');
 (async () => {
   const b = await chromium.launch(); const ok = []; const chk = (c, m) => ok.push((c ? 'PASS ' : 'FAIL ') + m);
-  const R = await room(b, [{ id: 'g1', name: 'Dana', role: 'GM' }, { id: 'p1', name: 'Ben', role: 'PLAYER' }, { id: 'p2', name: 'Cleo', role: 'PLAYER', viewport: { width: 400, height: 820 } }], {
+  const R = await room(b, [{ id: 'g1', name: 'Dana', role: 'GM' }, { id: 'p1', name: 'Ben', role: 'PLAYER' }, { id: 'p2', name: 'Cleo', role: 'PLAYER', viewport: { width: 400, height: 820 }, query: { guest: '1' } }], {
     init: me => { if (!localStorage.getItem('grimsheet.settings.v1')) localStorage.setItem('grimsheet.settings.v1', JSON.stringify({ diceAnim: false, gmPlays: me.role === 'GM' ? true : null })); } });
   const G = R.seats.g1, P = R.seats.p1, Q = R.seats.p2;
   const dana = await G.panel(), ben = await P.panel(), cleo = await Q.panel();
@@ -59,6 +59,16 @@ const { room, sleep } = require('./room.js');
   await cleo.click('[data-act=close]'); await ben.click('[data-act=close]');
   const roomBytes = JSON.stringify(R.world.state.room).length; chk(roomBytes < 16384, 'room data ' + roomBytes + ' bytes');
 
+  // ---- a guest can't use Owlbear's image library: clear message, picture kept on the device
+  await cleo.click('[data-act=setview][data-v=campaign]'); await sleep(300); await cleo.click('[data-act=noteadd]'); await sleep(300);
+  await cleo.click('[data-act=ndpick]'); await sleep(600);
+  chk(/signed in to Owlbear/.test(await cleo.evaluate(() => [...document.querySelectorAll('.toast')].map(t => t.textContent).join(' '))), 'guest: picker explains it needs an Owlbear account');
+  const fc = Q.page.waitForEvent('filechooser', { timeout: 4000 }).catch(() => null); await cleo.click('[data-act=ndup]'); const ch = await fc;
+  if (ch) { await ch.setFiles(__dirname + '/sample.png'); await sleep(1200); }
+  chk(/^data:image\/jpeg/.test(await cleo.evaluate(() => (document.querySelector('#nd-drop img') || {}).src || '')), 'guest: uploaded picture kept on the note locally');
+  await cleo.click('#ovl [data-act=close]').catch(() => { }); await sleep(300);
+  R.problems.length = 0; // those two refusals were expected
+  chk((await ben.$$('[data-party] ~ .addrow [data-act=stashopen]')).length + (await ben.$$('[data-act=stashopen]')).length > 0, 'stash reachable from the sheet');
   // ---- combat view on Cleo's narrow panel
   await cleo.click('[data-act=setview][data-v=combat]'); await sleep(400);
   chk(!!(await cleo.$('.cv')), 'combat view opens');
