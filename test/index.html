@@ -360,6 +360,39 @@ select.ed-inline{width:auto}
 .ncard.open{grid-column:1/-1;border-color:var(--accent)}
 .nhead{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}
 .ntitle{flex:1;min-width:0;text-align:left;background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer;overflow:hidden;text-overflow:ellipsis}
+.cv{max-width:640px;margin:0 auto;display:flex;flex-direction:column;gap:10px;padding-bottom:12px}
+.cv-card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.cv-k{display:block;font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700}
+.cv-hprow{display:flex;align-items:center;gap:10px}
+.cv-hpn{flex:1;display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
+.cv-hpn .cv-k{width:100%}
+.cv-hpn b{font-size:2.2rem;line-height:1}
+.cv-amt{width:88px;height:48px;font-size:1.5rem;text-align:center;border:1px solid var(--line);border-radius:10px;background:var(--sunk)}
+.cv-hp .hpbar{margin:8px 0}
+.cv-hpbtns{display:grid;grid-template-columns:1fr 1fr auto;gap:8px}
+.cv-hpbtns .btn{min-height:46px;font-size:1.02rem;justify-content:center}
+.cv-dmg{background:var(--danger-soft,rgba(200,60,60,.14));border-color:var(--danger)}
+.cv-heal{background:var(--accent-soft);border-color:var(--accent)}
+.cv-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+.cv-st{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:6px 4px;text-align:center;min-height:52px;font:inherit;color:inherit;cursor:pointer}
+div.cv-st{cursor:default}
+.cv-st b{font-size:1.15rem;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cv-st.on{border-color:var(--accent)} .cv-st.used{opacity:.6}
+.cv-death{display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-color:var(--danger)}
+.cv-death .box{width:26px;height:26px}
+.cv-conds{display:flex;flex-wrap:wrap;gap:6px}
+.cv-conds .chip{min-height:34px;padding:0 12px}
+.cv-slots{display:flex;flex-wrap:wrap;gap:6px 14px}
+.cv-slots .box{width:24px;height:24px}
+.cv-tabs{position:sticky;top:0;z-index:2;background:var(--bg);padding:4px 0;margin:0;overflow-x:auto;flex-wrap:nowrap}
+.cv-tabs button{min-height:38px;flex:none}
+.cv-list .roll,.cv-list .btn.small,.cv-list .chip.dc{min-height:40px;padding-inline:12px}
+.cv-list .box{width:24px;height:24px}
+.cv-foot{text-align:center;font-size:.85rem}
+.linkbtn{background:none;border:0;padding:0;color:var(--accent);text-decoration:underline;font:inherit;cursor:pointer}
+@media (max-width:420px){.cv-stats{grid-template-columns:repeat(6,1fr)}.cv-st{grid-column:span 2}.cv-st:nth-child(n+4){grid-column:span 3}.cv-hpn b{font-size:1.9rem}}
+.cv-conds .chip.on{background:var(--accent-soft);border-color:var(--accent);color:var(--ink);font-weight:600}
+.nshown{font-size:.7rem;padding:0 6px;vertical-align:1px;color:var(--accent);border-color:var(--accent)}
 .nico{width:26px;height:26px;flex:none;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:1rem;background:var(--sunk);overflow:hidden}
 .nico img{width:100%;height:100%;object-fit:cover}
 .npic{display:block;max-width:min(100%,420px);max-height:320px;border-radius:8px;box-shadow:var(--shadow);object-fit:contain}
@@ -3819,12 +3852,13 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.62.1';
+const APP_VERSION = '1.63.0';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 // phones (touch screen, short side under 600px) get the flat dice by default: the 3D box takes too much of a small screen
 const IS_PHONE = (() => { try { return matchMedia('(pointer:coarse)').matches && Math.min(screen.width, screen.height) < 600; } catch (e) { return false; } })();
 const SETTINGS = Object.assign({ diceAnim: !REDUCED, dice3d: !navigator.webdriver && !IS_PHONE, diceSound: true, diceSet: 'ivory', diceSpeed: 'normal', share: 'all', compact: false, panel: 'medium', panelW: 760, panelH: 820, diceStay: 'auto', monHp: 'hidden', monShare: false, obrTracker: true, groupInit: true, view: 'sheet' }, (() => { try { return JSON.parse(localStorage.getItem(SETKEY) || '{}'); } catch (e) { return {}; } })());
+if (IS_PHONE && !SETTINGS.cvAuto) { SETTINGS.cvAuto = 1; if (!SETTINGS.view || SETTINGS.view === 'sheet') SETTINGS.view = 'combat'; try { localStorage.setItem(SETKEY, JSON.stringify(SETTINGS)); } catch (e) { } }
 if (IS_PHONE && !SETTINGS.d3phone) { SETTINGS.d3phone = 1; SETTINGS.dice3d = false; try { localStorage.setItem(SETKEY, JSON.stringify(SETTINGS)); } catch (e) { } }
 function saveSettings() { try { localStorage.setItem(SETKEY, JSON.stringify(SETTINGS)); } catch (e) { } try { if (typeof dmPublishTable === 'function' && IN_OBR && OBRX.ready) dmPublishTable(); } catch (e) { } }
 const DICE_MS = { quick: 450, normal: 850, dramatic: 1400 };
@@ -4481,7 +4515,7 @@ async function startOwlbear() {
         if (d.type === 'pasteFor') takePending();
         if (d.type === 'focus') { SETTINGS.view = 'encounter'; saveSettings(); ui.monFocus = d.inst; { const f = findMon(d.inst); if (f) ui.encSel = f.e.id; } render(); const n = document.querySelector(`[data-inst="${d.inst}"]`); if (n && n.scrollIntoView) n.scrollIntoView({ block: 'center' }); }
       });
-      try { const md = await OBR.room.getMetadata(); OBRX.init = md && md[INITKEY]; OBRX.roomMd = md || {}; OBR.room.onMetadataChange(md => { OBRX.init = md && md[INITKEY]; OBRX.roomMd = md || {}; driveCheck(); dmRoomChanged(); refreshInitView(); }); } catch (e) { }
+      try { const md = await OBR.room.getMetadata(); OBRX.init = md && md[INITKEY]; OBRX.roomMd = md || {}; OBR.room.onMetadataChange(md => { OBRX.init = md && md[INITKEY]; OBRX.roomMd = md || {}; driveCheck(); dmRoomChanged(); refreshInitView(); stashRefresh(); }); } catch (e) { }
       driveStart();
       setTimeout(paintGlow, 1200);
       OBR.broadcast.onMessage(CH_DMSYNC, ev => dmReceive(ev.data)); dmApplyTable(); setTimeout(dmStart, 1500); dmClaimSoon();
@@ -6759,8 +6793,9 @@ function noteVisible(n) { return n.vis === 'party' || !n.author || n.author.id =
 function renderNotes() {
   const c = camp(), q = (ui.noteQ || '').toLowerCase().trim(), f = ui.noteF || 'all';
   let list = c.notes.filter(noteVisible);
-  const counts = {}; list.forEach(n => { counts[n.type] = (counts[n.type] || 0) + 1; });
+  const counts = {}; list.forEach(n => { counts[n.type] = (counts[n.type] || 0) + 1; if (n.shown) counts.handouts = (counts.handouts || 0) + 1; });
   if (f === 'pinned') list = list.filter(n => n.pinned);
+  else if (f === 'handouts') list = list.filter(n => n.shown);
   else if (f !== 'all') list = list.filter(n => n.type === f);
   if (q) list = list.filter(n => (n.title + ' ' + (n.body || '') + ' ' + (n.tags || []).join(' ') + ' ' + (n.status || '')).toLowerCase().includes(q));
   const tagsAll = [...new Set(c.notes.filter(noteVisible).flatMap(n => n.tags || []))].sort();
@@ -6769,11 +6804,12 @@ function renderNotes() {
     <div class="enc-title">${ui.campName ? `<input class="ed-inline" id="camp-name" data-campname="1" value="${esc(c.name)}" placeholder="Campaign name" style="width:220px">` : `<button class="camp-name" data-act="campname" title="Rename the campaign"><b>${esc(c.name || 'Campaign notes')}</b></button>`}<span class="muted" style="font-size:.85rem">${c.notes.filter(noteVisible).length} notes${IN_OBR ? ' · shared with this room' : ''}</span></div>
     <div class="enc-tools"><button class="btn small primary" data-act="noteadd">+ New note</button><button class="btn small" data-act="notesexport" title="Download all notes as a Markdown file">Export</button><button class="btn small ghost" data-act="notesbackup" title="Download a backup you can import again">Backup</button><label class="btn small ghost" title="Import a notes backup">Import<input type="file" accept=".json,application/json" id="notes-import" data-notesimport="1" hidden></label></div></div>
     <div class="notes-bar"><input id="note-q" class="srd-q" data-noteq="1" value="${esc(ui.noteQ || '')}" placeholder="Search notes: names, places, tags…" aria-label="Search notes">
-      <div class="tabs" style="margin:0">${[['all', 'All'], ['pinned', 'Pinned'], ...Object.keys(NOTE_TYPES).map(k => [k, NOTE_PLURAL[k]])].map(([k, l]) => `<button class="${f === k ? 'on' : ''}" data-act="notef" data-v="${k}">${l}${counts[k] ? ' <span class="muted">' + counts[k] + '</span>' : ''}</button>`).join('')}</div>
+      <div class="tabs" style="margin:0">${[['all', 'All'], ['pinned', 'Pinned'], ...(counts.handouts || f === 'handouts' ? [['handouts', 'Handouts']] : []), ...Object.keys(NOTE_TYPES).map(k => [k, NOTE_PLURAL[k]])].map(([k, l]) => `<button class="${f === k ? 'on' : ''}" data-act="notef" data-v="${k}">${l}${counts[k] ? ' <span class="muted">' + counts[k] + '</span>' : ''}</button>`).join('')}</div>
       ${tagsAll.length ? `<div class="ntags">${tagsAll.slice(0, 30).map(t => `<button class="chip ${q === t.toLowerCase() ? 'on' : ''}" data-act="notetag" data-v="${esc(t)}">#${esc(t)}</button>`).join('')}</div>` : ''}</div>`;
   const quests = f === 'all' && !q && openQuests.length ? `<div class="notes-quests"><b>Open quests</b>${openQuests.map(n => `<button class="chip" data-act="noteopen" data-id="${esc(n.id)}">${esc(n.title)}</button>`).join('')}</div>` : '';
   const order = Object.keys(NOTE_TYPES);
-  list.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || (f === 'all' ? order.indexOf(a.type) - order.indexOf(b.type) : 0) || b.updated - a.updated);
+  if (f === 'handouts') list.sort((a, b) => b.shown - a.shown);
+  else list.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || (f === 'all' ? order.indexOf(a.type) - order.indexOf(b.type) : 0) || b.updated - a.updated);
   let last = '';
   const cards = list.map(n => { const g = f === 'all' && !q && n.type !== last ? `<div class="lvl-h notes-grp">${NOTE_PLURAL[n.type]}</div>` : ''; last = n.type; return g + noteCard(n); }).join('');
   const empty = !c.notes.filter(noteVisible).length ? `<div class="empty">No notes yet. Keep a session log of each game, and add the people you meet, places you visit and quests you take on.${IN_OBR ? ' Party notes are shared with everyone in this room, and anyone can edit them.' : ''}</div>` : !list.length ? '<div class="empty">No notes match.</div>' : '';
@@ -6784,13 +6820,14 @@ function noteCard(n) {
   const stCls = /dead|failed|hostile/i.test(st) ? 'bad' : /done|friendly/i.test(st) ? 'ok' : '';
   const first = (n.body || '').split('\n').find(x => x.trim()) || '';
   return `<section class="ncard ${open ? 'open' : ''} t-${n.type}" data-note="${esc(n.id)}">
-    <div class="nhead">${noteIcon(n)}<button class="ntitle" data-act="noteopen" data-id="${esc(n.id)}"><span class="ntype">${NOTE_TYPES[n.type]}</span> <b>${esc(n.title)}</b></button>
+    <div class="nhead">${noteIcon(n)}<button class="ntitle" data-act="noteopen" data-id="${esc(n.id)}"><span class="ntype">${NOTE_TYPES[n.type]}</span> <b>${esc(n.title)}</b>${n.shown ? ` <span class="chip nshown" title="Shown to the players${n.shownBy ? ' by ' + esc(n.shownBy) : ''}, ${ago(n.shown)}">Handout</span>` : ''}</button>
       ${st ? `<button class="chip nst ${stCls}" data-act="notestat" data-id="${esc(n.id)}" title="Change status">${esc(st)}</button>` : ''}
       ${n.vis !== 'party' ? `<span class="chip" title="${isGM() && IN_OBR ? 'Hidden from players' : 'Only you can see this'}">🔒 ${isGM() && IN_OBR ? 'Hidden' : 'Only me'}</span>` : ''}
       ${n.pinned ? '<span class="chip">★</span>' : ''}</div>
     ${open ? `${n.img && n.img.url ? `<img class="npic" src="${esc(n.img.url)}" alt="">` : ''}<div class="nbody">${noteBody(n) || (n.img ? '' : '<span class="muted">No text yet.</span>')}</div>` : first ? `<div class="nfirst muted">${esc(first.length > 140 ? first.slice(0, 137) + '…' : first)}</div>` : ''}
     ${(n.tags || []).length ? `<div class="ntags">${n.tags.map(t => `<button class="chip" data-act="notetag" data-v="${esc(t)}">#${esc(t)}</button>`).join('')}</div>` : ''}
     ${open ? `<div class="nfoot"><span class="muted">${n.author ? esc(n.author.name) + (n.author.char ? ' (' + esc(n.author.char) + ')' : '') + ' · ' : ''}${ago(n.updated)}</span><span style="flex:1"></span>
+      ${n.shown && IN_OBR && OBRX.ready ? `<button class="btn small" data-act="handoutopen" data-id="${esc(n.id)}" title="Open it in the handout window on your screen">Open handout</button>` : ''}
       ${isGM() && IN_OBR && OBRX.ready ? `<button class="btn small primary" data-act="noteshow" data-id="${esc(n.id)}" title="Open it in a window in the middle of every player's map${n.vis !== 'party' ? ', and share it with them' : ''}">Show to players</button>` : ''}
       ${n.vis !== 'party' ? `<button class="btn small" data-act="noteshare" data-id="${esc(n.id)}">${isGM() && IN_OBR ? 'Reveal to players' : 'Share with the party'}</button>` : ''}
       <button class="btn small" data-act="notepin" data-id="${esc(n.id)}">${n.pinned ? 'Unpin' : 'Pin'}</button>
@@ -6862,9 +6899,19 @@ document.addEventListener('paste', ev => {
   if (f) { ev.preventDefault(); notePicFile(f); }
 });
 // the DM shows a note to the players: it opens in a handout window in the middle of their map
+// open a handout in the handout window on this screen only (the journal's "Open" button)
+function handoutOpen(n) {
+  if (!IN_OBR || !OBRX.ready) return;
+  const note = { id: n.id, type: n.type, title: n.title, body: String(n.body || '').slice(0, NOTE_MAX), img: n.img && /^https?:/.test(n.img.url) ? n.img : null, icon: n.icon || '' };
+  const q = (readJSON('grimsheet.handout.q') || []).filter(x => x && x.note && x.note.id !== n.id); q.push({ note, by: n.shownBy || '', at: Date.now() }); writeJSON('grimsheet.handout.q', q.slice(-10));
+  const al = readJSON('grimsheet.handout.alive'); if (al && Date.now() - al.at < 1500) return;
+  Promise.all([OBRX.api.viewport.getWidth(), OBRX.api.viewport.getHeight()]).then(([w, h]) => OBRX.api.popover.open({ id: 'com.grimsheet-test/handout', url: new URL('handout.html', location.href).href,
+    width: Math.min(480, w - 24), height: Math.min(600, h - 40), anchorReference: 'POSITION', anchorPosition: { left: w / 2, top: h / 2 },
+    anchorOrigin: { horizontal: 'CENTER', vertical: 'CENTER' }, transformOrigin: { horizontal: 'CENTER', vertical: 'CENTER' }, disableClickAway: true, hidePaper: true })).catch(() => toast('Owlbear didn\'t open the window.'));
+}
 function noteShow(id) {
   const n = camp().notes.find(x => x.id === id); if (!n || !IN_OBR || !OBRX.ready) return;
-  if (n.vis !== 'party') { n.vis = 'party'; noteSaved(n); }
+  n.vis = 'party'; n.shown = Date.now(); n.shownBy = OBRX.me.name || 'GM'; noteSaved(n);
   const note = { id: n.id, type: n.type, title: n.title, body: String(n.body || '').slice(0, NOTE_MAX), img: n.img && /^https?:/.test(n.img.url) ? n.img : null, icon: n.icon || '' };
   OBRX.api.broadcast.sendMessage(CH_NOTES, { type: 'show', note, by: OBRX.me.name }, { destination: 'REMOTE' }).then(() => toast(`Showing “${n.title}” to the players.`), () => toast('Couldn\'t show that right now.'));
 }
@@ -6896,6 +6943,152 @@ function notesMarkdown() {
     for (const n of ns) s += `\n### ${n.title}${n.status ? ' (' + n.status + ')' : ''}\n${(n.tags || []).length ? n.tags.map(x => '#' + x).join(' ') + '\n' : ''}${n.body ? '\n' + n.body + '\n' : ''}`;
   }
   return s;
+}
+
+/* ---------- MOVE A CHARACTER between the website, Owlbear and other devices ---------- */
+// Owlbear and the website keep separate characters (each browser keeps its own data for each site). A character
+// travels as a packed code (gzip + base64url, "GRIMSHEET1:…") or as a website link carrying it after #take=.
+// Nothing goes through a server: the code is the whole character.
+const XFER = 'GRIMSHEET1:';
+const b64url = b => b.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const unb64url = u => { u = u.replace(/-/g, '+').replace(/_/g, '/'); while (u.length % 4) u += '='; return u; };
+async function xferCode(ch) { const x = clone(ch); delete x.example; delete x.testFixture; return XFER + b64url(await packJSON(x)); }
+async function xferRead(text) {
+  const t = String(text || '').trim(), m = /(?:GRIMSHEET1:|#take=)([A-Za-z0-9_-]+)/.exec(t);
+  if (!m) return null; return unpackJSON(unb64url(m[1]));
+}
+const siteUrl = () => location.origin + location.pathname.replace(/[^/]*$/, '') ;
+async function xferOpen(id) {
+  const ch = store.chars[id]; if (!ch) return;
+  openModal('xfer', { id, busy: true }); const code = await xferCode(ch);
+  if (!ui.modal || ui.modal.type !== 'xfer') return;
+  Object.assign(ui.modal, { busy: false, code, link: siteUrl() + '#take=' + code.slice(XFER.length) }); renderModal();
+}
+function xferHtml(m) {
+  const ch = store.chars[m.id] || {}, kb = m.code ? Math.round(m.code.length / 102.4) / 10 : 0;
+  return dlgHead('Move ' + (ch.name || 'character')) + `<div class="dlg-b">${m.busy ? '<div class="muted">Packing…</div>' : `
+    ${IN_OBR ? `<div class="setrow"><div class="grow"><b>To the Grimsheet website</b><div class="muted">Opens the website in a new tab with this character, ready to add.</div></div><a class="btn small primary" href="${esc(m.link)}" target="_blank" rel="noopener" data-act="xferdone">Open on the website</a></div>` : ''}
+    <div class="setrow"><div class="grow"><b>To another device</b><div class="muted">Send yourself this link (email, chat, notes) and open it on the other device's browser.${kb > 30 ? ' It\'s a long link, because the whole character is in it.' : ''}</div></div><button class="btn small" data-act="xfercopy" data-v="link">Copy link</button></div>
+    <div class="setrow"><div class="grow"><b>${IN_OBR ? 'To another Owlbear room or account' : 'Into Owlbear'}</b><div class="muted">Copy the code, then in Grimsheet ${IN_OBR ? 'there' : 'inside Owlbear'} choose <b>Characters → Import</b> and paste it.</div></div><button class="btn small ${IN_OBR ? '' : 'primary'}" data-act="xfercopy" data-v="code">Copy code</button></div>
+    <div class="muted" style="font-size:.82rem">The character is copied, not moved: this one stays here until you delete it. Code size ${kb} kB.</div>`}</div>
+    <div class="dlg-f"><span class="sp"></span><button class="btn" data-act="close">Done</button></div>`;
+}
+function copyText(t, what) {
+  const fall = () => { const ta = document.createElement('textarea'); ta.value = t; ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select(); let ok = false; try { ok = document.execCommand('copy'); } catch (e) { } ta.remove(); toast(ok ? what + ' copied.' : 'Couldn\'t copy here. Use Export instead.'); };
+  try { navigator.clipboard.writeText(t).then(() => toast(what + ' copied.'), fall); } catch (e) { fall(); }
+}
+// a character arriving: from #take= on the website, or a pasted code in Import
+function takeHtml(m) {
+  const d = m.data, here = store.chars[d.id];
+  return dlgHead('Add this character?') + `<div class="dlg-b"><div class="list-i"><div class="grow"><b>${esc(d.name || 'Unnamed')}</b><div class="muted" style="font-size:.85rem">${esc([d.species, d.cls, 'Level ' + d.level].filter(Boolean).join(' · '))}</div></div></div>
+    ${here ? `<div class="muted" style="font-size:.9rem">This browser already has this character${here.name !== d.name ? ' (as ' + esc(here.name) + ')' : ''}. Replace it with the one you're bringing, or keep both.</div>` : '<div class="muted" style="font-size:.9rem">It will be saved in this browser.</div>'}</div>
+    <div class="dlg-f"><button class="btn" data-act="close">Cancel</button>${here ? '<button class="btn" data-act="takechar" data-v="copy">Keep both</button><button class="btn primary" data-act="takechar" data-v="replace">Replace</button>' : '<button class="btn primary" data-act="takechar" data-v="copy">Add</button>'}</div>`;
+}
+function takeChar(how) {
+  const d = clone(ui.modal.data); if (!d || !Array.isArray(d.modules)) return;
+  if (how !== 'replace' || !store.chars[d.id]) d.id = uid();
+  d.example = false; normalize(d); store.chars[d.id] = d; store.active = d.id; save(); closeModal(); render(); toast((how === 'replace' ? 'Replaced ' : 'Added ') + d.name + '.');
+}
+async function takeFromHash() {
+  if (IN_OBR || !/^#take=/.test(location.hash)) return;
+  const h = location.hash; try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { }
+  let d; try { d = await xferRead(h); } catch (e) { d = null; }
+  if (!d || !Array.isArray(d.modules)) { toast('That link didn\'t carry a whole character. Copy the link again and paste all of it.'); return; }
+  openModal('take', { data: d });
+}
+
+/* ---------- PARTY STASH: items and coins the whole party shares ---------- */
+// Kept in the room (Owlbear room metadata), so everyone sees the same stash. Put an item or coins in from your
+// sheet, take them out into your sheet. The GM can remove items and set the coins. Room metadata is small
+// (16 kB for everything), so stored items keep a short description and the stash has a size cap.
+const STASH = 'com.grimsheet-test/stash', STASH_MAX = 6000, COINS = ['cp', 'sp', 'ep', 'gp', 'pp'];
+const stashOn = () => IN_OBR && OBRX.ready;
+const stashBlank = () => ({ v: 1, coins: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 }, items: [], log: [] });
+function stashGet() { const x = (OBRX.roomMd || {})[STASH]; const st = Object.assign(stashBlank(), x ? clone(x) : {}); st.coins = Object.assign(stashBlank().coins, st.coins); return st; }
+function stashSlim(e) { const x = hbClean(e); delete x.cls; if (x.text && x.text.length > 300) x.text = x.text.slice(0, 297) + '…'; delete x.pinned; return x; }
+const jsonBytes = v => new Blob([JSON.stringify(v)]).size;
+// change the stash: read it fresh from the room, change it, write it back. fn returns a log line, or false to stop
+async function stashEdit(fn) {
+  if (!stashOn()) return false;
+  let md; try { md = (await OBRX.api.room.getMetadata()) || {}; } catch (e) { toast('Couldn\'t reach the room right now.'); return false; }
+  OBRX.roomMd = md; const st = stashGet(), line = fn(st); if (!line) return false;
+  st.log = [{ t: line, at: Date.now() }].concat(st.log || []).slice(0, 12);
+  if (jsonBytes(st) > STASH_MAX) { toast('The party stash is full: Owlbear keeps only a little room data. Take something out first.'); return false; }
+  try { await OBRX.api.room.setMetadata({ [STASH]: st }); } catch (e) { toast('Owlbear didn\'t save the stash: ' + String((e && (e.message || (e.error && e.error.message))) || e).slice(0, 100)); return false; }
+  OBRX.roomMd = Object.assign({}, md, { [STASH]: st }); return true;
+}
+const coinText = co => COINS.filter(k => +co[k]).map(k => co[k] + ' ' + k).join(', ') || 'no coins';
+function myInvItems(c = C()) { return allEntries(c).filter(({ e, m }) => m.type === 'inventory' && e.item && (+e.item.qty || 0) > 0 && !c.hidden.includes(m.id)); }
+function invModule(c) { let m = c.modules.find(x => x.type === 'inventory' && !c.hidden.includes(x.id)) || c.modules.find(x => x.type === 'inventory'); if (!m) { m = mkModule('inventory'); c.modules.push(m); } c.hidden = c.hidden.filter(x => x !== m.id); return m; }
+const sameItem = (a, b) => String(a.name || '').trim().toLowerCase() === String(b.name || '').trim().toLowerCase();
+const stashWho = () => (OBRX.me && OBRX.me.name) || 'Someone';
+async function stashPut(id, all) {
+  const c = C(), f = findEntry(id); if (!f || !f.e.item) return;
+  const have = +f.e.item.qty || 0, n = all ? have : 1; if (n < 1) return;
+  const ok = await stashEdit(st => {
+    const ex = st.items.find(x => sameItem(x.e, f.e));
+    if (ex) ex.qty += n; else st.items.push({ id: uid(), e: stashSlim(f.e), qty: n, by: stashWho() });
+    return `${stashWho()} put in ${n > 1 ? n + ' × ' : ''}${f.e.name}`;
+  });
+  if (!ok) return;
+  const now = findEntry(id); if (now) { now.e.item.qty = Math.max(0, (+now.e.item.qty || 0) - n); if (now.e.item.qty === 0) now.m.entries = now.m.entries.filter(x => x.id !== id); }
+  save(); render(); renderModal(); toast(`${f.e.name} is in the party stash.`);
+}
+async function stashTake(sid, all) {
+  let got = null, n = 0;
+  const ok = await stashEdit(st => {
+    const it = st.items.find(x => x.id === sid); if (!it) { toast('Someone already took that.'); return false; }
+    n = all ? it.qty : 1; it.qty -= n; if (it.qty <= 0) st.items = st.items.filter(x => x.id !== sid); got = it;
+    return `${stashWho()} took ${n > 1 ? n + ' × ' : ''}${it.e.name}`;
+  });
+  if (!ok || !got) return;
+  const c = C(), mine = myInvItems(c).find(({ e }) => sameItem(e, got.e));
+  if (mine) mine.e.item.qty = (+mine.e.item.qty || 0) + n;
+  else { const e = normalizeEntry(clone(got.e)); e.id = uid(); e.item = Object.assign({ weight: 0 }, e.item || {}, { qty: n, equipped: false }); invModule(c).entries.push(e); }
+  save(); render(); renderModal(); toast(`${got.e.name} is on your sheet.`);
+}
+async function stashCoins(dir) {
+  const c = C(), amt = {}; COINS.forEach(k => { amt[k] = Math.max(0, parseInt(($('#st-' + k) || {}).value, 10) || 0); });
+  if (!COINS.some(k => amt[k])) { toast('Type how many coins first.'); return; }
+  if (dir === 'put' && !ui.viewing && C() && COINS.some(k => amt[k] > (+c.currency[k] || 0))) { toast('You don\'t have that many coins.'); return; }
+  const ok = await stashEdit(st => {
+    if (dir === 'take' && COINS.some(k => amt[k] > (+st.coins[k] || 0))) { toast('The stash doesn\'t have that many coins.'); return false; }
+    COINS.forEach(k => { st.coins[k] = Math.max(0, (+st.coins[k] || 0) + (dir === 'put' ? amt[k] : -amt[k])); });
+    return `${stashWho()} ${dir === 'put' ? 'put in' : 'took'} ${coinText(amt)}`;
+  });
+  if (!ok) return;
+  if (!gmMode()) { COINS.forEach(k => { c.currency[k] = Math.max(0, (+c.currency[k] || 0) + (dir === 'put' ? -amt[k] : amt[k])); }); save(); render(); }
+  ui.modal.amt = {}; renderModal(); toast(dir === 'put' ? 'Coins put in the stash.' : 'Coins taken from the stash.');
+}
+async function stashSplit() {
+  const n = (OBRX.party || []).filter(p => p.role !== 'GM').length + (OBRX.me.role === 'GM' ? 0 : 1);
+  const st = stashGet(); if (!n) return;
+  toast(`Split ${n} ways: ` + coinText(Object.fromEntries(COINS.map(k => [k, Math.floor((+st.coins[k] || 0) / n)]))) + ' each.');
+}
+function stashHtml(m) {
+  const st = stashGet(), gm = gmMode(), amt = m.amt || {};
+  const mine = gm ? [] : myInvItems();
+  const items = st.items.length ? st.items.map(it => `<div class="list-i"><div class="grow"><b>${it.qty > 1 ? it.qty + ' × ' : ''}${esc(it.e.name)}</b><div class="muted" style="font-size:.85rem">${esc(it.e.short || (it.e.text || '').slice(0, 90))}${it.by ? ' · from ' + esc(it.by) : ''}</div></div>
+      ${gm ? `<button class="btn small ghost" data-act="stashrm" data-id="${esc(it.id)}">Remove</button>` : `<button class="btn small primary" data-act="stashtake" data-id="${esc(it.id)}">Take${it.qty > 1 ? ' 1' : ''}</button>${it.qty > 1 ? `<button class="btn small" data-act="stashtake" data-id="${esc(it.id)}" data-v="all">Take all</button>` : ''}`}</div>`).join('')
+    : '<div class="empty" style="margin:0">Nothing in the stash yet.</div>';
+  return dlgHead('Party stash') + `<div class="dlg-b">
+    <div class="muted" style="font-size:.88rem;margin:0">Shared by everyone in this room. Items and coins you take go onto your sheet.</div>
+    <div class="sub-h" style="margin:0">Coins: <span class="mono">${esc(coinText(st.coins))}</span></div>
+    <div class="cur-row">${COINS.map(k => `<label>${k.toUpperCase()}<input id="st-${k}" data-stamt="${k}" inputmode="numeric" value="${esc(amt[k] || '')}" placeholder="0" aria-label="${k}"></label>`).join('')}</div>
+    <div class="addrow" style="margin:0">${gm ? '' : '<button class="btn small" data-act="stashcoin" data-v="put">Put in</button>'}<button class="btn small" data-act="stashcoin" data-v="take">Take out</button><button class="btn small ghost" data-act="stashsplit" title="How much each player gets if the coins are shared out evenly">Split evenly?</button></div>
+    <div class="sub-h" style="margin:4px 0 0">Items</div><div>${items}</div>
+    ${gm ? '' : `<details ${m.putOpen ? 'open' : ''} data-stashput="1"><summary class="sub-h" style="cursor:pointer">Put in from my inventory (${mine.length})</summary>${mine.length ? mine.map(({ e }) => `<div class="list-i"><div class="grow"><b>${(+e.item.qty || 0) > 1 ? e.item.qty + ' × ' : ''}${esc(e.name)}</b>${e.item.equipped ? ' <span class="chip">Equipped</span>' : ''}</div>
+      <button class="btn small" data-act="stashput" data-id="${e.id}">Put${(+e.item.qty || 0) > 1 ? ' 1' : ''}</button>${(+e.item.qty || 0) > 1 ? `<button class="btn small" data-act="stashput" data-id="${e.id}" data-v="all">Put all</button>` : ''}</div>`).join('') : '<div class="muted">Nothing in your inventory.</div>'}</details>`}
+    ${st.log && st.log.length ? `<details><summary class="sub-h" style="cursor:pointer">Recent</summary><div class="muted" style="font-size:.85rem;line-height:1.6">${st.log.map(l => esc(l.t) + ' · ' + ago(l.at)).join('<br>')}</div></details>` : ''}
+  </div><div class="dlg-f"><span class="sp"></span><button class="btn" data-act="close">Close</button></div>`;
+}
+// keep what's typed when the stash changes under an open dialog
+function stashRefresh() {
+  const m = ui.modal; if (!m || m.type !== 'stash') return;
+  const key = JSON.stringify((OBRX.roomMd || {})[STASH] || null); if (key === m.seen) return; m.seen = key;
+  m.amt = {}; COINS.forEach(k => { const x = $('#st-' + k); if (x && x.value) m.amt[k] = x.value; });
+  const d = document.querySelector('[data-stashput]'); m.putOpen = !!(d && d.open);
+  renderModal();
 }
 
 /* ---------- ROOM HOMEBREW: the GM shares homebrew with the room ---------- */
@@ -7649,7 +7842,7 @@ function gmTopHtml() {
 function renderGmParty() {
   const ps = (OBRX.party || []).filter(p => p.role !== 'GM'), others = (OBRX.players || []).filter(p => p.role !== 'GM' && !ps.some(x => x.id === p.id));
   const head = `<div class="enc-head"><div class="enc-title"><b>Party</b><span class="muted" style="font-size:.85rem">${ps.length} with Grimsheet open</span></div>
-    <div class="enc-tools"><button class="btn small primary" data-act="groupsave" ${ps.length ? '' : 'disabled'}>Ask for a save</button><button class="btn small" data-act="groupcheck" ${ps.length ? '' : 'disabled'}>Ask for a check</button><button class="btn small" data-act="callrest" data-v="short" ${ps.length ? '' : 'disabled'}>Call a short rest</button><button class="btn small" data-act="callrest" data-v="long" ${ps.length ? '' : 'disabled'}>Call a long rest</button><button class="btn small" data-act="askinit" ${ps.length ? '' : 'disabled'}>Ask for initiative</button><button class="btn small" data-act="modal" data-v="roomhb">Room homebrew (${hb().items.length})</button></div></div>`;
+    <div class="enc-tools"><button class="btn small primary" data-act="groupsave" ${ps.length ? '' : 'disabled'}>Ask for a save</button><button class="btn small" data-act="groupcheck" ${ps.length ? '' : 'disabled'}>Ask for a check</button><button class="btn small" data-act="callrest" data-v="short" ${ps.length ? '' : 'disabled'}>Call a short rest</button><button class="btn small" data-act="callrest" data-v="long" ${ps.length ? '' : 'disabled'}>Call a long rest</button><button class="btn small" data-act="askinit" ${ps.length ? '' : 'disabled'}>Ask for initiative</button><button class="btn small" data-act="modal" data-v="roomhb">Room homebrew (${hb().items.length})</button><button class="btn small" data-act="stashopen">Party stash (${stashGet().items.length})</button></div></div>`;
   const cards = ps.map(p => {
     const s = p.s, pct = s.max ? Math.max(0, Math.min(100, s.hp / s.max * 100)) : 0, d = s.death || { s: 0, f: 0 };
     const state = s.dead ? '<span class="chip bad">Dead</span>' : s.down ? `<span class="chip bad">Down</span><span class="muted mono" title="Death saves">✓${d.s} ✗${d.f}</span>` : s.hp <= s.max / 2 ? '<span class="chip warn">Bloodied</span>' : '';
@@ -8936,7 +9129,7 @@ function renderTop() {
       ${undoHtml()}
       <div class="seg" role="group" aria-label="Mode"><button data-act="mode" data-v="play" class="${!ed ? 'on' : ''}">Play</button><button data-act="mode" data-v="edit" class="${ed ? 'on' : ''}">Edit</button></div>
       <button class="btn" data-act="modal" data-v="chars">Characters</button>
-      ${!ui.viewing ? `<div class="seg" role="group" aria-label="View"><button data-act="setview" data-v="sheet" class="${!['encounter', 'campaign'].includes(SETTINGS.view) || (SETTINGS.view === 'encounter' && !isGM()) ? 'on' : ''}">Sheet</button>${isGM() ? `<button data-act="setview" data-v="encounter" class="${SETTINGS.view === 'encounter' ? 'on' : ''}">Encounter</button>` : ''}<button data-act="setview" data-v="campaign" class="${SETTINGS.view === 'campaign' ? 'on' : ''}">Notes</button></div>` : ''}
+      ${!ui.viewing ? `<div class="seg" role="group" aria-label="View"><button data-act="setview" data-v="sheet" class="${!['encounter', 'campaign', 'combat'].includes(SETTINGS.view) || (SETTINGS.view === 'encounter' && !isGM()) ? 'on' : ''}">Sheet</button><button data-act="setview" data-v="combat" class="${SETTINGS.view === 'combat' ? 'on' : ''}" title="One screen for a fight: HP, attacks, spells and uses">Combat</button>${isGM() ? `<button data-act="setview" data-v="encounter" class="${SETTINGS.view === 'encounter' ? 'on' : ''}">Encounter</button>` : ''}<button data-act="setview" data-v="campaign" class="${SETTINGS.view === 'campaign' ? 'on' : ''}">Notes</button></div>` : ''}
       ${IN_OBR ? '<button class="btn" data-act="sizemenu" title="Panel size and compact mode">Size</button>' : ''}
       <button class="btn gsbtn" data-act="gsearch" title="Search everything (Ctrl+K or /)" aria-label="Search">${ICON.search}<span>Search</span></button>
       <button class="btn" data-act="modal" data-v="settings" aria-label="Settings" title="Settings">Settings</button>
@@ -8964,7 +9157,7 @@ function renderBanner() {
   if (!isPlaceholder(c) && !c.simple && !ui.backupLater && !gmHasCopy(c) && c.changedAt && (c.lastBackup ? c.changedAt > c.lastBackup && Date.now() - c.lastBackup > 3 * DAY : Date.now() - (c.createdAt || Date.now()) > DAY)) {
     h += `<div class="banner"><span style="flex:1;min-width:200px">${esc(c.name)} ${c.lastBackup ? 'was last backed up ' + Math.floor((Date.now() - c.lastBackup) / DAY) + ' days ago' : 'has never been backed up'}. Characters live in this browser only, so keep a copy in case it gets cleared.</span><button class="btn small" data-act="backupnow">Back up now</button><button class="btn small ghost" data-act="backuplater">Later</button></div>`;
   }
-  if (isPlaceholder(c) && !ui.viewing) h += `<div class="banner"><span style="flex:1;min-width:200px"><b>A simple character</b>: set its name, AC, HP and initiative bonus in Combat, and it's ready for the table${IN_OBR ? ' (initiative, HP on your token, conditions)' : ''}. Have a full character elsewhere? Owlbear and the website keep their own characters: export it there and import it here.</span><button class="btn small primary" data-act="create">Create a character</button><button class="btn small" data-act="modal" data-v="import">Import a character</button></div>`;
+  if (isPlaceholder(c) && !ui.viewing) h += `<div class="banner"><span style="flex:1;min-width:200px"><b>A simple character</b>: set its name, AC, HP and initiative bonus in Combat, and it's ready for the table${IN_OBR ? ' (initiative, HP on your token, conditions)' : ''}. Have a full character elsewhere? Owlbear and the website keep their own characters: open it there, choose <b>Characters → ${IN_OBR ? 'To Owlbear…' : 'To website…'}</b>, and bring it here.</span><button class="btn small primary" data-act="create">Create a character</button><button class="btn small" data-act="modal" data-v="import">Import a character</button></div>`;
   $('#banner').innerHTML = h;
 }
 
@@ -9621,6 +9814,7 @@ function renderGridInner() {
   ui.view = isGM() && !ui.viewing ? (SETTINGS.view || 'sheet') : 'sheet';
   if (gmMode() && gmView() === 'party') { $('#grid').innerHTML = `<div class="encwrap">${renderGmParty()}</div>`; return; }
   if (notesView()) { $('#grid').innerHTML = `<div class="encwrap notes">${renderNotes()}</div>`; return; }
+  if (combatView()) { $('#grid').innerHTML = renderCombatView(); return; }
   if (encView() && !HIST.base[encHistId()]) HIST.base[encHistId()] = encClean(enc());
   if (encView()) { $('#grid').innerHTML = `<div class="encwrap">${renderEncounter()}</div>`; return; }
   const c = C(), L = ensureLayout(c), hid = new Set(c.hidden), ed = ui.mode === 'edit';
@@ -9650,6 +9844,62 @@ function modBody(m) {
   }
 }
 const notesHome = () => (C().modules.find(m => m.type === 'notes') || {}).id;
+
+/* ---------- COMBAT VIEW: one screen for a fight, made for phones ---------- */
+// HP with big damage / heal buttons, AC / initiative / speed, reaction and inspiration, death saves when down,
+// concentration, the conditions you have, spell slots, and everything you can roll or use, by action type.
+const combatView = () => SETTINGS.view === 'combat' && !ui.viewing && !gmMode();
+function cvUsable(e, m) { return !!(e.attack || e.damage.length || e.save || e.counter || e.effect || e.repeat || (e.spell && m.type === 'spells') || e.creature); }
+function renderCombatView() {
+  const c = C(), ac = E.staticSum(acComps(), CTX).flat, ini = staticLabel(initComps()).text;
+  const pct = c.hp.max ? Math.max(0, Math.min(100, c.hp.cur / c.hp.max * 100)) : 0;
+  const all = allEntries().filter(({ e, m }) => m.type !== 'actions' && !c.hidden.includes(m.id) && cvUsable(e, m) && (!e.item || e.item.equipped || e.damage.length || e.counter));
+  const tabs = [['pinned', 'Pinned'], ['action', 'Action'], ['bonus', 'Bonus'], ['reaction', 'Reaction'], ['spells', 'Spells'], ['all', 'All']]
+    .filter(([k]) => k === 'all' || all.some(x => cvTabHas(k, x)));
+  let tab = ui.cvTab; if (!tabs.some(([k]) => k === tab)) tab = tabs[0][0];
+  const list = all.filter(x => tab === 'all' || cvTabHas(tab, x));
+  const lvls = [1, 2, 3, 4, 5, 6, 7, 8, 9].filter(l => c.slots[l].max > 0);
+  const down = c.hp.cur <= 0 && c.hp.max > 0;
+  return `<div class="cv">
+    <section class="cv-card cv-hp">
+      <div class="cv-hprow"><div class="cv-hpn"><span class="cv-k">HP</span><b class="mono">${c.hp.cur}</b><span class="muted mono">/ ${c.hp.max}</span>${c.hp.temp ? `<span class="temp">+${c.hp.temp} temp</span>` : ''}</div>
+        <input class="cv-amt mono" id="cv-amt" inputmode="numeric" placeholder="0" aria-label="Amount of damage or healing">
+      </div>
+      <div class="hpbar"><i class="${pct < 25 ? 'low' : pct < 55 ? 'mid' : ''}" style="width:${pct}%"></i></div>
+      <div class="cv-hpbtns"><button class="btn cv-dmg" data-act="cvhp" data-v="dmg">− Damage</button><button class="btn cv-heal" data-act="cvhp" data-v="heal">+ Heal</button><button class="btn" data-act="cvhp" data-v="temp" title="Set temporary HP to the amount">Temp</button></div>
+    </section>
+    <div class="cv-stats">
+      <button class="cv-st" data-act="explain" data-v="ac"><span class="cv-k">AC</span><b>${ac}</b></button>
+      <button class="cv-st" data-act="init" title="Roll initiative"><span class="cv-k">Init</span><b>${ini}</b></button>
+      <div class="cv-st"><span class="cv-k">Speed</span><b>${esc(speedText(c))}</b></div>
+      <button class="cv-st ${c.reactUsed ? 'used' : 'on'}" data-act="react" aria-pressed="${!!c.reactUsed}"><span class="cv-k">Reaction</span><b>${c.reactUsed ? 'Used' : 'Ready'}</b></button>
+      <button class="cv-st ${c.inspiration ? 'on' : ''}" data-act="insp" aria-pressed="${!!c.inspiration}"><span class="cv-k">Inspiration</span><b>${c.inspiration ? 'Yes' : 'No'}</b></button>
+    </div>
+    ${down ? `<section class="cv-card cv-death"><b>You're down</b><span class="boxes">✓ ${[0, 1, 2].map(i => `<button class="box s ${i < c.death.s ? 'used' : ''}" data-act="death" data-v="s" data-i="${i}" aria-label="Death save success ${i + 1}"></button>`).join('')}
+      &nbsp;✗ ${[0, 1, 2].map(i => `<button class="box f ${i < c.death.f ? 'used' : ''}" data-act="death" data-v="f" data-i="${i}" aria-label="Death save failure ${i + 1}"></button>`).join('')}</span><button class="btn primary" data-act="deathroll">Roll death save</button></section>` : ''}
+    ${concHtml(c)}
+    <div class="cv-conds">${c.conditions.map(k => `<button class="chip on" data-act="cond" data-v="${k}" title="Tap to remove">${k}${durTag((c.condDur || {})[k])} ✕</button>`).join('')}${c.exhaustion ? `<button class="chip on" data-act="exh">Exhaustion ${c.exhaustion}</button>` : ''}
+      <button class="chip" data-act="cvcond" aria-expanded="${!!ui.cvCond}">${ui.cvCond ? 'Done' : '+ Condition'}</button></div>
+    ${ui.cvCond ? `<div class="cond cv-condall">${CONDITIONS.filter(k => !c.conditions.includes(k)).map(k => `<button data-act="cond" data-v="${k}">${k}</button>`).join('')}<button data-act="exh">Exhaustion ${c.exhaustion || 0}</button></div>` : ''}
+    ${lvls.length ? `<div class="cv-slots">${lvls.map(l => `<div class="slot"><span class="lv">${E.ordinal(l)}</span><span class="boxes">${Array.from({ length: c.slots[l].max }, (_, i) => `<button class="box ${i < c.slots[l].used ? 'used' : ''}" data-act="slot" data-v="${l}" data-i="${i}" aria-label="${E.ordinal(l)} level slot ${i + 1}"></button>`).join('')}</span></div>`).join('')}</div>` : ''}
+    <div class="tabs cv-tabs">${tabs.map(([k, l]) => `<button class="${k === tab ? 'on' : ''}" data-act="cvtab" data-v="${k}">${l}</button>`).join('')}</div>
+    <div class="cv-list">${list.length ? list.map(({ e, m }) => entryRow(e, m, true)).join('') : `<div class="empty">${all.length ? 'Nothing here.' : 'Attacks, spells and features with dice or uses show up here. Add them on the sheet.'}</div>`}</div>
+    <div class="muted cv-foot">The full sheet is under <button class="linkbtn" data-act="setview" data-v="sheet">Sheet</button>.</div>
+  </div>`;
+}
+function cvTabHas(k, { e, m }) {
+  if (k === 'pinned') return !!e.pinned;
+  if (k === 'spells') return m.type === 'spells';
+  return e.tags.action === k;
+}
+function cvHp(kind) {
+  const c = C(), el = $('#cv-amt'), n = Math.abs(parseInt((el && el.value || '').replace(/[^\d]/g, ''), 10));
+  if (!n) { toast('Type an amount first.'); if (el) el.focus(); return; }
+  c.fresh = false;
+  if (kind === 'temp') { c.hp.temp = n; toast(`${n} temporary HP.`); }
+  else { const raw = (kind === 'dmg' ? '-' : '+') + n, v = quick(raw, c.hp.cur); if (v == null) return; applyHp(v, raw); }
+  save(); render();
+}
 
 function renderAbilities() {
   const c = C(), ed = ui.mode === 'edit';
@@ -9765,7 +10015,8 @@ function renderEntries(m) {
     const w = m.entries.reduce((s, e) => s + (e.item ? (+e.item.qty || 0) * (+e.item.weight || 0) : 0), 0);
     const cu = C().currency;
     h += `<div class="inline muted" style="margin-top:8px;font-size:.85rem">Carried weight <b class="mono" style="color:var(--ink)">${Math.round(w * 10) / 10} lb</b></div>
-      <div class="cur-row">${['cp', 'sp', 'ep', 'gp', 'pp'].map(k => `<label>${k.toUpperCase()}<input id="cur-${k}" data-qm="cur" data-v="${k}" value="${cu[k]}" title="Type a number, or +10 / −5" aria-label="${k}"></label>`).join('')}</div>`;
+      <div class="cur-row">${['cp', 'sp', 'ep', 'gp', 'pp'].map(k => `<label>${k.toUpperCase()}<input id="cur-${k}" data-qm="cur" data-v="${k}" value="${cu[k]}" title="Type a number, or +10 / −5" aria-label="${k}"></label>`).join('')}</div>
+      ${stashOn() && !ui.viewing ? `<div class="addrow" style="margin-top:6px"><button class="btn small" data-act="stashopen" title="Items and coins the whole party shares">Party stash${(n => n ? ' (' + n + ')' : '')(stashGet().items.length)}</button></div>` : ''}`;
   }
   return h + addRow(m);
 }
@@ -9972,6 +10223,9 @@ function renderModal() {
   else if (m.type === 'fxsetup') h = fxSetupHtml(m);
   else if (m.type === 'd3slow') h = d3SlowHtml(m);
   else if (m.type === 'dbg') h = debugHtml();
+  else if (m.type === 'stash') h = stashHtml(m);
+  else if (m.type === 'xfer') h = xferHtml(m);
+  else if (m.type === 'take') h = takeHtml(m);
   else if (m.type === 'viewwait') h = dlgHead('Opening ' + (m.name || 'sheet')) + `<div class="dlg-b">${m.failed ? `<div class="banner warn" style="margin:0">${esc(m.owner || 'The player')}'s Grimsheet didn't answer. They need to be in the room with Grimsheet 1.3 or newer installed.</div>` : `<div class="sugg"><h3>Asking ${esc(m.owner || 'the player')}'s Grimsheet…</h3><span>The sheet opens read-only in a moment.</span></div>`}</div><div class="dlg-f"><button class="btn" data-act="close">${m.failed ? 'Close' : 'Cancel'}</button></div>`;
   $('#ovl').innerHTML = `<div class="ovl" data-act="ovlbg"><div class="dlg" role="dialog" aria-modal="true">${h}</div></div>`;
   $('#ovl .ovl').scrollTop = keepScroll;
@@ -9983,11 +10237,12 @@ function charsHtml() {
   return dlgHead('Characters') + `<div class="dlg-b"><div>${list.map(c => `<div class="list-i"><div class="grow"><b>${esc(c.name)}</b>${c.id === store.active ? ' <span class="chip tag-action">Open</span>' : ''}<div class="muted" style="font-size:.85rem">${esc([c.species, c.cls, 'Level ' + c.level].filter(Boolean).join(' · '))}</div></div>
     ${c.id !== store.active ? `<button class="btn small" data-act="switch" data-id="${c.id}">Open</button>` : ''}
     <button class="btn small" data-act="dupchar" data-id="${c.id}">Duplicate</button>
+    <button class="btn small" data-act="xferopen" data-id="${c.id}" title="${IN_OBR ? 'Copy it to the website, another device or another room' : 'Copy it into Owlbear or to another device'}">${IN_OBR ? 'To website…' : 'To Owlbear…'}</button>
     <button class="btn small" data-act="modal" data-v="export" data-id="${c.id}">Export</button>
     ${IN_OBR && OBRX.ready && OBRX.me.role === 'GM' && !ui.viewing ? `<button class="btn small" data-act="giveopen" data-id="${c.id}" title="Send this sheet to a player in the room and link their token">Give to a player</button>` : ''}
     ${list.length > 1 ? `<button class="btn small ${ui.confirm === 'del-' + c.id ? 'danger' : ''}" data-act="delchar" data-id="${c.id}">${ui.confirm === 'del-' + c.id ? 'Confirm delete' : 'Delete'}</button>` : ''}</div>`).join('')}</div>
     <div class="addrow"><button class="btn primary" data-act="create" title="Class, species, background, abilities, skills, gear and spells, step by step">Create a character</button><button class="btn" data-act="newchar">Blank sheet</button><button class="btn" data-act="simplechar" title="Name, AC, HP, initiative and conditions only">Simple character</button><button class="btn" data-act="modal" data-v="import">Import</button><button class="btn" data-act="pdfopen">Import from PDF</button><button class="btn" data-act="modal" data-v="classes">Classes${myClasses.length ? ' (' + myClasses.length + ')' : ''}</button>${IN_OBR && OBRX.ready && OBRX.me.role !== 'GM' ? '<button class="btn" data-act="modal" data-v="pcbrestore">Restore from GM</button>' : ''}</div>
-    <div class="muted" style="font-size:.85rem">${IN_OBR ? 'Inside Owlbear, Grimsheet keeps its own characters, apart from the website and other devices. To bring one here, open it where you made it, choose <b>Export</b>, then <b>Import</b> it here.' : 'Characters are saved in this browser automatically. Export a character to back it up or move it to another device. In Owlbear, Grimsheet keeps its own characters: import them there too.'}</div></div>`;
+    <div class="muted" style="font-size:.85rem">${IN_OBR ? 'Inside Owlbear, Grimsheet keeps its own characters, apart from the website and other devices. To bring one here, open it on the website, choose <b>To Owlbear…</b> → Copy code, then <b>Import</b> and paste it here.' : 'Characters are saved in this browser automatically. Export a character to back it up or move it to another device. In Owlbear, Grimsheet keeps its own characters: import them there too.'}</div></div>`;
 }
 function addModuleHtml() {
   const c = C(); const hidden = c.modules.filter(m => c.hidden.includes(m.id));
@@ -10226,7 +10481,7 @@ function settingsHtml() {
 }
 function importHtml(m) {
   return dlgHead(m.lib ? 'Import library pack' : 'Import character') + `<div class="dlg-b"><label class="fld"><span>Choose a file</span><input type="file" id="imp-file" accept=".json,application/json,text/plain"></label>
-    <label class="fld"><span>Or paste the exported text</span><textarea class="code" id="imp-text" placeholder="{ … }"></textarea></label><div id="imp-err" class="hint err" style="color:var(--danger)"></div>
+    <label class="fld"><span>Or paste the exported text${m.lib ? '' : ', or a code from <b>To Owlbear…</b>'}</span><textarea class="code" id="imp-text" placeholder="{ … }${m.lib ? '' : '  or  GRIMSHEET1:…'}"></textarea></label><div id="imp-err" class="hint err" style="color:var(--danger)"></div>
     ${m.lib ? '' : `<details class="muted" style="font-size:.88rem"><summary>From D&amp;D Beyond (more exact than its PDF)</summary><ol style="margin:6px 0 0;padding-left:20px;line-height:1.5"><li>On D&amp;D Beyond, make the character public: its page → Edit → Home → Character Privacy → Public.</li><li>Copy the number at the end of the character's link (dndbeyond.com/characters/<b>12345678</b>).</li><li>Open <span class="mono">character-service.dndbeyond.com/character/v5/character/</span> followed by that number in your browser, select everything (Ctrl+A or ⌘A), copy, and paste it above.</li></ol></details>`}</div>
     <div class="dlg-f"><button class="btn" data-act="close">Cancel</button><button class="btn primary" data-act="doimport" data-lib="${m.lib ? 1 : ''}">Import</button></div>`;
 }
@@ -10582,6 +10837,20 @@ document.addEventListener('click', ev => {
     case 'noteopen': { const cc = camp(), n = cc.notes.find(x => x.id === id); if (!n) break; if (!notesView()) { SETTINGS.view = 'campaign'; saveSettings(); render(); } if (ui.noteOpen === id && el.classList.contains('ntitle')) ui.noteOpen = null; else { ui.noteOpen = id; if (!el.classList.contains('ntitle')) { ui.noteQ = ''; ui.noteF = 'all'; } } renderGrid(); const nd = document.querySelector(`[data-note="${id}"]`); if (nd && nd.scrollIntoView) nd.scrollIntoView({ block: 'nearest' }); break; }
     case 'noteedit': openNoteEditor(id); break;
     case 'noteshow': noteShow(id); break;
+    case 'cvhp': cvHp(v); break;
+    case 'xferopen': xferOpen(id); break;
+    case 'xfercopy': if (ui.modal && ui.modal.code) copyText(v === 'link' ? ui.modal.link : ui.modal.code, v === 'link' ? 'Link' : 'Code'); break;
+    case 'xferdone': setTimeout(() => toast('Opened the website: add the character there.'), 300); return;
+    case 'takechar': takeChar(v); break;
+    case 'stashopen': openModal('stash', { seen: JSON.stringify((OBRX.roomMd || {})[STASH] || null) }); break;
+    case 'stashput': stashPut(id, v === 'all'); break;
+    case 'stashtake': stashTake(id, v === 'all'); break;
+    case 'stashcoin': stashCoins(v); break;
+    case 'stashsplit': stashSplit(); break;
+    case 'stashrm': stashEdit(st => { const it = st.items.find(x => x.id === id); if (!it) return false; st.items = st.items.filter(x => x.id !== id); return `${stashWho()} removed ${it.e.name}`; }).then(ok => ok && renderModal()); break;
+    case 'cvtab': ui.cvTab = v; renderGrid(); break;
+    case 'cvcond': ui.cvCond = !ui.cvCond; renderGrid(); break;
+    case 'handoutopen': { const n = camp().notes.find(x => x.id === id); if (n) handoutOpen(n); break; }
     case 'ndpick': notePicPick(); break;
     case 'ndup': notePicInput(); break;
     case 'ndpicx': ndRead(); ui.modal.draft.img = null; renderModal(); break;
@@ -10906,6 +11175,11 @@ function fromDDBJson(x) {
 function doImport(lib) {
   const errEl = $('#imp-err'); const txt = $('#imp-text').value.trim();
   if (!txt) { errEl.textContent = 'Choose a file or paste exported text first.'; return; }
+  if (!lib && /GRIMSHEET1:|#take=/.test(txt)) {
+    xferRead(txt).then(d => { if (!d || !Array.isArray(d.modules)) throw new Error('bad'); openModal('take', { data: d }); },
+      () => { errEl.textContent = 'That code is cut short or changed. Copy it again and paste all of it.'; });
+    return;
+  }
   let data; try { data = JSON.parse(txt); } catch (e) { errEl.textContent = 'That text isn\'t valid export data. Paste the whole thing, including the first { and last }.'; return; }
   if (lib || data.grimsheetLibrary) {
     const arr = Array.isArray(data) ? data : data.entries; if (!Array.isArray(arr)) { errEl.textContent = 'No library entries found in that text.'; return; }
@@ -11165,6 +11439,8 @@ function startResize(handle, ev) {
 if (IN_OBR) startOwlbear();
 window.GrimsheetImport = { build: p => PDFIMPORT.build(p, { E, SRD, blankChar, newEntry, normalize, ctxFor }) };
 render();
+takeFromHash();
+window.addEventListener('hashchange', takeFromHash);
 setTimeout(() => { try { d3Preload(); } catch (e) { } }, 1500);
 })();
 </script>
