@@ -783,3 +783,11 @@ Every change goes to a **test extension** first; players only get it after it's 
 Tested 1.63.0 in a real Owlbear room (a GM and a guest player, driven in two Chrome profiles). Handouts, the handout journal, the party stash, the combat view and importing a character code all worked. Two fixes:
 - **Guests and Owlbear's image library**: a guest (no Owlbear account) gets "user not signed in" from Owlbear's image picker and upload. Grimsheet now says so plainly; for a note picture an upload falls back to keeping the picture on that device (players won't see it); monster tokens explain they need an account. The Owlbear stand-in refuses image requests for a guest (`guest=1`), and the test covers it.
 - **Party stash from the Party module**: a GM playing a simple character had no inventory and so no way to the stash. The Party module now has a Party stash button for everyone in Owlbear.
+
+## Session packs (1.64.0)
+- A prepared session as one JSON file (`grimsheetSession: 1`), imported by the GM from **Notes → Import** (the same button as notes backups). Format: `tools/session-pack.md`.
+- The preview lists the notes, monsters (name and CR) and encounters (with what each monster resolved to), which ones are already here and will be updated, and any problems (a stat block that can't be read, a monster that can't be found), with a checkbox per part.
+- Notes arrive GM only (`vis: 'me'`), tagged with the pack name; `handout: true` notes are tagged "handout" and stay hidden until Show to players. Notes already shared or shown stay shared.
+- Monsters are parsed like a pasted stat block and saved to the GM's monsters with fixed ids (`pk:pk-<pack>-<id>`), and updated in any encounter that uses them.
+- Encounters are added to the current room as prepared (not active) encounters with fixed ids; re-importing replaces their monsters (never an encounter that's in combat). An encounter's GM note (`e.note`) shows as "GM notes for this encounter" (folded) under its header.
+- Players can't import packs. Tests: `tools/obrhost/packtest.js` (import, re-import updates, handout shown from a pack, broken pack).

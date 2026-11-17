@@ -1,0 +1,16 @@
+{
+  "grimsheetSession": 1,
+  "id": "sample-bridge",
+  "name": "Session 1: The Bridge",
+  "notes": [
+    { "id": "outline", "type": "session", "title": "Session 1 outline", "pinned": true, "body": "1. The party reaches the bridge at dusk.\n2. [[Mara the Ferrywoman]] warns them about the toll.\n3. Fight: Bridge ambush.\n4. The letter on the chief's body." },
+    { "id": "mara", "type": "npc", "title": "Mara the Ferrywoman", "icon": "🧔", "status": "Friendly", "tags": ["river"], "body": "Wants: the bridge free again.\nKnows: the chief answers to someone in town." },
+    { "id": "letter", "type": "item", "title": "A sealed letter", "icon": "📜", "handout": true, "body": "Hold the bridge until the new moon. Payment as agreed. — V." }
+  ],
+  "monsters": [
+    { "id": "chief", "statblock": "Bridge Troll Chief\nLarge giant, chaotic evil\nArmor Class 15 (natural armor)\nHit Points 84 (8d10 + 40)\nSpeed 30 ft.\nSTR DEX CON INT WIS CHA\n18 (+4) 13 (+1) 20 (+5) 7 (-2) 9 (-1) 7 (-2)\nSkills Perception +2\nSenses darkvision 60 ft., passive Perception 12\nLanguages Giant\nChallenge 5 (1,800 XP)\nRegeneration. The chief regains 10 hit points at the start of its turn unless it took acid or fire damage since its last turn.\nActions\nMultiattack. The chief makes two attacks: one with its bite and one with its club.\nBite. Melee Weapon Attack: +7 to hit, reach 5 ft., one target. Hit: 7 (1d6 + 4) piercing damage.\nClub. Melee Weapon Attack: +7 to hit, reach 10 ft., one target. Hit: 13 (2d8 + 4) bludgeoning damage." }
+  ],
+  "encounters": [
+    { "id": "ambush", "name": "Bridge ambush", "note": "The goblins hide under the bridge (Stealth 16). The chief joins on round 2.\nIf the chief drops below half, he flees into the river.", "monsters": [ { "monster": "chief", "count": 1 }, { "monster": "srd:goblin", "count": 3 }, { "monster": "Wolf", "count": 2 } ] }
+  ]
+}
