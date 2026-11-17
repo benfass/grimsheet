@@ -1,7 +1,7 @@
 /* Grimsheet helpers shared by background.html and gm.html (the panel keeps its own copy). */
 window.GS = (function () {
   const GS = {
-    VERSION: '1.60.2',
+    VERSION: '1.63.1',
     CH_ROLL: 'com.grimsheet/roll',
     CH_GM: 'com.grimsheet/gm',        // GM ↔ player: hp changes, sheet requests and replies
     CH_LOCAL: 'com.grimsheet/local',  // same browser: GM menu → GM panel
@@ -138,6 +138,31 @@ window.GS = (function () {
   };
   GS.chunks = (s, n = 12000) => { const out = []; for (let i = 0; i < s.length; i += n) out.push(s.slice(i, i + n)); return out.length ? out : ['']; };
   GS.load = src => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
-  GS.sdk = async () => { if (window.GrimsheetOBR) return window.GrimsheetOBR; await GS.load('vendor/owlbear-sdk-3.1.0.js'); return window.OwlbearSDK; };
+  /* Owlbear problem log: every request to Owlbear that fails is written down with Owlbear's own reason (this browser
+     only; the panel's Settings → Copy debug report shows it). The same as obrTraced in the panel. */
+  GS.OBRLOG = 'grimsheet.obrlog.v1';
+  GS.obrLog = e => { try { const l = JSON.parse(localStorage.getItem(GS.OBRLOG) || '[]'); l.push(e); localStorage.setItem(GS.OBRLOG, JSON.stringify(l.slice(-60))); } catch (x) { } };
+  const errText = e => { try { return String((e && (e.message || (e.error && (e.error.message || e.error.name)))) || (e && typeof e === 'object' ? JSON.stringify(e) : e)).slice(0, 300); } catch (x) { return 'unknown error'; } };
+  const argText = a => {
+    if (typeof a === 'string') return JSON.stringify(a.length > 50 ? a.slice(0, 50) + '…' : a);
+    if (a == null || typeof a === 'number' || typeof a === 'boolean') return String(a);
+    if (typeof a === 'function') return 'fn'; if (Array.isArray(a)) return '[' + a.length + ']';
+    try { return '{' + Object.keys(a).slice(0, 8).join(',') + '}'; } catch (x) { return 'object'; }
+  };
+  GS.traced = (obj, page, path = '') => new Proxy(obj, { get(t, k) {
+    const v = t[k]; if (typeof k !== 'string') return v;
+    if (typeof v === 'function') return function (...a) {
+      const log = e => GS.obrLog({ at: Date.now(), page, call: path + k, args: a.map(argText).join(', ').slice(0, 200), err: errText(e) });
+      let r; try { r = v.apply(t, a); } catch (e) { log(e); throw e; }
+      if (r && typeof r.then === 'function') r.then(null, log);
+      return r;
+    };
+    if (v && typeof v === 'object' && !Array.isArray(v)) return GS.traced(v, page, path + k + '.');
+    return v;
+  } });
+  const pageName = (location.pathname.split('/').pop() || 'page').replace(/\.html$/, '');
+  window.addEventListener('error', ev => GS.obrLog({ at: Date.now(), page: pageName, call: 'page error', args: (ev.filename || '').split('/').pop() + ':' + ev.lineno, err: String(ev.message).slice(0, 300) }));
+  window.addEventListener('unhandledrejection', ev => GS.obrLog({ at: Date.now(), page: pageName, call: 'page error', args: 'promise', err: errText(ev.reason) }));
+  GS.sdk = async () => { let O = window.GrimsheetOBR; if (!O) { await GS.load('vendor/owlbear-sdk-3.1.0.js'); O = window.OwlbearSDK; } return GS.traced(O, pageName); };
   return GS;
 })();

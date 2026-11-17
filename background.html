@@ -392,6 +392,16 @@
         return;
       }
       if (d.type === 'name') { const c = campGet(); if ((c.nameAt || 0) < d.at) { c.name = d.name; c.nameAt = d.at; campPut(c); } return; }
+      // the DM showed a note: open it in a handout window in the middle of the map (stays open until closed)
+      if (d.type === 'show' && d.note) {
+        if (d.to && d.to !== me.id) return;
+        const q = (S.read('grimsheet.handout.q') || []).filter(x => x && x.note && x.note.id !== d.note.id); q.push({ note: d.note, by: String(d.by || '').slice(0, 40), at: Date.now() }); S.write('grimsheet.handout.q', q.slice(-10));
+        const al = S.read('grimsheet.handout.alive'); if (al && Date.now() - al.at < 1500) return;
+        Promise.all([OBR.viewport.getWidth(), OBR.viewport.getHeight()]).then(([w, h]) => OBR.popover.open({ id: 'com.grimsheet/handout', url: new URL('handout.html', location.href).href,
+          width: Math.min(480, w - 24), height: Math.min(600, h - 40), anchorReference: 'POSITION', anchorPosition: { left: w / 2, top: h / 2 },
+          anchorOrigin: { horizontal: 'CENTER', vertical: 'CENTER' }, transformOrigin: { horizontal: 'CENTER', vertical: 'CENTER' }, disableClickAway: true, hidePaper: true })).catch(() => { });
+        return;
+      }
       if (d.type === 'hello' && d.from !== me.id) {
         const c = campGet(), have = new Map(d.have || []);
         for (const [id, at] of d.gone || []) if (!c.gone[id] || c.gone[id] < at) S.dropNote(c, id, at);
