@@ -791,3 +791,9 @@ Tested 1.63.0 in a real Owlbear room (a GM and a guest player, driven in two Chr
 - Monsters are parsed like a pasted stat block and saved to the GM's monsters with fixed ids (`pk:pk-<pack>-<id>`), and updated in any encounter that uses them.
 - Encounters are added to the current room as prepared (not active) encounters with fixed ids; re-importing replaces their monsters (never an encounter that's in combat). An encounter's GM note (`e.note`) shows as "GM notes for this encounter" (folded) under its header.
 - Players can't import packs. Tests: `tools/obrhost/packtest.js` (import, re-import updates, handout shown from a pack, broken pack).
+
+## Tours brought up to date (1.64.1)
+- The sheet: Characters step mentions copying a character to the website / into Owlbear; new **Combat view** step.
+- Playing in Owlbear: the party step mentions other players' dice; new **Party stash** and **Handouts** steps.
+- Running the game: new **Tokens for monsters** step (+ Token), Campaign notes mentions pictures, icons and Show to players, new **Session packs** step (Notes → Import), the last step mentions the party stash.
+- Test: `tools/obrhost/tourtest.js` walks the GM, sheet and Owlbear tours in the stand-in.

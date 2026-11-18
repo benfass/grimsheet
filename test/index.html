@@ -3855,7 +3855,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.64.0';
+const APP_VERSION = '1.64.1';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 // phones (touch screen, short side under 600px) get the flat dice by default: the 3D box takes too much of a small screen
@@ -9724,7 +9724,7 @@ const TOURS = {
   player: {
     title: 'The sheet', when: () => !gmMode(), steps: [
       { title: 'Welcome to Grimsheet', text: 'A character sheet that does the maths and rolls the dice. This tour takes a minute; you can leave it any time and replay it from Settings.' },
-      { sel: '#top .ident', title: 'Your character', text: 'Name, species, class and level. Open <b>Characters</b> to switch characters, make a new one, import one, or export a copy.' },
+      { sel: '#top .ident', title: 'Your character', get text() { return 'Name, species, class and level. Open <b>Characters</b> to switch characters, make a new one, import one, or copy one ' + (IN_OBR ? 'to the website' : 'into Owlbear') + ' or another device.'; } },
       { sel: '.dlg [data-act=create]', before: () => { if (!ui.modal || ui.modal.type !== 'chars') openModal('chars'); }, title: 'Make a character', text: '<b>Create a character</b> walks you through class, species, background, ability scores, skills, gear and spells, and can start you above level 1.' },
       { sel: '[data-act=pdfopen]', before: () => { if (!ui.modal || ui.modal.type !== 'chars') openModal('chars'); }, title: 'Bring in your character', text: '<b>Import from PDF</b> reads a filled-in character sheet PDF (a D&amp;D Beyond export, the official sheets, MPMB and other popular sheets): abilities, skills, attacks, spells and features, and shows you what it found before adding it. <b>Import</b> takes a Grimsheet file, like one exported on another device.' },
       { sel: '.dlg [data-act=modal][data-v=classes]', before: () => { if (!ui.modal || ui.modal.type !== 'chars') openModal('chars'); }, title: 'Homebrew classes and subclasses', text: 'Open <b>Classes</b> and give it a PDF or pasted text: a homebrew class, or new subclasses for the basic classes (like Tasha’s). After that, levelling up offers those subclasses and adds each feature with its full text.' },
@@ -9734,6 +9734,7 @@ const TOURS = {
       { sel: '.cond', title: 'Conditions', text: 'Tap to turn one on. Grimsheet applies what it does to your rolls (Poisoned gives disadvantage, for example) and can count down how long it lasts.' },
       { sel: '[data-act=newentry]', title: 'Add attacks, spells and features', text: 'Pick from the built-in rules, or paste any text (a homebrew feature, a spell from a book): Grimsheet finds the dice, saves and uses in it.' },
       { sel: '#tray', title: 'Your rolls', text: 'Every roll lands here with how it was worked out. Follow-up buttons appear when there is a next step, like the damage after a hit.', place: 'above' },
+      { sel: '[data-act=setview][data-v=combat]', title: 'Combat view', text: 'One screen for a fight, made for phones: HP with big damage and heal buttons, AC, death saves, conditions, slots, and everything you can roll or use, by action type.' },
       { sel: '[data-act=mode][data-v=edit]', title: 'Edit mode', text: 'Change scores, AC, proficiencies, move and hide modules. Switch back to Play to use the sheet.' },
       { sel: '[data-act=levelup]', title: 'Levelling up and resting', text: 'Level up walks you through hit points, new features and ability scores. The rest buttons recover what each rest gives back.' },
       { sel: '[data-act=gsearch]', title: 'Find anything', text: 'Search rules, spells, your features and more. Press <b>/</b> or Ctrl+K from anywhere.' },
@@ -9747,7 +9748,9 @@ const TOURS = {
       { sel: '[data-act=init]', title: 'Roll initiative', text: 'When the GM asks, roll here: the result goes straight into the GM’s initiative tracker.' },
       { sel: '[data-act=tgtpick]', title: 'Pick a target', text: 'Choose who you’re attacking on the map. Attacks and saves then go to the GM with the target, ready to apply.' },
       { sel: '[data-act=endturn]', title: 'End your turn', text: 'When it’s your turn, this tells the GM you’re done and the next turn starts.' },
-      { sel: () => modEl('party'), title: 'Your party', text: 'Everyone’s HP, AC and conditions, kept up to date.' },
+      { sel: () => modEl('party'), title: 'Your party', text: 'Everyone’s HP, AC and conditions, kept up to date. Other players’ dice land in a little box at the bottom right of the map.' },
+      { sel: '[data-act=stashopen]', title: 'Party stash', text: 'Items and coins the whole party shares. Put things in from your inventory and take them out onto your sheet; everyone sees the same stash.' },
+      { title: 'Handouts', text: 'When the GM shows you a handout it opens in the middle of your map. You keep it: <b>Notes → Handouts</b> lists them all, and <b>Open handout</b> brings one back.' },
       { title: 'Shared by the GM', text: 'Homebrew the GM shares turns up in <b>+ Add → Room homebrew</b>. The GM also keeps a backup of your character: on a new device, Grimsheet offers to restore it.' },
     ],
   },
@@ -9758,10 +9761,12 @@ const TOURS = {
       { sel: '[data-act=addmon]', title: 'Monsters', text: 'Add monsters from the built-in bestiary, or paste a stat block from anywhere. Each gets a card for rolling its attacks and tracking its HP; right-click a monster token and choose <b>Grimsheet</b> to link it.' },
       { sel: '[data-act=addparty]', title: 'Add the party', text: 'Adds every player’s character to the initiative order. <b>Ask for initiative</b> has them roll it from their sheets.' },
       { sel: '.mcard', title: 'Monster cards', text: 'Roll attacks and damage, apply damage, track conditions and legendary uses.' },
+      { sel: '[data-act=montokquick]', title: 'Tokens for monsters', text: '<b>+ Token</b> puts the monster on the map from your Owlbear images, at the right size for its creature size and already linked to its card.' },
       { sel: '[data-act=startcombat], [data-act=nextturn]', title: 'Running combat', text: 'Start combat to sort the order. Next turn moves it on, and players can end their own turns.' },
       { sel: '[data-act=groupsave]', title: 'The party', text: 'See everyone at a glance, deal damage or healing, ask the whole party for a save or a check, and open any player’s sheet read-only.', before: () => clickAct('[data-act=setview][data-v=party]') },
-      { sel: '[data-act=setview][data-v=campaign]', title: 'Campaign notes', text: 'Notes for places, people and quests. Share a note with the party or keep it to yourself.' },
-      { sel: '[data-act=modal][data-v=settings]', title: 'Backups and room homebrew', text: 'Settings saves everything (encounters, notes, monsters, your players’ backups) to your Owlbear library. Homebrew you share goes to the whole room.', before: () => clickAct('[data-act=setview][data-v=encounter]') },
+      { sel: '[data-act=setview][data-v=campaign]', title: 'Campaign notes', text: 'Notes for places, people and quests, with pictures and icons. Share a note with the party or keep it to yourself; <b>Show to players</b> opens it as a handout in the middle of their maps.' },
+      { sel: 'label:has(#notes-import)', before: () => clickAct('[data-act=setview][data-v=campaign]'), title: 'Session packs', text: 'Import a whole prepared session in one file: notes, your own monsters and ready-made encounters, all GM only until you share them. Importing a newer version updates them.' },
+      { sel: '[data-act=modal][data-v=settings]', title: 'Backups, homebrew and the stash', text: 'Settings saves everything (encounters, notes, monsters, your players’ backups) to your Owlbear library. Homebrew you share goes to the whole room, and the Party view has the party stash.', before: () => clickAct('[data-act=setview][data-v=encounter]') },
     ],
   },
   simple: {
