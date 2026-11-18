@@ -28,6 +28,12 @@ A 5e character sheet that handles homebrew as well as the rules. Tap any number 
 - **Level up** in one dialog: hit points, new features, ability scores or a feat, spell slots, and the spells you can now prepare.
 - **Link your token**: right-click it and choose *Link to my Grimsheet character*. Its HP, AC and conditions follow your sheet, and your initiative goes into the GM's tracker.
 - **A simple character** for players whose sheet lives elsewhere: just name, AC, HP, initiative and conditions.
+- **Combat view** for phones and busy fights: HP with big damage and heal buttons, AC, death saves, conditions, spell slots and every attack, spell and feature you can use, on one screen.
+- **Party stash**: items and coins the whole party shares, straight from and back to your inventory.
+- **Handouts** the GM shows you open in the middle of your map, and you keep every one of them in your notes.
+- **Bring your character along**: copy it between the Grimsheet website, Owlbear and your other devices with a link or a code.
+
+![The combat view next to the map](https://benfass.github.io/grimsheet/store/combat.png)
 
 ![The character wizard](https://benfass.github.io/grimsheet/store/wizard.png)
 
@@ -35,17 +41,23 @@ A 5e character sheet that handles homebrew as well as the rules. Tap any number 
 
 ## For the GM
 
-- **Encounters**: add monsters from the SRD or paste any stat block. Each gets a card with its HP, AC, conditions and every action as a roll button. Prepare several fights ahead of time.
+- **Encounters**: add monsters from the SRD or paste any stat block. Each gets a card with its HP, AC, conditions and every action as a roll button. Prepare several fights ahead of time, and put a monster on the map with **+ Token**: picked from your Owlbear images, sized for its creature size and already linked.
 - **Initiative**: ask the players to roll, add the party, run turns and rounds; players can end their own turns.
 - **Attacks against targets**: attacks and spells come to you with the target's AC; confirm and apply damage, with resistances, to monsters and players at once. Spell areas are drawn on the map with everyone inside listed.
 - **The party at a glance**: everyone's HP, AC, conditions and concentration; deal damage or healing, ask for a save or a check, open a player's sheet read-only.
-- **Campaign notes**, **room homebrew** shared with your players, and **backups**: your Grimsheet keeps a copy of your players' characters, and you can save everything to your Owlbear library.
+- **Campaign notes and handouts**: notes for people, places and quests, with pictures and icons. **Show to players** opens one in the middle of everyone's map.
+- **Session packs**: import a prepared session in one file (notes, your own monsters, ready-made encounters), all hidden from players until you share them.
+- **Room homebrew** shared with your players, the **party stash**, and **backups**: your Grimsheet keeps a copy of your players' characters, and you can save everything to your Owlbear library.
 
 ![The Encounter view](https://benfass.github.io/grimsheet/store/encounter.png)
 
+![A handout shown to the players](https://benfass.github.io/grimsheet/store/handout.png)
+
+![The party stash](https://benfass.github.io/grimsheet/store/stash.png)
+
 ## Getting started
 
-Open Grimsheet from the toolbar. A short tour shows the ropes, and **Settings → Tours** replays it any time. Linked tokens get an HP bar and AC drawn by Grimsheet, so no other extension is needed. If your room uses [Stat Bubbles for D&D](https://github.com/SeamusFinlayson/Bubbles-for-Owlbear-Rodeo) or Owlbear's initiative tracker, Grimsheet keeps them up to date too.
+Open Grimsheet from the toolbar. A short tour shows the ropes (for players, for playing in Owlbear and for the GM), and **Settings → Tours** replays them any time. Linked tokens get an HP bar and AC drawn by Grimsheet, so no other extension is needed. If your room uses [Stat Bubbles for D&D](https://github.com/SeamusFinlayson/Bubbles-for-Owlbear-Rodeo) or Owlbear's initiative tracker, Grimsheet keeps them up to date too.
 
 ![A tour step](https://benfass.github.io/grimsheet/store/tour.png)
 
