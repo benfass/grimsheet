@@ -371,6 +371,9 @@ div.cv-st{cursor:default}
 .linkbtn{background:none;border:0;padding:0;color:var(--accent);text-decoration:underline;font:inherit;cursor:pointer}
 @media (max-width:420px){.cv-stats{grid-template-columns:repeat(6,1fr)}.cv-st{grid-column:span 2}.cv-st:nth-child(n+4){grid-column:span 3}.cv-hpn b{font-size:1.9rem}}
 .cv-conds .chip.on{background:var(--accent-soft);border-color:var(--accent);color:var(--ink);font-weight:600}
+.enc-note{margin:6px 0 4px;padding:6px 10px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.enc-note summary{cursor:pointer;font-weight:600;font-size:.9rem}
+.enc-note .nbody{margin-top:6px}
 .nshown{font-size:.7rem;padding:0 6px;vertical-align:1px;color:var(--accent);border-color:var(--accent)}
 .nico{width:26px;height:26px;flex:none;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:1rem;background:var(--sunk);overflow:hidden}
 .nico img{width:100%;height:100%;object-fit:cover}
@@ -3831,7 +3834,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = o => JSON.parse(JSON.stringify(o));
 const signed = n => (n >= 0 ? '+' : '−') + Math.abs(n);
-const APP_VERSION = '1.63.1';
+const APP_VERSION = '1.64.1';
 const KEY = 'grimsheet.v1', LIBKEY = 'grimsheet.library.v1', SETKEY = 'grimsheet.settings.v1';
 const REDUCED = (() => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 // phones (touch screen, short side under 600px) get the flat dice by default: the 3D box takes too much of a small screen
@@ -5301,7 +5304,7 @@ function renderEncounter() {
       <button class="btn small" data-act="rollmoninit">Roll monster initiative</button>
       ${prepared ? '' : e.combat.active ? '<button class="btn small" data-act="prevturn" title="Previous turn">◀</button><button class="btn small primary" data-act="nextturn">Next turn ▶</button><button class="btn small" data-act="endcombat">End combat</button>' : '<button class="btn small primary" data-act="startcombat">Start combat</button>'}
       <button class="btn small ${ui.confirm === 'encclear' ? 'danger' : 'ghost'}" data-act="encclear">${ui.confirm === 'encclear' ? 'Remove all monsters?' : 'Clear'}</button>
-    </div></div>` + prep;
+    </div></div>` + (e.note ? `<details class="enc-note" ${ui.encNoteOpen === e.id ? 'open' : ''}><summary data-act="encnote" data-v="${esc(e.id)}">GM notes for this encounter</summary><div class="nbody">${noteBody({ body: e.note })}</div></details>` : '') + prep;
   const order = rows.length ? `<div class="init-list">${rows.map(r => {
     const hp = r.kind === 'mon' ? r.members.map(m => m.hp + '/' + m.max).join(' · ') : '';
     return `<div class="irow ${r.k === cur ? 'cur' : ''} ${r.kind === 'mon' && r.members.every(m => m.hp <= 0) ? 'down' : ''}" data-row="${esc(r.k)}">
@@ -6781,7 +6784,7 @@ function renderNotes() {
   const openQuests = c.notes.filter(n => noteVisible(n) && n.type === 'quest' && (n.status || 'Open') === 'Open');
   const head = `<div class="enc-head notes-head">
     <div class="enc-title">${ui.campName ? `<input class="ed-inline" id="camp-name" data-campname="1" value="${esc(c.name)}" placeholder="Campaign name" style="width:220px">` : `<button class="camp-name" data-act="campname" title="Rename the campaign"><b>${esc(c.name || 'Campaign notes')}</b></button>`}<span class="muted" style="font-size:.85rem">${c.notes.filter(noteVisible).length} notes${IN_OBR ? ' · shared with this room' : ''}</span></div>
-    <div class="enc-tools"><button class="btn small primary" data-act="noteadd">+ New note</button><button class="btn small" data-act="notesexport" title="Download all notes as a Markdown file">Export</button><button class="btn small ghost" data-act="notesbackup" title="Download a backup you can import again">Backup</button><label class="btn small ghost" title="Import a notes backup">Import<input type="file" accept=".json,application/json" id="notes-import" data-notesimport="1" hidden></label></div></div>
+    <div class="enc-tools"><button class="btn small primary" data-act="noteadd">+ New note</button><button class="btn small" data-act="notesexport" title="Download all notes as a Markdown file">Export</button><button class="btn small ghost" data-act="notesbackup" title="Download a backup you can import again">Backup</button><label class="btn small ghost" title="Import a notes backup or a session pack">Import<input type="file" accept=".json,application/json" id="notes-import" data-notesimport="1" hidden></label></div></div>
     <div class="notes-bar"><input id="note-q" class="srd-q" data-noteq="1" value="${esc(ui.noteQ || '')}" placeholder="Search notes: names, places, tags…" aria-label="Search notes">
       <div class="tabs" style="margin:0">${[['all', 'All'], ['pinned', 'Pinned'], ...(counts.handouts || f === 'handouts' ? [['handouts', 'Handouts']] : []), ...Object.keys(NOTE_TYPES).map(k => [k, NOTE_PLURAL[k]])].map(([k, l]) => `<button class="${f === k ? 'on' : ''}" data-act="notef" data-v="${k}">${l}${counts[k] ? ' <span class="muted">' + counts[k] + '</span>' : ''}</button>`).join('')}</div>
       ${tagsAll.length ? `<div class="ntags">${tagsAll.slice(0, 30).map(t => `<button class="chip ${q === t.toLowerCase() ? 'on' : ''}" data-act="notetag" data-v="${esc(t)}">#${esc(t)}</button>`).join('')}</div>` : ''}</div>`;
@@ -6926,6 +6929,85 @@ function notesMarkdown() {
     for (const n of ns) s += `\n### ${n.title}${n.status ? ' (' + n.status + ')' : ''}\n${(n.tags || []).length ? n.tags.map(x => '#' + x).join(' ') + '\n' : ''}${n.body ? '\n' + n.body + '\n' : ''}`;
   }
   return s;
+}
+
+/* ---------- SESSION PACK: a prepared session in one file (notes, monsters, encounters) ---------- */
+// { grimsheetSession: 1, id, name, notes: [{ id, type, title, body, tags, icon, status, handout, pinned }],
+//   monsters: [{ id, statblock }], encounters: [{ id, name, note, monsters: [{ monster, count }]}] }
+// Everything arrives GM only. Ids are fixed per pack, so importing a newer version updates the same notes,
+// monsters and encounters instead of adding copies. A monster in an encounter is a pack monster id, an SRD id
+// ("srd:goblin") or a monster name from the catalog.
+const packKey = (pack, id) => 'pk-' + String(pack).replace(/[^\w-]/g, '').slice(0, 40) + '-' + String(id).replace(/[^\w-]/g, '').slice(0, 60);
+function packRead(data) {
+  if (!data || data.grimsheetSession !== 1 || !data.id) return null;
+  const P = { id: String(data.id), name: String(data.name || 'Session pack'), notes: [], monsters: [], encounters: [], problems: [] };
+  const mons = {};
+  for (const m of data.monsters || []) {
+    const p = m && m.statblock ? MONSTERS.parse(String(m.statblock)) : null;
+    if (!p || !p.name || (!p.actions.length && !p.traits.length && p.hp <= 1)) { P.problems.push('Monster "' + ((m && m.id) || '?') + '": the stat block couldn\'t be read.'); continue; }
+    p.id = 'pk:' + packKey(P.id, m.id); p.source = String(m.statblock); p.pack = P.id; mons[m.id] = p; P.monsters.push(p);
+  }
+  const find = ref => { if (mons[ref]) return mons[ref]; const r = String(ref || ''); return tplById(r) || catalog().find(t => t.name.toLowerCase() === r.toLowerCase()) || null; };
+  for (const n of data.notes || []) {
+    if (!n || !n.id || !n.title) continue;
+    const type = NOTE_TYPES[n.type] ? n.type : 'note';
+    P.notes.push({ id: packKey(P.id, n.id), type, title: String(n.title).slice(0, 120), body: String(n.body || '').slice(0, NOTE_MAX), tags: [...new Set((n.tags || []).map(String).concat(P.name))].slice(0, 12),
+      status: NOTE_STATUS[type] ? (n.status || NOTE_STATUS[type][0]) : '', icon: n.icon || '', pinned: !!n.pinned, handout: !!n.handout, vis: 'me', pack: P.id });
+  }
+  for (const e of data.encounters || []) {
+    if (!e || !e.id) continue; const list = [];
+    for (const x of e.monsters || []) { const t = find(x.monster); if (!t) { P.problems.push('Encounter "' + (e.name || e.id) + '": no monster "' + x.monster + '".'); continue; } list.push({ t, n: Math.max(1, Math.min(30, +x.count || 1)) }); }
+    P.encounters.push({ id: packKey(P.id, e.id), name: String(e.name || e.id).slice(0, 60), note: String(e.note || ''), list });
+  }
+  return P;
+}
+function packHtml(m) {
+  const P = m.pack, c = camp(), R = encs();
+  const old = { notes: P.notes.filter(n => c.notes.some(x => x.id === n.id)).length, mons: P.monsters.filter(t => bestiary.some(x => x.id === t.id)).length, encs: P.encounters.filter(e => R.list[e.id]).length };
+  const row = (k, label, n, upd, sub) => `<label class="setrow" style="cursor:pointer"><input type="checkbox" data-pkpart="${k}" ${n ? 'checked' : 'disabled'}><div class="grow"><b>${n} ${n === 1 ? label.replace(/s$/, '') : label}</b>${upd ? ` <span class="muted">(${upd} already here: updated)</span>` : ''}<div class="muted" style="font-size:.85rem">${sub}</div></div></label>`;
+  return dlgHead('Import session pack') + `<div class="dlg-b"><div class="sub-h" style="margin:0">${esc(P.name)}</div>
+    ${row('notes', 'notes', P.notes.length, old.notes, P.notes.slice(0, 6).map(n => esc(n.title)).join(' · ') + (P.notes.length > 6 ? ' …' : '') + `<br>All GM only.${P.notes.some(n => n.handout) ? ` ${P.notes.filter(n => n.handout).length} handouts stay hidden until you use Show to players.` : ''}`)}
+    ${row('monsters', 'monsters', P.monsters.length, old.mons, P.monsters.map(t => esc(t.name) + ' (CR ' + esc(String(t.cr)) + ')').join(' · ') + '<br>Saved to your monsters.')}
+    ${row('encounters', 'encounters', P.encounters.length, old.encs, P.encounters.map(e => esc(e.name) + ': ' + e.list.map(x => x.n + ' × ' + esc(x.t.name)).join(', ')).join('<br>') + (IN_OBR ? '<br>Added to this room, not started.' : ''))}
+    ${P.problems.length ? `<div class="banner warn" style="font-size:.88rem">${P.problems.map(esc).join('<br>')}</div>` : ''}
+    ${old.encs && R.list[R.active] && R.list[R.active].combat.active && P.encounters.some(e => e.id === R.active) ? '<div class="muted">The encounter in combat right now is left as it is.</div>' : ''}
+  </div><div class="dlg-f"><button class="btn" data-act="close">Cancel</button><button class="btn primary" data-act="packgo">Import</button></div>`;
+}
+function packImport() {
+  const P = ui.modal.pack, on = k => { const x = document.querySelector(`[data-pkpart="${k}"]`); return !!(x && x.checked); };
+  const done = [];
+  if (on('monsters') && P.monsters.length) {
+    for (const t of P.monsters) { const i = bestiary.findIndex(x => x.id === t.id); if (i >= 0) bestiary[i] = t; else bestiary.push(t); }
+    saveBestiary();
+    const R = encs(); for (const e of Object.values(R.list)) for (const t of P.monsters) if (e.tpls[t.id]) e.tpls[t.id] = t;
+    done.push(P.monsters.length + (P.monsters.length === 1 ? ' monster' : ' monsters'));
+  }
+  if (on('encounters') && P.encounters.length) {
+    const R = encs(), keepSel = ui.encSel;
+    for (const pe of P.encounters) {
+      let e = R.list[pe.id];
+      if (e && e.combat.active) continue; // never touch a fight in progress
+      if (!e) { e = blankEnc(); e.id = pe.id; R.list[e.id] = e; R.order.push(e.id); }
+      Object.assign(e, { name: pe.name, tpls: {}, mons: [], seq: {}, groupInit: {}, pack: P.id, note: pe.note });
+      ui.encSel = e.id; for (const x of pe.list) addMonsters(x.t, x.n, { group: SETTINGS.groupInit !== false });
+    }
+    ui.encSel = keepSel && R.list[keepSel] ? keepSel : ui.encSel; saveEnc({ quiet: true });
+    done.push(P.encounters.length + (P.encounters.length === 1 ? ' encounter' : ' encounters'));
+  }
+  if (on('notes') && P.notes.length) {
+    const c = camp(), me = notesAuthor(), now = Date.now();
+    for (const pn of P.notes) {
+      const old = c.notes.find(x => x.id === pn.id);
+      const n = Object.assign({}, old || {}, pn, { author: me, created: old ? old.created : now, updated: now });
+      if (old && old.vis === 'party' && !pn.handout) n.vis = 'party'; // already shared: stays shared
+      if (old && old.shown) { n.shown = old.shown; n.shownBy = old.shownBy; n.vis = 'party'; }
+      delete n.handout; if (pn.handout) n.tags = [...new Set((n.tags || []).concat('handout'))];
+      delete c.gone[n.id]; const i = c.notes.findIndex(x => x.id === n.id); if (i >= 0) c.notes[i] = n; else c.notes.push(n);
+      if (n.vis === 'party') sendNotes({ type: 'up', note: n });
+    }
+    if (!c.name) c.name = P.name; saveCamp(c); done.push(P.notes.length + (P.notes.length === 1 ? ' note' : ' notes'));
+  }
+  closeModal(); render(); toast(done.length ? 'Imported ' + done.join(', ') + '.' : 'Nothing chosen to import.');
 }
 
 /* ---------- MOVE A CHARACTER between the website, Owlbear and other devices ---------- */
@@ -9621,7 +9703,7 @@ const TOURS = {
   player: {
     title: 'The sheet', when: () => !gmMode(), steps: [
       { title: 'Welcome to Grimsheet', text: 'A character sheet that does the maths and rolls the dice. This tour takes a minute; you can leave it any time and replay it from Settings.' },
-      { sel: '#top .ident', title: 'Your character', text: 'Name, species, class and level. Open <b>Characters</b> to switch characters, make a new one, import one, or export a copy.' },
+      { sel: '#top .ident', title: 'Your character', get text() { return 'Name, species, class and level. Open <b>Characters</b> to switch characters, make a new one, import one, or copy one ' + (IN_OBR ? 'to the website' : 'into Owlbear') + ' or another device.'; } },
       { sel: '.dlg [data-act=create]', before: () => { if (!ui.modal || ui.modal.type !== 'chars') openModal('chars'); }, title: 'Make a character', text: '<b>Create a character</b> walks you through class, species, background, ability scores, skills, gear and spells, and can start you above level 1.' },
       { sel: '[data-act=pdfopen]', before: () => { if (!ui.modal || ui.modal.type !== 'chars') openModal('chars'); }, title: 'Bring in your character', text: '<b>Import from PDF</b> reads a filled-in character sheet PDF (a D&amp;D Beyond export, the official sheets, MPMB and other popular sheets): abilities, skills, attacks, spells and features, and shows you what it found before adding it. <b>Import</b> takes a Grimsheet file, like one exported on another device.' },
       { sel: '.dlg [data-act=modal][data-v=classes]', before: () => { if (!ui.modal || ui.modal.type !== 'chars') openModal('chars'); }, title: 'Homebrew classes and subclasses', text: 'Open <b>Classes</b> and give it a PDF or pasted text: a homebrew class, or new subclasses for the basic classes (like Tasha’s). After that, levelling up offers those subclasses and adds each feature with its full text.' },
@@ -9631,6 +9713,7 @@ const TOURS = {
       { sel: '.cond', title: 'Conditions', text: 'Tap to turn one on. Grimsheet applies what it does to your rolls (Poisoned gives disadvantage, for example) and can count down how long it lasts.' },
       { sel: '[data-act=newentry]', title: 'Add attacks, spells and features', text: 'Pick from the built-in rules, or paste any text (a homebrew feature, a spell from a book): Grimsheet finds the dice, saves and uses in it.' },
       { sel: '#tray', title: 'Your rolls', text: 'Every roll lands here with how it was worked out. Follow-up buttons appear when there is a next step, like the damage after a hit.', place: 'above' },
+      { sel: '[data-act=setview][data-v=combat]', title: 'Combat view', text: 'One screen for a fight, made for phones: HP with big damage and heal buttons, AC, death saves, conditions, slots, and everything you can roll or use, by action type.' },
       { sel: '[data-act=mode][data-v=edit]', title: 'Edit mode', text: 'Change scores, AC, proficiencies, move and hide modules. Switch back to Play to use the sheet.' },
       { sel: '[data-act=levelup]', title: 'Levelling up and resting', text: 'Level up walks you through hit points, new features and ability scores. The rest buttons recover what each rest gives back.' },
       { sel: '[data-act=gsearch]', title: 'Find anything', text: 'Search rules, spells, your features and more. Press <b>/</b> or Ctrl+K from anywhere.' },
@@ -9644,7 +9727,9 @@ const TOURS = {
       { sel: '[data-act=init]', title: 'Roll initiative', text: 'When the GM asks, roll here: the result goes straight into the GM’s initiative tracker.' },
       { sel: '[data-act=tgtpick]', title: 'Pick a target', text: 'Choose who you’re attacking on the map. Attacks and saves then go to the GM with the target, ready to apply.' },
       { sel: '[data-act=endturn]', title: 'End your turn', text: 'When it’s your turn, this tells the GM you’re done and the next turn starts.' },
-      { sel: () => modEl('party'), title: 'Your party', text: 'Everyone’s HP, AC and conditions, kept up to date.' },
+      { sel: () => modEl('party'), title: 'Your party', text: 'Everyone’s HP, AC and conditions, kept up to date. Other players’ dice land in a little box at the bottom right of the map.' },
+      { sel: '[data-act=stashopen]', title: 'Party stash', text: 'Items and coins the whole party shares. Put things in from your inventory and take them out onto your sheet; everyone sees the same stash.' },
+      { title: 'Handouts', text: 'When the GM shows you a handout it opens in the middle of your map. You keep it: <b>Notes → Handouts</b> lists them all, and <b>Open handout</b> brings one back.' },
       { title: 'Shared by the GM', text: 'Homebrew the GM shares turns up in <b>+ Add → Room homebrew</b>. The GM also keeps a backup of your character: on a new device, Grimsheet offers to restore it.' },
     ],
   },
@@ -9655,10 +9740,12 @@ const TOURS = {
       { sel: '[data-act=addmon]', title: 'Monsters', text: 'Add monsters from the built-in bestiary, or paste a stat block from anywhere. Each gets a card for rolling its attacks and tracking its HP; right-click a monster token and choose <b>Grimsheet</b> to link it.' },
       { sel: '[data-act=addparty]', title: 'Add the party', text: 'Adds every player’s character to the initiative order. <b>Ask for initiative</b> has them roll it from their sheets.' },
       { sel: '.mcard', title: 'Monster cards', text: 'Roll attacks and damage, apply damage, track conditions and legendary uses.' },
+      { sel: '[data-act=montokquick]', title: 'Tokens for monsters', text: '<b>+ Token</b> puts the monster on the map from your Owlbear images, at the right size for its creature size and already linked to its card.' },
       { sel: '[data-act=startcombat], [data-act=nextturn]', title: 'Running combat', text: 'Start combat to sort the order. Next turn moves it on, and players can end their own turns.' },
       { sel: '[data-act=groupsave]', title: 'The party', text: 'See everyone at a glance, deal damage or healing, ask the whole party for a save or a check, and open any player’s sheet read-only.', before: () => clickAct('[data-act=setview][data-v=party]') },
-      { sel: '[data-act=setview][data-v=campaign]', title: 'Campaign notes', text: 'Notes for places, people and quests. Share a note with the party or keep it to yourself.' },
-      { sel: '[data-act=modal][data-v=settings]', title: 'Backups and room homebrew', text: 'Settings saves everything (encounters, notes, monsters, your players’ backups) to your Owlbear library. Homebrew you share goes to the whole room.', before: () => clickAct('[data-act=setview][data-v=encounter]') },
+      { sel: '[data-act=setview][data-v=campaign]', title: 'Campaign notes', text: 'Notes for places, people and quests, with pictures and icons. Share a note with the party or keep it to yourself; <b>Show to players</b> opens it as a handout in the middle of their maps.' },
+      { sel: 'label:has(#notes-import)', before: () => clickAct('[data-act=setview][data-v=campaign]'), title: 'Session packs', text: 'Import a whole prepared session in one file: notes, your own monsters and ready-made encounters, all GM only until you share them. Importing a newer version updates them.' },
+      { sel: '[data-act=modal][data-v=settings]', title: 'Backups, homebrew and the stash', text: 'Settings saves everything (encounters, notes, monsters, your players’ backups) to your Owlbear library. Homebrew you share goes to the whole room, and the Party view has the party stash.', before: () => clickAct('[data-act=setview][data-v=encounter]') },
     ],
   },
   simple: {
@@ -10208,6 +10295,7 @@ function renderModal() {
   else if (m.type === 'dbg') h = debugHtml();
   else if (m.type === 'stash') h = stashHtml(m);
   else if (m.type === 'xfer') h = xferHtml(m);
+  else if (m.type === 'pack') h = packHtml(m);
   else if (m.type === 'take') h = takeHtml(m);
   else if (m.type === 'viewwait') h = dlgHead('Opening ' + (m.name || 'sheet')) + `<div class="dlg-b">${m.failed ? `<div class="banner warn" style="margin:0">${esc(m.owner || 'The player')}'s Grimsheet didn't answer. They need to be in the room with Grimsheet 1.3 or newer installed.</div>` : `<div class="sugg"><h3>Asking ${esc(m.owner || 'the player')}'s Grimsheet…</h3><span>The sheet opens read-only in a moment.</span></div>`}</div><div class="dlg-f"><button class="btn" data-act="close">${m.failed ? 'Close' : 'Cancel'}</button></div>`;
   $('#ovl').innerHTML = `<div class="ovl" data-act="ovlbg"><div class="dlg" role="dialog" aria-modal="true">${h}</div></div>`;
@@ -10822,6 +10910,8 @@ document.addEventListener('click', ev => {
     case 'noteshow': noteShow(id); break;
     case 'cvhp': cvHp(v); break;
     case 'xferopen': xferOpen(id); break;
+    case 'packgo': packImport(); break;
+    case 'encnote': ev.preventDefault(); ui.encNoteOpen = ui.encNoteOpen === v ? null : v; renderGrid(); break;
     case 'xfercopy': if (ui.modal && ui.modal.code) copyText(v === 'link' ? ui.modal.link : ui.modal.code, v === 'link' ? 'Link' : 'Code'); break;
     case 'xferdone': setTimeout(() => toast('Opened the website: add the character there.'), 300); return;
     case 'takechar': takeChar(v); break;
@@ -11191,7 +11281,8 @@ document.addEventListener('change', ev => {
   if (t.dataset.notesimport && t.files && t.files[0]) {
     t.files[0].text().then(txt => {
       let data; try { data = JSON.parse(txt); } catch (e) { toast('That file isn\'t a notes backup.'); return; }
-      if (!data || !Array.isArray(data.notes)) { toast('That file isn\'t a notes backup.'); return; }
+      if (data && data.grimsheetSession) { if (!isGM()) { toast('Session packs are for the GM.'); return; } const P = packRead(data); if (!P) { toast('That session pack is missing its id.'); return; } openModal('pack', { pack: P }); return; }
+      if (!data || !Array.isArray(data.notes)) { toast('That file isn\'t a notes backup or a session pack.'); return; }
       const cc = camp(); let n = 0;
       for (const x of data.notes) if (x && x.id && x.title && NOTE_TYPES[x.type]) { if (mergeNote(cc, x)) { n++; if (x.vis === 'party') sendNotes({ type: 'up', note: x }); } }
       if (!cc.name && data.name) cc.name = data.name;
